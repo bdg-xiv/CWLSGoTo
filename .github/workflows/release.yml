@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
 
   release:
@@ -60,7 +64,19 @@ jobs:
         $status = git status --porcelain
         if ($status) {
           git commit -m "Update pluginmaster.json [skip ci]"
-          git push
+          $pushed = $false
+          for ($i = 0; $i -lt 5 -and -not $pushed; $i++) {
+            git push
+            if ($LASTEXITCODE -eq 0) {
+              $pushed = $true
+            } else {
+              git pull --rebase
+              Start-Sleep -Seconds 3
+            }
+          }
+          if (-not $pushed) {
+            throw "Failed to push pluginmaster.json after retries"
+          }
         } else {
           Write-Output "pluginmaster.json unchanged, skipping commit"
         }
