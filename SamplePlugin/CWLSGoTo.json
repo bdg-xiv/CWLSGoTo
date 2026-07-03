@@ -1,5 +1,5 @@
 {
-  "Author": "bdgarcia",
+  "Author": "bdg",
   "Name": "CWLS Go To",
   "Punchline": "Adds a working [Go To] link to CWLS map-link messages.",
   "Description": "Watches Cross-world Linkshell (CWLS1/CWLS2) chat for messages containing a map link and appends a clickable [Go To] link. Clicking it teleports you to the nearest aetheryte via the Teleporter plugin, hopping to the correct world/data center first via the Lifestream plugin if the message points to a different server.",
