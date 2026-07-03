@@ -13,6 +13,7 @@ using Lumina.Excel.Sheets;
 using SamplePlugin.Windows;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System;
 
 namespace SamplePlugin;
@@ -30,6 +31,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
+    [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
 
     private const ushort GoToLinkColor = 45;
     private const string CommandName = "/cwlsgoto";
@@ -40,13 +42,16 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ConfigWindow configWindow;
 
     private readonly ICallGateSubscriber<uint, byte, bool> teleportIpc;
+    private readonly ICallGateSubscriber<uint, byte, bool> lifestreamTeleportIpc;
     private readonly ICallGateSubscriber<string, bool> lifestreamCanVisitSameDcIpc;
     private readonly ICallGateSubscriber<string, bool> lifestreamCanVisitCrossDcIpc;
     private readonly ICallGateSubscriber<string, bool, string?, bool, int?, bool?, bool?, object> lifestreamTpAndChangeWorldIpc;
     private readonly ICallGateSubscriber<bool> lifestreamIsBusyIpc;
     private readonly List<(uint Id, Aetheryte Aetheryte, MapLinkPayload MapLink, World? World)> goToLinks = [];
     private uint nextGoToLinkId;
-    private (Aetheryte Aetheryte, MapLinkPayload MapLink, uint WorldId)? pendingWorldTeleport;
+    private (Aetheryte Aetheryte, MapLinkPayload MapLink, uint WorldId, DateTime Deadline)? pendingWorldTeleport;
+    private Vector3 lastPlayerPosition;
+    private DateTime nextTeleportAttempt = DateTime.MinValue;
 
     public Plugin()
     {
@@ -58,7 +63,9 @@ public sealed class Plugin : IDalamudPlugin
         // The Teleporter plugin exposes a "Teleport" IPC (aetheryteId, subIndex) -> bool
         teleportIpc = PluginInterface.GetIpcSubscriber<uint, byte, bool>("Teleport");
 
-        // The Lifestream plugin exposes IPC to change worlds/data centers before we teleport locally
+        // The Lifestream plugin exposes IPC to change worlds/data centers before we teleport locally,
+        // and also has its own local aetheryte-teleport IPC we use as a fallback for teleportIpc.
+        lifestreamTeleportIpc = PluginInterface.GetIpcSubscriber<uint, byte, bool>("Lifestream.Teleport");
         lifestreamCanVisitSameDcIpc = PluginInterface.GetIpcSubscriber<string, bool>("Lifestream.CanVisitSameDC");
         lifestreamCanVisitCrossDcIpc = PluginInterface.GetIpcSubscriber<string, bool>("Lifestream.CanVisitCrossDC");
         lifestreamTpAndChangeWorldIpc = PluginInterface.GetIpcSubscriber<string, bool, string?, bool, int?, bool?, bool?, object>("Lifestream.TPAndChangeWorld");
@@ -164,7 +171,9 @@ public sealed class Plugin : IDalamudPlugin
                 return;
             }
 
-            pendingWorldTeleport = (aetheryte, mapLink, world.RowId);
+            pendingWorldTeleport = (aetheryte, mapLink, world.RowId, DateTime.UtcNow.AddSeconds(30));
+            lastPlayerPosition = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
+            nextTeleportAttempt = DateTime.MinValue;
             Framework.Update += OnFrameworkUpdate;
             lifestreamTpAndChangeWorldIpc.InvokeAction(worldName, !sameDc, null, false, null, null, null);
         }
@@ -185,35 +194,78 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        if (!ClientState.IsLoggedIn || !PlayerState.IsLoaded)
-            return;
-
-        // Wait for the zone transition caused by the world hop to fully finish before
-        // trying to teleport locally, otherwise Teleporter's IPC silently no-ops.
-        if (Condition[ConditionFlag.BetweenAreas] || Condition[ConditionFlag.BetweenAreas51])
-            return;
-
-        if (PlayerState.CurrentWorld.RowId != pendingWorldTeleport.Value.WorldId)
-            return;
-
         var pending = pendingWorldTeleport.Value;
-        pendingWorldTeleport = null;
-        Framework.Update -= OnFrameworkUpdate;
-        TeleportToAetheryte(pending.Aetheryte, pending.MapLink);
+
+        if (DateTime.UtcNow > pending.Deadline)
+        {
+            Log.Warning("Timed out waiting to teleport after a world hop.");
+            pendingWorldTeleport = null;
+            Framework.Update -= OnFrameworkUpdate;
+            GameGui.OpenMapWithMapLink(pending.MapLink);
+            return;
+        }
+
+        var player = ObjectTable.LocalPlayer;
+        if (player == null || player.CurrentHp == 0)
+            return;
+
+        if (!ClientState.IsLoggedIn || !PlayerState.IsLoaded || PlayerState.CurrentWorld.RowId != pending.WorldId)
+            return;
+
+        // Track movement across frames so we don't try to teleport while the character
+        // is still sliding into place right after the world hop finishes loading.
+        var isMoving = player.Position != lastPlayerPosition;
+        lastPlayerPosition = player.Position;
+
+        // Mirror Hunt Train Assistant's readiness gate: the zone transition clearing
+        // (BetweenAreas) alone isn't enough - Teleporter's IPC also silently no-ops
+        // while the character is still mid-animation/casting/mounting/moving.
+        if (Condition[ConditionFlag.BetweenAreas] || Condition[ConditionFlag.BetweenAreas51] ||
+            Condition[ConditionFlag.InCombat] || Condition[ConditionFlag.Casting] ||
+            Condition[ConditionFlag.MountOrOrnamentTransition] || isMoving)
+            return;
+
+        if (DateTime.UtcNow < nextTeleportAttempt)
+            return;
+        nextTeleportAttempt = DateTime.UtcNow.AddSeconds(1);
+
+        if (TryTeleportToAetheryte(pending.Aetheryte))
+        {
+            pendingWorldTeleport = null;
+            Framework.Update -= OnFrameworkUpdate;
+            GameGui.OpenMapWithMapLink(pending.MapLink);
+        }
     }
 
     private void TeleportToAetheryte(Aetheryte aetheryte, MapLinkPayload mapLink)
     {
+        TryTeleportToAetheryte(aetheryte);
+        GameGui.OpenMapWithMapLink(mapLink);
+    }
+
+    private bool TryTeleportToAetheryte(Aetheryte aetheryte)
+    {
         try
         {
-            teleportIpc.InvokeFunc(aetheryte.RowId, 0);
+            if (teleportIpc.InvokeFunc(aetheryte.RowId, 0))
+                return true;
         }
         catch (Exception ex)
         {
             Log.Warning($"Failed to invoke Teleporter IPC. Is the Teleporter plugin installed? {ex.Message}");
         }
 
-        GameGui.OpenMapWithMapLink(mapLink);
+        try
+        {
+            if (lifestreamTeleportIpc.InvokeFunc(aetheryte.RowId, 0))
+                return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Failed to invoke Lifestream teleport IPC. Is the Lifestream plugin installed? {ex.Message}");
+        }
+
+        return false;
     }
 
     public void Dispose()
