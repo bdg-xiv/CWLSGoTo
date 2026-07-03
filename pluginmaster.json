@@ -1,0 +1,27 @@
+[
+  {
+    "Author": "bdgarcia",
+    "Name": "CWLS Go To",
+    "InternalName": "CWLSGoTo",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Watches Cross-world Linkshell (CWLS1/CWLS2) chat for messages containing a map link and appends a clickable [Go To] link. Clicking it teleports you to the nearest aetheryte via the Teleporter plugin, hopping to the correct world/data center first via the Lifestream plugin if the message points to a different server.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "chat",
+      "teleport",
+      "linkshell",
+      "cwls"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Adds a working [Go To] link to CWLS map-link messages.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdgarcia/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/latest.zip",
+    "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/latest.zip"
+  }
+]
