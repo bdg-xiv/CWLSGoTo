@@ -1,13 +1,16 @@
 using Dalamud.Game.Chat;
 using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.Command;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using SamplePlugin.Windows;
 using System.Collections.Generic;
 using System.Linq;
 using System;
@@ -18,6 +21,7 @@ public sealed class Plugin : IDalamudPlugin
 {
     public string Name => PluginInterface.Manifest.Name;
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] internal static IClientState ClientState { get; private set; } = null!;
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
@@ -28,6 +32,12 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
 
     private const ushort GoToLinkColor = 45;
+    private const string CommandName = "/cwlsgoto";
+
+    public Configuration Configuration { get; }
+
+    public readonly WindowSystem WindowSystem = new("CWLSGoTo");
+    private readonly ConfigWindow configWindow;
 
     private readonly ICallGateSubscriber<uint, byte, bool> teleportIpc;
     private readonly ICallGateSubscriber<string, bool> lifestreamCanVisitSameDcIpc;
@@ -40,6 +50,11 @@ public sealed class Plugin : IDalamudPlugin
 
     public Plugin()
     {
+        Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+
+        configWindow = new ConfigWindow(this);
+        WindowSystem.AddWindow(configWindow);
+
         // The Teleporter plugin exposes a "Teleport" IPC (aetheryteId, subIndex) -> bool
         teleportIpc = PluginInterface.GetIpcSubscriber<uint, byte, bool>("Teleport");
 
@@ -51,11 +66,24 @@ public sealed class Plugin : IDalamudPlugin
 
         // Subscribe to the handleable chat message event (matches IChatGui.OnHandleableChatMessageDelegate)
         ChatGui.CheckMessageHandled += OnChatMessage;
+
+        PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
+        PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigWindow;
+        PluginInterface.UiBuilder.OpenMainUi += ToggleConfigWindow;
+
+        CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
+        {
+            HelpMessage = "Opens the CWLS Go To channel settings."
+        });
     }
+
+    private void OnCommand(string command, string args) => ToggleConfigWindow();
+
+    private void ToggleConfigWindow() => configWindow.Toggle();
 
     private void OnChatMessage(IHandleableChatMessage message)
     {
-        if (message.LogKind != XivChatType.CrossLinkShell1 && message.LogKind != XivChatType.CrossLinkShell2)
+        if (!Configuration.WatchedChannels.Contains(message.LogKind))
             return;
 
         var mapLink = message.Message.Payloads.OfType<MapLinkPayload>().FirstOrDefault();
@@ -193,5 +221,13 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.CheckMessageHandled -= OnChatMessage;
         ChatGui.RemoveChatLinkHandler();
         Framework.Update -= OnFrameworkUpdate;
+
+        PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
+        PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigWindow;
+        PluginInterface.UiBuilder.OpenMainUi -= ToggleConfigWindow;
+        WindowSystem.RemoveAllWindows();
+        configWindow.Dispose();
+
+        CommandManager.RemoveHandler(CommandName);
     }
 }
