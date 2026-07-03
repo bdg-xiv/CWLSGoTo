@@ -1,0 +1,66 @@
+name: Build and Release CWLSGoTo
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+
+  release:
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - name: Install .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Download Dalamud
+      run: |
+        Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
+        Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
+
+    - name: Build with dotnet
+      run: dotnet build --configuration Release
+
+    - name: Generate pluginmaster.json
+      shell: pwsh
+      run: |
+        $manifest = Get-Content "SamplePlugin/bin/x64/Release/CWLSGoTo/CWLSGoTo.json" | ConvertFrom-Json
+        $repoUrl = "https://github.com/${{ github.repository }}"
+        $downloadUrl = "$repoUrl/releases/download/latest/latest.zip"
+        $manifest | Add-Member -NotePropertyName RepoUrl -NotePropertyValue $repoUrl -Force
+        $manifest | Add-Member -NotePropertyName DownloadLinkInstall -NotePropertyValue $downloadUrl -Force
+        $manifest | Add-Member -NotePropertyName DownloadLinkUpdate -NotePropertyValue $downloadUrl -Force
+        $manifest | Add-Member -NotePropertyName DownloadLinkTesting -NotePropertyValue $downloadUrl -Force
+        ConvertTo-Json @($manifest) -Depth 5 | Set-Content pluginmaster.json
+
+    - name: Create/update release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: latest
+        name: Latest build
+        body: Automatically published by GitHub Actions from the latest commit on master.
+        make_latest: true
+        files: SamplePlugin/bin/x64/Release/CWLSGoTo/latest.zip
+
+    - name: Commit pluginmaster.json
+      shell: pwsh
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add pluginmaster.json
+        $status = git status --porcelain
+        if ($status) {
+          git commit -m "Update pluginmaster.json [skip ci]"
+          git push
+        } else {
+          Write-Output "pluginmaster.json unchanged, skipping commit"
+        }

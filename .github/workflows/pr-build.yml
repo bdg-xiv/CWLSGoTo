@@ -1,4 +1,4 @@
-name: Sample PR Builder for SamplePlugin
+name: PR Builder for CWLSGoTo
 
 on:
   pull_request:
@@ -8,9 +8,6 @@ jobs:
 
   build:
     runs-on: windows-2022
-
-    env:
-      Solution_Name: SamplePlugin
 
     steps:
     - name: Checkout
@@ -32,8 +29,8 @@ jobs:
     - name: Store artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: SamplePlugin
-        path: .\SamplePlugin\bin\x64\Release\SamplePlugin\*
+        name: CWLSGoTo
+        path: .\SamplePlugin\bin\x64\Release\CWLSGoTo\*
         if-no-files-found: error
         retention-days: 1
 
