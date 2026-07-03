@@ -52,6 +52,7 @@ public sealed class Plugin : IDalamudPlugin
     private (Aetheryte Aetheryte, MapLinkPayload MapLink, uint WorldId, DateTime Deadline)? pendingWorldTeleport;
     private Vector3 lastPlayerPosition;
     private DateTime nextTeleportAttempt = DateTime.MinValue;
+    private DateTime nextWaitDiagnosticLog = DateTime.MinValue;
 
     public Plugin()
     {
@@ -175,6 +176,7 @@ public sealed class Plugin : IDalamudPlugin
             lastPlayerPosition = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
             nextTeleportAttempt = DateTime.MinValue;
             Framework.Update += OnFrameworkUpdate;
+            Log.Information($"Starting world hop to {worldName} (world id {world.RowId}, crossDc={!sameDc}) then teleport to aetheryte {aetheryte.RowId} ({aetheryte.PlaceName.ValueNullable?.Name.ExtractText()})");
             lifestreamTpAndChangeWorldIpc.InvokeAction(worldName, !sameDc, null, false, null, null, null);
         }
         catch (Exception ex)
@@ -198,7 +200,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (DateTime.UtcNow > pending.Deadline)
         {
-            Log.Warning("Timed out waiting to teleport after a world hop.");
+            Log.Warning($"Timed out waiting to teleport to aetheryte {pending.Aetheryte.RowId} after a world hop.");
             pendingWorldTeleport = null;
             Framework.Update -= OnFrameworkUpdate;
             GameGui.OpenMapWithMapLink(pending.MapLink);
@@ -206,11 +208,23 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         var player = ObjectTable.LocalPlayer;
+        var loggingNow = DateTime.UtcNow >= nextWaitDiagnosticLog;
+        if (loggingNow)
+            nextWaitDiagnosticLog = DateTime.UtcNow.AddSeconds(3);
+
         if (player == null || player.CurrentHp == 0)
+        {
+            if (loggingNow)
+                Log.Information($"Waiting for local player (player null: {player == null})");
             return;
+        }
 
         if (!ClientState.IsLoggedIn || !PlayerState.IsLoaded || PlayerState.CurrentWorld.RowId != pending.WorldId)
+        {
+            if (loggingNow)
+                Log.Information($"Waiting for world hop to land: loggedIn={ClientState.IsLoggedIn}, playerStateLoaded={PlayerState.IsLoaded}, currentWorld={PlayerState.CurrentWorld.RowId}, targetWorld={pending.WorldId}");
             return;
+        }
 
         // Track movement across frames so we don't try to teleport while the character
         // is still sliding into place right after the world hop finishes loading.
@@ -220,10 +234,16 @@ public sealed class Plugin : IDalamudPlugin
         // Mirror Hunt Train Assistant's readiness gate: the zone transition clearing
         // (BetweenAreas) alone isn't enough - Teleporter's IPC also silently no-ops
         // while the character is still mid-animation/casting/mounting/moving.
-        if (Condition[ConditionFlag.BetweenAreas] || Condition[ConditionFlag.BetweenAreas51] ||
-            Condition[ConditionFlag.InCombat] || Condition[ConditionFlag.Casting] ||
-            Condition[ConditionFlag.MountOrOrnamentTransition] || isMoving)
+        var betweenAreas = Condition[ConditionFlag.BetweenAreas] || Condition[ConditionFlag.BetweenAreas51];
+        var inCombat = Condition[ConditionFlag.InCombat];
+        var casting = Condition[ConditionFlag.Casting];
+        var mounting = Condition[ConditionFlag.MountOrOrnamentTransition];
+        if (betweenAreas || inCombat || casting || mounting || isMoving)
+        {
+            if (loggingNow)
+                Log.Information($"Waiting for readiness: betweenAreas={betweenAreas}, inCombat={inCombat}, casting={casting}, mounting={mounting}, isMoving={isMoving}");
             return;
+        }
 
         if (DateTime.UtcNow < nextTeleportAttempt)
             return;
@@ -248,7 +268,12 @@ public sealed class Plugin : IDalamudPlugin
         try
         {
             if (teleportIpc.InvokeFunc(aetheryte.RowId, 0))
+            {
+                Log.Information($"Teleported to aetheryte {aetheryte.RowId} via Teleporter plugin");
                 return true;
+            }
+
+            Log.Information($"Teleporter plugin declined to teleport to aetheryte {aetheryte.RowId} (returned false)");
         }
         catch (Exception ex)
         {
@@ -258,7 +283,12 @@ public sealed class Plugin : IDalamudPlugin
         try
         {
             if (lifestreamTeleportIpc.InvokeFunc(aetheryte.RowId, 0))
+            {
+                Log.Information($"Teleported to aetheryte {aetheryte.RowId} via Lifestream plugin");
                 return true;
+            }
+
+            Log.Information($"Lifestream plugin declined to teleport to aetheryte {aetheryte.RowId} (returned false)");
         }
         catch (Exception ex)
         {
