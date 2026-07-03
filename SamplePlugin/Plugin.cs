@@ -74,6 +74,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // Subscribe to the handleable chat message event (matches IChatGui.OnHandleableChatMessageDelegate)
         ChatGui.CheckMessageHandled += OnChatMessage;
+        ClientState.TerritoryChanged += OnTerritoryChanged;
 
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigWindow;
@@ -226,6 +227,16 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
+        // The world hop may have already dropped us in the target zone.
+        if (ClientState.TerritoryType == pending.Aetheryte.Territory.RowId)
+        {
+            Log.Information($"Already in the target territory {ClientState.TerritoryType} after world hop");
+            pendingWorldTeleport = null;
+            Framework.Update -= OnFrameworkUpdate;
+            GameGui.OpenMapWithMapLink(pending.MapLink);
+            return;
+        }
+
         // Track movement across frames so we don't try to teleport while the character
         // is still sliding into place right after the world hop finishes loading.
         var isMoving = player.Position != lastPlayerPosition;
@@ -247,14 +258,25 @@ public sealed class Plugin : IDalamudPlugin
 
         if (DateTime.UtcNow < nextTeleportAttempt)
             return;
-        nextTeleportAttempt = DateTime.UtcNow.AddSeconds(1);
+        nextTeleportAttempt = DateTime.UtcNow.AddSeconds(2);
 
-        if (TryTeleportToAetheryte(pending.Aetheryte))
-        {
-            pendingWorldTeleport = null;
-            Framework.Update -= OnFrameworkUpdate;
-            GameGui.OpenMapWithMapLink(pending.MapLink);
-        }
+        // Don't treat a "true" return as confirmation: the in-game Teleport action has a
+        // cast time and can be silently interrupted, and Teleporter/Lifestream's IPC only
+        // reports whether the request was accepted, not whether the character actually
+        // arrived. Keep retrying (throttled) until OnTerritoryChanged confirms arrival.
+        TryTeleportToAetheryte(pending.Aetheryte);
+    }
+
+    private void OnTerritoryChanged(uint territoryType)
+    {
+        if (pendingWorldTeleport == null || territoryType != pendingWorldTeleport.Value.Aetheryte.Territory.RowId)
+            return;
+
+        Log.Information($"Confirmed arrival in territory {territoryType} after world hop");
+        var pending = pendingWorldTeleport.Value;
+        pendingWorldTeleport = null;
+        Framework.Update -= OnFrameworkUpdate;
+        GameGui.OpenMapWithMapLink(pending.MapLink);
     }
 
     private void TeleportToAetheryte(Aetheryte aetheryte, MapLinkPayload mapLink)
@@ -302,6 +324,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         ChatGui.CheckMessageHandled -= OnChatMessage;
         ChatGui.RemoveChatLinkHandler();
+        ClientState.TerritoryChanged -= OnTerritoryChanged;
         Framework.Update -= OnFrameworkUpdate;
 
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
