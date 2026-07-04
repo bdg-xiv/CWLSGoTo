@@ -1,12 +1,12 @@
 {
   "Author": "bdg",
   "Name": "Desynth All Command",
-  "Punchline": "Opens the desynthesis window and arms PandorasBox's Desynth All.",
-  "Description": "Adds a /desynthall command that opens the game's desynthesis (materia extraction) window and enables PandorasBox's \"Desynth All\" feature so its button is ready to use. Requires the PandorasBox plugin to be installed.",
+  "Punchline": "Opens the desynthesis window and desynthesizes everything in it.",
+  "Description": "Adds a /desynthall command that opens the game's desynthesis (materia extraction) window and automatically desynthesizes every item in the list, confirming each dialog and closing each result, using the same technique as PandorasBox's Desynth All feature. Self-contained - PandorasBox is not required. Temporarily pauses Yes Already's own dialog handling if it's installed, to avoid it racing with the confirmation step.",
   "ApplicableVersion": "any",
   "Tags": [
     "desynthesis",
-    "pandorasbox",
+    "automation",
     "command"
   ]
 }
