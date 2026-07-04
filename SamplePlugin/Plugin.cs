@@ -9,12 +9,16 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
+using ECommons;
+using ECommons.DalamudServices;
+using ECommons.GameHelpers;
+using ECommons.Throttlers;
 using Lumina.Excel.Sheets;
 using SamplePlugin.Windows;
 using System.Collections.Generic;
 using System.Linq;
-using System.Numerics;
 using System;
+using static ECommons.GenericHelpers;
 
 namespace SamplePlugin;
 
@@ -22,19 +26,10 @@ public sealed class Plugin : IDalamudPlugin
 {
     public string Name => PluginInterface.Manifest.Name;
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
-    [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
-    [PluginService] internal static IClientState ClientState { get; private set; } = null!;
-    [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
-    [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
-    [PluginService] internal static IPluginLog Log { get; private set; } = null!;
-    [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
-    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
-    [PluginService] internal static IFramework Framework { get; private set; } = null!;
-    [PluginService] internal static ICondition Condition { get; private set; } = null!;
-    [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
 
     private const ushort GoToLinkColor = 45;
     private const string CommandName = "/cwlsgoto";
+    private const string TeleportThrottleName = "CWLSGoToTeleport";
 
     public Configuration Configuration { get; }
 
@@ -50,12 +45,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly List<(uint Id, Aetheryte Aetheryte, MapLinkPayload MapLink, World? World)> goToLinks = [];
     private uint nextGoToLinkId;
     private (Aetheryte Aetheryte, uint WorldId, DateTime Deadline)? pendingWorldTeleport;
-    private Vector3 lastPlayerPosition;
-    private DateTime nextTeleportAttempt = DateTime.MinValue;
     private DateTime nextWaitDiagnosticLog = DateTime.MinValue;
 
     public Plugin()
     {
+        ECommonsMain.Init(PluginInterface, this);
+
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
         configWindow = new ConfigWindow(this);
@@ -73,13 +68,13 @@ public sealed class Plugin : IDalamudPlugin
         lifestreamIsBusyIpc = PluginInterface.GetIpcSubscriber<bool>("Lifestream.IsBusy");
 
         // Subscribe to the handleable chat message event (matches IChatGui.OnHandleableChatMessageDelegate)
-        ChatGui.CheckMessageHandled += OnChatMessage;
+        Svc.Chat.CheckMessageHandled += OnChatMessage;
 
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigWindow;
         PluginInterface.UiBuilder.OpenMainUi += ToggleConfigWindow;
 
-        CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
+        Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Opens the CWLS Go To channel settings."
         });
@@ -101,7 +96,7 @@ public sealed class Plugin : IDalamudPlugin
         var aetheryte = MapManager.GetNearestAetheryte(mapLink);
         if (aetheryte == null)
         {
-            Log.Warning($"Could not find an aetheryte near map link {mapLink}");
+            Svc.Log.Warning($"Could not find an aetheryte near map link {mapLink}");
             return;
         }
 
@@ -123,13 +118,13 @@ public sealed class Plugin : IDalamudPlugin
     private DalamudLinkPayload CreateGoToLink(Aetheryte aetheryte, MapLinkPayload mapLink, World? world)
     {
         var id = nextGoToLinkId++;
-        var payload = ChatGui.AddChatLinkHandler(id, OnGoToLinkClicked);
+        var payload = Svc.Chat.AddChatLinkHandler(id, OnGoToLinkClicked);
         goToLinks.Add((id, aetheryte, mapLink, world));
 
         // Cap stored links so we don't leak handler registrations for very old messages.
         if (goToLinks.Count > 100)
         {
-            ChatGui.RemoveChatLinkHandler(goToLinks[0].Id);
+            Svc.Chat.RemoveChatLinkHandler(goToLinks[0].Id);
             goToLinks.RemoveAt(0);
         }
 
@@ -142,13 +137,13 @@ public sealed class Plugin : IDalamudPlugin
         if (link.MapLink == null)
             return;
 
-        if (!PlayerState.IsLoaded)
+        if (!Svc.PlayerState.IsLoaded)
             return;
 
         // Open the map and drop the flag right away, before teleporting.
-        GameGui.OpenMapWithMapLink(link.MapLink);
+        Svc.GameGui.OpenMapWithMapLink(link.MapLink);
 
-        if (link.World == null || link.World.Value.RowId == PlayerState.CurrentWorld.RowId)
+        if (link.World == null || link.World.Value.RowId == Svc.PlayerState.CurrentWorld.RowId)
         {
             TryTeleportToAetheryte(link.Aetheryte);
             return;
@@ -163,7 +158,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             if (lifestreamIsBusyIpc.InvokeFunc())
             {
-                Log.Warning("Lifestream is busy, ignoring Go To click.");
+                Svc.Log.Warning("Lifestream is busy, ignoring Go To click.");
                 return;
             }
 
@@ -171,22 +166,21 @@ public sealed class Plugin : IDalamudPlugin
             var sameDc = lifestreamCanVisitSameDcIpc.InvokeFunc(worldName);
             if (!sameDc && !lifestreamCanVisitCrossDcIpc.InvokeFunc(worldName))
             {
-                Log.Warning($"Lifestream cannot visit {worldName} from here.");
+                Svc.Log.Warning($"Lifestream cannot visit {worldName} from here.");
                 return;
             }
 
             pendingWorldTeleport = (aetheryte, world.RowId, DateTime.UtcNow.AddSeconds(30));
-            lastPlayerPosition = ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
-            nextTeleportAttempt = DateTime.MinValue;
-            Framework.Update += OnFrameworkUpdate;
-            Log.Information($"Starting world hop to {worldName} (world id {world.RowId}, crossDc={!sameDc}) then teleport to aetheryte {aetheryte.RowId} ({aetheryte.PlaceName.ValueNullable?.Name.ExtractText()})");
+            EzThrottler.Reset(TeleportThrottleName);
+            Svc.Framework.Update += OnFrameworkUpdate;
+            Svc.Log.Information($"Starting world hop to {worldName} (world id {world.RowId}, crossDc={!sameDc}) then teleport to aetheryte {aetheryte.RowId} ({aetheryte.PlaceName.ValueNullable?.Name.ExtractText()})");
             lifestreamTpAndChangeWorldIpc.InvokeAction(worldName, !sameDc, null, false, null, null, null);
         }
         catch (Exception ex)
         {
-            Log.Warning($"Failed to invoke Lifestream IPC. Is the Lifestream plugin installed? {ex.Message}");
+            Svc.Log.Warning($"Failed to invoke Lifestream IPC. Is the Lifestream plugin installed? {ex.Message}");
             pendingWorldTeleport = null;
-            Framework.Update -= OnFrameworkUpdate;
+            Svc.Framework.Update -= OnFrameworkUpdate;
         }
     }
 
@@ -194,7 +188,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (pendingWorldTeleport == null)
         {
-            Framework.Update -= OnFrameworkUpdate;
+            Svc.Framework.Update -= OnFrameworkUpdate;
             return;
         }
 
@@ -202,62 +196,48 @@ public sealed class Plugin : IDalamudPlugin
 
         if (DateTime.UtcNow > pending.Deadline)
         {
-            Log.Warning($"Timed out waiting to teleport to aetheryte {pending.Aetheryte.RowId} after a world hop.");
+            Svc.Log.Warning($"Timed out waiting to teleport to aetheryte {pending.Aetheryte.RowId} after a world hop.");
             pendingWorldTeleport = null;
-            Framework.Update -= OnFrameworkUpdate;
+            Svc.Framework.Update -= OnFrameworkUpdate;
             return;
         }
 
-        var player = ObjectTable.LocalPlayer;
         var loggingNow = DateTime.UtcNow >= nextWaitDiagnosticLog;
         if (loggingNow)
             nextWaitDiagnosticLog = DateTime.UtcNow.AddSeconds(3);
 
-        if (player == null || player.CurrentHp == 0)
+        if (!Player.Available || Svc.PlayerState.CurrentWorld.RowId != pending.WorldId)
         {
             if (loggingNow)
-                Log.Information($"Waiting for local player (player null: {player == null})");
-            return;
-        }
-
-        if (!ClientState.IsLoggedIn || !PlayerState.IsLoaded || PlayerState.CurrentWorld.RowId != pending.WorldId)
-        {
-            if (loggingNow)
-                Log.Information($"Waiting for world hop to land: loggedIn={ClientState.IsLoggedIn}, playerStateLoaded={PlayerState.IsLoaded}, currentWorld={PlayerState.CurrentWorld.RowId}, targetWorld={pending.WorldId}");
+                Svc.Log.Information($"Waiting for world hop to land: playerAvailable={Player.Available}, currentWorld={Svc.PlayerState.CurrentWorld.RowId}, targetWorld={pending.WorldId}");
             return;
         }
 
         // The world hop may have already dropped us in the target zone.
-        if (ClientState.TerritoryType == pending.Aetheryte.Territory.RowId)
+        if (Svc.ClientState.TerritoryType == pending.Aetheryte.Territory.RowId)
         {
-            Log.Information($"Already in the target territory {ClientState.TerritoryType} after world hop");
+            Svc.Log.Information($"Already in the target territory {Svc.ClientState.TerritoryType} after world hop");
             pendingWorldTeleport = null;
-            Framework.Update -= OnFrameworkUpdate;
+            Svc.Framework.Update -= OnFrameworkUpdate;
             return;
         }
 
-        // Track movement across frames so we don't try to teleport while the character
-        // is still sliding into place right after the world hop finishes loading.
-        var isMoving = player.Position != lastPlayerPosition;
-        lastPlayerPosition = player.Position;
-
-        // Mirror Hunt Train Assistant's readiness gate: the zone transition clearing
-        // (BetweenAreas) alone isn't enough - Teleporter's IPC also silently no-ops
-        // while the character is still mid-animation/casting/mounting/moving.
-        var betweenAreas = Condition[ConditionFlag.BetweenAreas] || Condition[ConditionFlag.BetweenAreas51];
-        var inCombat = Condition[ConditionFlag.InCombat];
-        var casting = Condition[ConditionFlag.Casting];
-        var mounting = Condition[ConditionFlag.MountOrOrnamentTransition];
-        if (betweenAreas || inCombat || casting || mounting || isMoving)
+        // Mirror Hunt Train Assistant's readiness gate using the same ECommons helpers it
+        // relies on: Player.Interactable/IsBusy cover occupied/casting/moving/animation-lock/
+        // combat/territory-load-state in one call, plus the "NowLoading" addon and mount check.
+        var interactable = Player.Interactable;
+        var busy = Player.IsBusy;
+        var screenReady = IsScreenReady();
+        var mounting = Svc.Condition[ConditionFlag.MountOrOrnamentTransition];
+        if (!interactable || busy || !screenReady || mounting)
         {
             if (loggingNow)
-                Log.Information($"Waiting for readiness: betweenAreas={betweenAreas}, inCombat={inCombat}, casting={casting}, mounting={mounting}, isMoving={isMoving}");
+                Svc.Log.Information($"Waiting for readiness: interactable={interactable}, busy={busy}, screenReady={screenReady}, mounting={mounting}");
             return;
         }
 
-        if (DateTime.UtcNow < nextTeleportAttempt)
+        if (!EzThrottler.Throttle(TeleportThrottleName, 2000))
             return;
-        nextTeleportAttempt = DateTime.UtcNow.AddSeconds(2);
 
         // Don't treat a "true" return as confirmation: the in-game Teleport action has a
         // cast time and can be silently interrupted, and Teleporter/Lifestream's IPC only
@@ -272,30 +252,30 @@ public sealed class Plugin : IDalamudPlugin
         {
             if (teleportIpc.InvokeFunc(aetheryte.RowId, 0))
             {
-                Log.Information($"Teleported to aetheryte {aetheryte.RowId} via Teleporter plugin");
+                Svc.Log.Information($"Teleported to aetheryte {aetheryte.RowId} via Teleporter plugin");
                 return true;
             }
 
-            Log.Information($"Teleporter plugin declined to teleport to aetheryte {aetheryte.RowId} (returned false)");
+            Svc.Log.Information($"Teleporter plugin declined to teleport to aetheryte {aetheryte.RowId} (returned false)");
         }
         catch (Exception ex)
         {
-            Log.Warning($"Failed to invoke Teleporter IPC. Is the Teleporter plugin installed? {ex.Message}");
+            Svc.Log.Warning($"Failed to invoke Teleporter IPC. Is the Teleporter plugin installed? {ex.Message}");
         }
 
         try
         {
             if (lifestreamTeleportIpc.InvokeFunc(aetheryte.RowId, 0))
             {
-                Log.Information($"Teleported to aetheryte {aetheryte.RowId} via Lifestream plugin");
+                Svc.Log.Information($"Teleported to aetheryte {aetheryte.RowId} via Lifestream plugin");
                 return true;
             }
 
-            Log.Information($"Lifestream plugin declined to teleport to aetheryte {aetheryte.RowId} (returned false)");
+            Svc.Log.Information($"Lifestream plugin declined to teleport to aetheryte {aetheryte.RowId} (returned false)");
         }
         catch (Exception ex)
         {
-            Log.Warning($"Failed to invoke Lifestream teleport IPC. Is the Lifestream plugin installed? {ex.Message}");
+            Svc.Log.Warning($"Failed to invoke Lifestream teleport IPC. Is the Lifestream plugin installed? {ex.Message}");
         }
 
         return false;
@@ -303,9 +283,9 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        ChatGui.CheckMessageHandled -= OnChatMessage;
-        ChatGui.RemoveChatLinkHandler();
-        Framework.Update -= OnFrameworkUpdate;
+        Svc.Chat.CheckMessageHandled -= OnChatMessage;
+        Svc.Chat.RemoveChatLinkHandler();
+        Svc.Framework.Update -= OnFrameworkUpdate;
 
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigWindow;
@@ -313,6 +293,8 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.RemoveAllWindows();
         configWindow.Dispose();
 
-        CommandManager.RemoveHandler(CommandName);
+        Svc.Commands.RemoveHandler(CommandName);
+
+        ECommonsMain.Dispose();
     }
 }

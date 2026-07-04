@@ -1,6 +1,7 @@
 using System;
 using System.Text.RegularExpressions;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using ECommons.DalamudServices;
 using Lumina.Excel.Sheets;
 
 namespace SamplePlugin;
@@ -11,7 +12,7 @@ internal static class MapManager
     // (e.g. "in DIABOLOS", "Diabolos", "diabolos" should all match the "Diabolos" world).
     internal static World? ParseWorldFromText(string text)
     {
-        foreach (var world in Plugin.DataManager.GetExcelSheet<World>())
+        foreach (var world in Svc.Data.GetExcelSheet<World>())
         {
             if (!world.IsPublic)
                 continue;
@@ -32,7 +33,7 @@ internal static class MapManager
         var territoryId = mapLink.TerritoryType.RowId;
 
         Map? map = null;
-        foreach (var m in Plugin.DataManager.GetExcelSheet<Map>())
+        foreach (var m in Svc.Data.GetExcelSheet<Map>())
         {
             if (m.TerritoryType.RowId == territoryId)
             {
@@ -44,12 +45,12 @@ internal static class MapManager
             return null;
 
         var scale = map.Value.SizeFactor;
-        var markerSheet = Plugin.DataManager.GetSubrowExcelSheet<MapMarker>();
+        var markerSheet = Svc.Data.GetSubrowExcelSheet<MapMarker>();
 
         Aetheryte? nearest = null;
         var nearestDistanceSq = double.MaxValue;
 
-        foreach (var aetheryte in Plugin.DataManager.GetExcelSheet<Aetheryte>())
+        foreach (var aetheryte in Svc.Data.GetExcelSheet<Aetheryte>())
         {
             if (!aetheryte.IsAetheryte || aetheryte.Territory.RowId != territoryId)
                 continue;
