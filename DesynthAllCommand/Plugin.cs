@@ -26,12 +26,16 @@ public sealed class Plugin : IDalamudPlugin
     private const int SelectFirstItemEventCode = 12;
     private const int ConfirmDialogEventCode = 0;
 
-    private readonly TaskManager taskManager = new(new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = true });
+    private readonly TaskManager taskManager;
     private bool yesAlreadyLocked;
 
     public Plugin()
     {
         ECommonsMain.Init(PluginInterface, this);
+
+        // TaskManager's constructor hooks Svc.Framework.Update, so it must be created
+        // after ECommonsMain.Init - a field initializer would run too early and throw.
+        taskManager = new TaskManager(new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = true });
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
