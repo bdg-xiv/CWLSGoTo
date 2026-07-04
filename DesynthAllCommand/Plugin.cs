@@ -43,13 +43,25 @@ public sealed class Plugin : IDalamudPlugin
         });
     }
 
-    private void OnCommand(string command, string args)
+    private unsafe void OnCommand(string command, string args)
     {
         taskManager.Abort();
-        OpenDesynthesisWindow();
+
+        // AgentInterface.Show() toggles: calling it while the window is open closes it,
+        // so only open the window when it isn't there yet.
+        if (!TryGetAddonByName<AtkUnitBase>("SalvageItemSelector", out _))
+        {
+            Svc.Log.Information("Opening the desynthesis window");
+            OpenDesynthesisWindow();
+        }
+
         LockYesAlready();
 
         taskManager.Enqueue(WaitForWindow, "WaitForWindow", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = true });
+        // The item list populates asynchronously after the window opens, so give it a
+        // grace period before concluding there is nothing to desynthesize. If the list
+        // is genuinely empty this times out and falls through to DesynthLoop's 0 branch.
+        taskManager.Enqueue(WaitForItems, "WaitForItems", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.Enqueue(DesynthLoop, "DesynthLoop");
     }
 
@@ -65,19 +77,30 @@ public sealed class Plugin : IDalamudPlugin
         ((AgentInterface*)agent)->Show();
     }
 
-    private static unsafe bool? WaitForWindow() => TryGetAddonByName<AddonSalvageItemSelector>("SalvageItemSelector", out _);
+    private static unsafe bool? WaitForWindow()
+        => TryGetAddonByName<AddonSalvageItemSelector>("SalvageItemSelector", out var addon) && IsAddonReady(&addon->AtkUnitBase);
+
+    private static unsafe bool? WaitForItems()
+        => TryGetAddonByName<AddonSalvageItemSelector>("SalvageItemSelector", out var addon) && addon->ItemCount > 0;
 
     private unsafe bool? DesynthLoop()
     {
         if (!TryGetAddonByName<AddonSalvageItemSelector>("SalvageItemSelector", out var addon))
-            return null; // Window closed unexpectedly, abort the queue.
+        {
+            Svc.Log.Warning("Desynthesis window closed, stopping.");
+            UnlockYesAlready();
+            return null; // Aborts the rest of the queue.
+        }
 
         if (addon->ItemCount == 0)
         {
+            Svc.Log.Information("No items left to desynthesize, done.");
+            Svc.Chat.Print("[DesynthAll] Done.");
             UnlockYesAlready();
             return true;
         }
 
+        Svc.Log.Information($"Desynthesizing next item ({addon->ItemCount} in list)");
         taskManager.Enqueue(DesynthFirst, "DesynthFirst");
         taskManager.Enqueue(ConfirmDesynth, "ConfirmDesynth", new TaskManagerConfiguration { TimeLimitMS = 2000, AbortOnTimeout = false });
         taskManager.Enqueue(CloseResults, "CloseResults", new TaskManagerConfiguration { TimeLimitMS = 9000, AbortOnTimeout = false });
