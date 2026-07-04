@@ -1,4 +1,4 @@
-name: PR Builder for CWLSGoTo
+name: PR Builder for Plugins
 
 on:
   pull_request:
@@ -26,11 +26,19 @@ jobs:
     - name: Build with dotnet
       run: dotnet build --configuration Release
 
-    - name: Store artifacts
+    - name: Store CWLSGoTo artifacts
       uses: actions/upload-artifact@v4
       with:
         name: CWLSGoTo
         path: .\SamplePlugin\bin\x64\Release\CWLSGoTo\*
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Store DesynthAllCommand artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: DesynthAllCommand
+        path: .\DesynthAllCommand\bin\x64\Release\DesynthAllCommand\*
         if-no-files-found: error
         retention-days: 1
 

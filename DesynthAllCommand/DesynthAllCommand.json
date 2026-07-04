@@ -1,0 +1,12 @@
+{
+  "Author": "bdg",
+  "Name": "Desynth All Command",
+  "Punchline": "Opens the desynthesis window and arms PandorasBox's Desynth All.",
+  "Description": "Adds a /desynthall command that opens the game's desynthesis (materia extraction) window and enables PandorasBox's \"Desynth All\" feature so its button is ready to use. Requires the PandorasBox plugin to be installed.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "desynthesis",
+    "pandorasbox",
+    "command"
+  ]
+}

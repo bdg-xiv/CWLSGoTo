@@ -1,4 +1,4 @@
-name: Build and Release CWLSGoTo
+name: Build and Release Plugins
 
 on:
   push:
@@ -34,17 +34,34 @@ jobs:
     - name: Build with dotnet
       run: dotnet build --configuration Release
 
-    - name: Generate pluginmaster.json
+    - name: Stage release assets and generate pluginmaster.json
       shell: pwsh
       run: |
-        $manifest = Get-Content "SamplePlugin/bin/x64/Release/CWLSGoTo/CWLSGoTo.json" | ConvertFrom-Json
         $repoUrl = "https://github.com/${{ github.repository }}"
-        $downloadUrl = "$repoUrl/releases/download/latest/latest.zip"
-        $manifest | Add-Member -NotePropertyName RepoUrl -NotePropertyValue $repoUrl -Force
-        $manifest | Add-Member -NotePropertyName DownloadLinkInstall -NotePropertyValue $downloadUrl -Force
-        $manifest | Add-Member -NotePropertyName DownloadLinkUpdate -NotePropertyValue $downloadUrl -Force
-        $manifest | Add-Member -NotePropertyName DownloadLinkTesting -NotePropertyValue $downloadUrl -Force
-        ConvertTo-Json @($manifest) -Depth 5 | Set-Content pluginmaster.json
+        New-Item -ItemType Directory -Force -Path staging | Out-Null
+
+        # Project folder name -> built InternalName (output subfolder under bin/x64/Release)
+        $plugins = @(
+          @{ Project = "SamplePlugin"; InternalName = "CWLSGoTo" },
+          @{ Project = "DesynthAllCommand"; InternalName = "DesynthAllCommand" }
+        )
+
+        $manifests = @()
+        foreach ($plugin in $plugins) {
+          $outDir = "$($plugin.Project)/bin/x64/Release/$($plugin.InternalName)"
+          $zipName = "$($plugin.InternalName).zip"
+          Copy-Item "$outDir/latest.zip" "staging/$zipName"
+
+          $manifest = Get-Content "$outDir/$($plugin.InternalName).json" | ConvertFrom-Json
+          $downloadUrl = "$repoUrl/releases/download/latest/$zipName"
+          $manifest | Add-Member -NotePropertyName RepoUrl -NotePropertyValue $repoUrl -Force
+          $manifest | Add-Member -NotePropertyName DownloadLinkInstall -NotePropertyValue $downloadUrl -Force
+          $manifest | Add-Member -NotePropertyName DownloadLinkUpdate -NotePropertyValue $downloadUrl -Force
+          $manifest | Add-Member -NotePropertyName DownloadLinkTesting -NotePropertyValue $downloadUrl -Force
+          $manifests += $manifest
+        }
+
+        ConvertTo-Json @($manifests) -Depth 5 | Set-Content pluginmaster.json
 
     - name: Create/update release
       uses: softprops/action-gh-release@v2
@@ -53,7 +70,7 @@ jobs:
         name: Latest build
         body: Automatically published by GitHub Actions from the latest commit on master.
         make_latest: true
-        files: SamplePlugin/bin/x64/Release/CWLSGoTo/latest.zip
+        files: staging/*.zip
 
     - name: Commit pluginmaster.json
       shell: pwsh

@@ -5,6 +5,8 @@ VisualStudioVersion = 18.7.11925.98 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CWLSGoTo", "SamplePlugin\CWLSGoTo.csproj", "{13C812E9-0D42-4B95-8646-40EEBF30636F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesynthAllCommand", "DesynthAllCommand\DesynthAllCommand.csproj", "{17F5EFF9-65BB-4693-A835-E551F415CC41}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -15,6 +17,10 @@ Global
 		{13C812E9-0D42-4B95-8646-40EEBF30636F}.Debug|x64.Build.0 = Debug|x64
 		{13C812E9-0D42-4B95-8646-40EEBF30636F}.Release|x64.ActiveCfg = Release|x64
 		{13C812E9-0D42-4B95-8646-40EEBF30636F}.Release|x64.Build.0 = Release|x64
+		{17F5EFF9-65BB-4693-A835-E551F415CC41}.Debug|x64.ActiveCfg = Debug|x64
+		{17F5EFF9-65BB-4693-A835-E551F415CC41}.Debug|x64.Build.0 = Debug|x64
+		{17F5EFF9-65BB-4693-A835-E551F415CC41}.Release|x64.ActiveCfg = Release|x64
+		{17F5EFF9-65BB-4693-A835-E551F415CC41}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
