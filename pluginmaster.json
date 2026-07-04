@@ -20,8 +20,32 @@
     "Punchline": "Adds a working [Go To] link to CWLS map-link messages.",
     "AcceptsFeedback": true,
     "RepoUrl": "https://github.com/bdgarcia/CWLSGoTo",
-    "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/latest.zip",
-    "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/latest.zip"
+    "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/CWLSGoTo.zip",
+    "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/CWLSGoTo.zip",
+    "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/CWLSGoTo.zip"
+  },
+  {
+    "Author": "bdg",
+    "Name": "Desynth All Command",
+    "InternalName": "DesynthAllCommand",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Adds a /desynthall command that opens the game's desynthesis (materia extraction) window and enables PandorasBox's \"Desynth All\" feature so its button is ready to use. Requires the PandorasBox plugin to be installed.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "desynthesis",
+      "pandorasbox",
+      "command"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Opens the desynthesis window and arms PandorasBox's Desynth All.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdgarcia/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/DesynthAllCommand.zip",
+    "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/DesynthAllCommand.zip",
+    "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/DesynthAllCommand.zip"
   }
 ]
