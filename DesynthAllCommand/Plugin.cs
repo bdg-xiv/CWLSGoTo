@@ -97,6 +97,7 @@ public sealed class Plugin : IDalamudPlugin
             Svc.Log.Information("No items left to desynthesize, done.");
             Svc.Chat.Print("[DesynthAll] Done.");
             UnlockYesAlready();
+            addon->AtkUnitBase.Close(true);
             return true;
         }
 
