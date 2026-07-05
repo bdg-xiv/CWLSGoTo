@@ -28,7 +28,7 @@
     "Author": "bdg",
     "Name": "Desynth All Command",
     "InternalName": "DesynthAllCommand",
-    "AssemblyVersion": "0.0.0.4",
+    "AssemblyVersion": "0.0.0.5",
     "Description": "Adds a /desynthall command that opens the game's desynthesis (materia extraction) window and automatically desynthesizes every item in the list, confirming each dialog and closing each result, using the same technique as PandorasBox's Desynth All feature. Self-contained - PandorasBox is not required. Temporarily pauses Yes Already's own dialog handling if it's installed, to avoid it racing with the confirmation step.",
     "ApplicableVersion": "any",
     "Tags": [
