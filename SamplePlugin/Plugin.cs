@@ -30,6 +30,7 @@ public sealed class Plugin : IDalamudPlugin
     private const ushort GoToLinkColor = 45;
     private const string CommandName = "/cwlsgoto";
     private const string TeleportThrottleName = "CWLSGoToTeleport";
+    private const string BusyCheckThrottleName = "CWLSGoToLifestreamBusyCheck";
 
     public Configuration Configuration { get; }
 
@@ -194,22 +195,44 @@ public sealed class Plugin : IDalamudPlugin
 
         var pending = pendingWorldTeleport.Value;
 
-        if (DateTime.UtcNow > pending.Deadline)
-        {
-            Svc.Log.Warning($"Timed out waiting to teleport to aetheryte {pending.Aetheryte.RowId} after a world hop.");
-            pendingWorldTeleport = null;
-            Svc.Framework.Update -= OnFrameworkUpdate;
-            return;
-        }
-
         var loggingNow = DateTime.UtcNow >= nextWaitDiagnosticLog;
         if (loggingNow)
             nextWaitDiagnosticLog = DateTime.UtcNow.AddSeconds(3);
 
         if (!Player.Available || Svc.PlayerState.CurrentWorld.RowId != pending.WorldId)
         {
+            // World transfers routinely take well over 30 seconds (queueing, loading
+            // screens, cross-DC transfers), so a fixed deadline from the moment of the
+            // click is wrong. Keep pushing the deadline out for as long as the hop is
+            // still visibly in progress; the deadline only counts down once nothing is
+            // happening anymore.
+            var hopInProgress = !IsScreenReady()
+                || Svc.Condition[ConditionFlag.BetweenAreas]
+                || Svc.Condition[ConditionFlag.BetweenAreas51]
+                || (EzThrottler.Throttle(BusyCheckThrottleName, 1000) && LifestreamIsBusy());
+            if (hopInProgress)
+            {
+                pendingWorldTeleport = (pending.Aetheryte, pending.WorldId, DateTime.UtcNow.AddSeconds(30));
+            }
+            else if (DateTime.UtcNow > pending.Deadline)
+            {
+                Svc.Log.Warning($"Gave up waiting for the world hop to land: still on world {Svc.PlayerState.CurrentWorld.RowId} (target {pending.WorldId}) and Lifestream reports no transfer in progress.");
+                pendingWorldTeleport = null;
+                Svc.Framework.Update -= OnFrameworkUpdate;
+                return;
+            }
+
             if (loggingNow)
-                Svc.Log.Information($"Waiting for world hop to land: playerAvailable={Player.Available}, currentWorld={Svc.PlayerState.CurrentWorld.RowId}, targetWorld={pending.WorldId}");
+                Svc.Log.Information($"Waiting for world hop to land: playerAvailable={Player.Available}, currentWorld={Svc.PlayerState.CurrentWorld.RowId}, targetWorld={pending.WorldId}, hopInProgress={hopInProgress}");
+            return;
+        }
+
+        // On the target world now; the remaining deadline covers the local teleport phase.
+        if (DateTime.UtcNow > pending.Deadline)
+        {
+            Svc.Log.Warning($"Timed out waiting to teleport to aetheryte {pending.Aetheryte.RowId} after a world hop.");
+            pendingWorldTeleport = null;
+            Svc.Framework.Update -= OnFrameworkUpdate;
             return;
         }
 
@@ -244,6 +267,18 @@ public sealed class Plugin : IDalamudPlugin
         // reports whether the request was accepted, not whether the character actually
         // arrived. Keep retrying (throttled) until we observe the territory actually change.
         TryTeleportToAetheryte(pending.Aetheryte);
+    }
+
+    private bool LifestreamIsBusy()
+    {
+        try
+        {
+            return lifestreamIsBusyIpc.InvokeFunc();
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private bool TryTeleportToAetheryte(Aetheryte aetheryte)
