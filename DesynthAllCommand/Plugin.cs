@@ -6,6 +6,7 @@ using ECommons;
 using ECommons.Automation;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
+using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
@@ -102,7 +103,10 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         Svc.Log.Information($"Desynthesizing next item ({addon->ItemCount} in list)");
-        taskManager.Enqueue(DesynthFirst, "DesynthFirst");
+        // DesynthFirst can end up waiting a while for the lingering occupied state from
+        // the previous item to clear, so give it a long leash and never kill the whole
+        // run over it - the outer loop keeps retrying regardless.
+        taskManager.Enqueue(DesynthFirst, "DesynthFirst", new TaskManagerConfiguration { TimeLimitMS = 60000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.Enqueue(ConfirmDesynth, "ConfirmDesynth", new TaskManagerConfiguration { TimeLimitMS = 2000, AbortOnTimeout = false });
         taskManager.Enqueue(CloseResults, "CloseResults", new TaskManagerConfiguration { TimeLimitMS = 9000, AbortOnTimeout = false });
         taskManager.EnqueueDelay(500);
@@ -112,8 +116,16 @@ public sealed class Plugin : IDalamudPlugin
 
     private static unsafe bool? DesynthFirst()
     {
-        if (Svc.Condition[ConditionFlag.Occupied])
+        // The game rejects the request with "Unable to execute command while occupied"
+        // if it's fired while any occupied-type condition is still set - Occupied39 in
+        // particular lingers briefly after the previous item's result window closes.
+        // IsOccupied() covers the full set of those flags; keep retrying until clear.
+        if (IsOccupied())
+        {
+            if (EzThrottler.Throttle("DesynthAllOccupiedLog", 1000))
+                Svc.Log.Information("Waiting for the occupied state to clear before desynthesizing the next item");
             return false;
+        }
 
         if (!TryGetAddonByName<AtkUnitBase>("SalvageItemSelector", out var addon))
             return null;
