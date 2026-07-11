@@ -1,0 +1,13 @@
+{
+  "Author": "bdg",
+  "Name": "Logout On Tell",
+  "Punchline": "Automatically logs you out when you receive a tell.",
+  "Description": "When enabled, automatically logs your character out (with confirmation dialog handled) as soon as you receive a tell (private message) from anyone. Toggle it with /logoutontell (or /logoutontell on|off|status). Starts disabled after install; the setting persists between sessions.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "logout",
+    "tell",
+    "afk",
+    "automation"
+  ]
+}

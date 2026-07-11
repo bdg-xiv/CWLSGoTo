@@ -43,7 +43,8 @@ jobs:
         # Project folder name -> built InternalName (output subfolder under bin/x64/Release)
         $plugins = @(
           @{ Project = "SamplePlugin"; InternalName = "CWLSGoTo" },
-          @{ Project = "DesynthAllCommand"; InternalName = "DesynthAllCommand" }
+          @{ Project = "DesynthAllCommand"; InternalName = "DesynthAllCommand" },
+          @{ Project = "LogoutOnTell"; InternalName = "LogoutOnTell" }
         )
 
         $manifests = @()

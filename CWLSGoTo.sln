@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CWLSGoTo", "SamplePlugin\CW
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesynthAllCommand", "DesynthAllCommand\DesynthAllCommand.csproj", "{17F5EFF9-65BB-4693-A835-E551F415CC41}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LogoutOnTell", "LogoutOnTell\LogoutOnTell.csproj", "{F3DABDF7-57DD-4ACE-9CFF-45CCF4B7144C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,10 @@ Global
 		{17F5EFF9-65BB-4693-A835-E551F415CC41}.Debug|x64.Build.0 = Debug|x64
 		{17F5EFF9-65BB-4693-A835-E551F415CC41}.Release|x64.ActiveCfg = Release|x64
 		{17F5EFF9-65BB-4693-A835-E551F415CC41}.Release|x64.Build.0 = Release|x64
+		{F3DABDF7-57DD-4ACE-9CFF-45CCF4B7144C}.Debug|x64.ActiveCfg = Debug|x64
+		{F3DABDF7-57DD-4ACE-9CFF-45CCF4B7144C}.Debug|x64.Build.0 = Debug|x64
+		{F3DABDF7-57DD-4ACE-9CFF-45CCF4B7144C}.Release|x64.ActiveCfg = Release|x64
+		{F3DABDF7-57DD-4ACE-9CFF-45CCF4B7144C}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
