@@ -22,7 +22,10 @@ public sealed class Plugin : IDalamudPlugin
 
     private const string CommandName = "/logoutontell";
 
-    public Configuration Configuration { get; }
+    // Deliberately not persisted: the plugin is armed per session only, and logging in
+    // always starts disarmed - otherwise it would still be armed right after it logged
+    // you out and you came back.
+    private bool enabled;
 
     private readonly TaskManager taskManager;
 
@@ -30,18 +33,26 @@ public sealed class Plugin : IDalamudPlugin
     {
         ECommonsMain.Init(PluginInterface, this);
 
-        Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-
         // TaskManager's constructor hooks Svc.Framework.Update, so it must be created
         // after ECommonsMain.Init - a field initializer would run too early and throw.
         taskManager = new TaskManager(new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = true });
 
         Svc.Chat.ChatMessage += OnChatMessage;
+        Svc.ClientState.Login += OnLogin;
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggles automatic logout when receiving a tell. Also accepts: on, off, status."
+            HelpMessage = "Toggles automatic logout when receiving a tell (resets to off every login). Also accepts: on, off, status."
         });
+    }
+
+    private void OnLogin()
+    {
+        if (!enabled)
+            return;
+
+        enabled = false;
+        Svc.Log.Information("Disarmed on login");
     }
 
     private void OnCommand(string command, string args)
@@ -49,29 +60,28 @@ public sealed class Plugin : IDalamudPlugin
         switch (args.Trim().ToLowerInvariant())
         {
             case "on":
-                Configuration.Enabled = true;
+                enabled = true;
                 break;
             case "off":
-                Configuration.Enabled = false;
+                enabled = false;
                 break;
             case "status":
                 PrintStatus();
                 return;
             default:
-                Configuration.Enabled = !Configuration.Enabled;
+                enabled = !enabled;
                 break;
         }
 
-        Configuration.Save();
         PrintStatus();
     }
 
     private void PrintStatus()
-        => Svc.Chat.Print($"[LogoutOnTell] {(Configuration.Enabled ? "Enabled - you will be logged out when a tell arrives." : "Disabled.")}");
+        => Svc.Chat.Print($"[LogoutOnTell] {(enabled ? "Enabled - you will be logged out when a tell arrives. Resets to off on next login." : "Disabled.")}");
 
     private void OnChatMessage(IHandleableChatMessage message)
     {
-        if (!Configuration.Enabled)
+        if (!enabled)
             return;
 
         if (message.LogKind != XivChatType.TellIncoming)
@@ -114,6 +124,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         Svc.Chat.ChatMessage -= OnChatMessage;
+        Svc.ClientState.Login -= OnLogin;
         Svc.Commands.RemoveHandler(CommandName);
         taskManager.Abort();
         taskManager.Dispose();
