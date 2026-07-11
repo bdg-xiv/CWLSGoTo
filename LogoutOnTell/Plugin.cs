@@ -77,6 +77,11 @@ public sealed class Plugin : IDalamudPlugin
         if (message.LogKind != XivChatType.TellIncoming)
             return;
 
+        // Skip tells another plugin already suppressed (e.g. spam filters blocking RMT
+        // tells mark them handled) - the player never saw those, so don't log out.
+        if (message.IsHandled)
+            return;
+
         if (taskManager.IsBusy)
             return; // A logout is already underway.
 
