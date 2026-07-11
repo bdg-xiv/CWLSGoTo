@@ -47,5 +47,30 @@
     "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/DesynthAllCommand.zip",
     "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/DesynthAllCommand.zip",
     "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/DesynthAllCommand.zip"
+  },
+  {
+    "Author": "bdg",
+    "Name": "Logout On Tell",
+    "InternalName": "LogoutOnTell",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "When enabled, automatically logs your character out (with confirmation dialog handled) as soon as you receive a tell (private message) from anyone. Toggle it with /logoutontell (or /logoutontell on|off|status). Starts disabled after install; the setting persists between sessions.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "logout",
+      "tell",
+      "afk",
+      "automation"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Automatically logs you out when you receive a tell.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdgarcia/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/LogoutOnTell.zip",
+    "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/LogoutOnTell.zip",
+    "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/LogoutOnTell.zip"
   }
 ]
