@@ -52,8 +52,8 @@
     "Author": "bdg",
     "Name": "Logout On Tell",
     "InternalName": "LogoutOnTell",
-    "AssemblyVersion": "0.0.0.2",
-    "Description": "When enabled, automatically logs your character out (with confirmation dialog handled) as soon as you receive a tell (private message) from anyone. Toggle it with /logoutontell (or /logoutontell on|off|status). Starts disabled after install; the setting persists between sessions.",
+    "AssemblyVersion": "0.0.0.3",
+    "Description": "When enabled, automatically logs your character out (with confirmation dialog handled) as soon as you receive a tell (private message) from anyone. Toggle it with /logoutontell (or /logoutontell on|off|status). Always starts disabled: the switch resets every time you log in, so you arm it deliberately each session.",
     "ApplicableVersion": "any",
     "Tags": [
       "logout",
