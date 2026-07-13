@@ -1,4 +1,5 @@
 using Dalamud.Configuration;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 
@@ -22,6 +23,9 @@ public class Configuration : IPluginConfiguration
     // Case-insensitive fragments matched against installed plugins' Name and
     // InternalName. Most sync plugins are Mare Synchronos forks, and several keep
     // "MareSynchronos" as their internal name, so that fragment is included too.
+    // Replace on deserialize: without it Newtonsoft appends the saved terms to the
+    // defaults below, duplicating the list on every load.
+    [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
     public List<string> WatchTerms { get; set; } =
     [
         "lightless",
@@ -40,6 +44,11 @@ public class Configuration : IPluginConfiguration
     // Whether the current hide was triggered by auto mode (only auto-hides are
     // auto-restored; a manual hide stays until manually restored).
     public bool WasAutoHidden { get; set; }
+
+    // Sync plugins that were unloaded by the restore action, so the next hide can
+    // re-enable them.
+    [JsonProperty(ObjectCreationHandling = ObjectCreationHandling.Replace)]
+    public List<string> UnloadedSyncPlugins { get; set; } = [];
 
     public void Save()
     {

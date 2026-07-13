@@ -60,6 +60,8 @@ public class MainWindow : Window, IDisposable
         {
             if (ImGui.Button("Hide my mods now"))
                 plugin.HideMods(auto: false);
+            if (config.UnloadedSyncPlugins.Count > 0)
+                ImGui.TextWrapped($"Hiding will re-enable: {string.Join(", ", config.UnloadedSyncPlugins)}.");
         }
 
         ImGui.Separator();

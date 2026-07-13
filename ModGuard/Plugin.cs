@@ -65,6 +65,14 @@ public sealed class Plugin : IDalamudPlugin
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
+        // Heal configs saved before the deserialization fix that duplicated the list.
+        var deduped = Configuration.WatchTerms.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (deduped.Count != Configuration.WatchTerms.Count)
+        {
+            Configuration.WatchTerms = deduped;
+            Configuration.Save();
+        }
+
         penumbraApiVersion = new PenumbraApiVersion(PluginInterface);
         createTempCollection = new CreateTemporaryCollection(PluginInterface);
         assignTempCollection = new AssignTemporaryCollection(PluginInterface);
@@ -236,6 +244,18 @@ public sealed class Plugin : IDalamudPlugin
 
         TryRedrawSelf();
         Svc.Chat.Print($"[ModGuard] Hidden: {string.Join(" + ", hiddenParts)}.");
+
+        // With the mods safely hidden, bring back any sync plugins the restore
+        // action disabled earlier.
+        if (Configuration.UnloadedSyncPlugins.Count > 0)
+        {
+            Svc.Chat.Print($"[ModGuard] Re-enabling: {string.Join(", ", Configuration.UnloadedSyncPlugins)}.");
+            foreach (var internalName in Configuration.UnloadedSyncPlugins.ToList())
+                TryLoadPlugin(internalName);
+
+            Configuration.UnloadedSyncPlugins.Clear();
+            Configuration.Save();
+        }
     }
 
     private bool HidePenumbra()
@@ -323,7 +343,12 @@ public sealed class Plugin : IDalamudPlugin
             var names = string.Join(", ", detectedSyncPlugins.Select(p => p.Name));
             Svc.Chat.Print($"[ModGuard] Disabling {names} before restoring...");
             foreach (var (_, internalName) in detectedSyncPlugins.ToList())
-                TryUnloadPlugin(internalName);
+            {
+                // Remember what we unloaded so the next hide can re-enable it.
+                if (TryUnloadPlugin(internalName) && !Configuration.UnloadedSyncPlugins.Contains(internalName))
+                    Configuration.UnloadedSyncPlugins.Add(internalName);
+            }
+            Configuration.Save();
 
             PendingRestore = true;
             pendingRestoreDeadline = DateTime.UtcNow.AddSeconds(20);
@@ -333,42 +358,90 @@ public sealed class Plugin : IDalamudPlugin
         DoRestore();
     }
 
-    private void TryUnloadPlugin(string internalName)
+    private bool TryUnloadPlugin(string internalName)
     {
         try
         {
-            var pluginManager = ECommons.Reflection.DalamudReflector.GetPluginManager();
-            var installed = (System.Collections.IEnumerable)pluginManager.GetType()
-                .GetProperty("InstalledPlugins")!.GetValue(pluginManager)!;
-
-            foreach (var localPlugin in installed)
+            var localPlugin = FindLocalPlugin(internalName, mustBeLoaded: true);
+            if (localPlugin == null)
             {
-                var type = localPlugin.GetType();
-                if ((string?)type.GetProperty("InternalName")?.GetValue(localPlugin) != internalName)
-                    continue;
-                if (type.GetProperty("IsLoaded")?.GetValue(localPlugin) is not true)
-                    continue;
-
-                var unload = type.GetMethods().First(m => m.Name == "UnloadAsync");
-                var args = unload.GetParameters().Select(p =>
-                {
-                    var value = p.HasDefaultValue ? p.DefaultValue : null;
-                    if (value != null && p.ParameterType.IsEnum && value.GetType() != p.ParameterType)
-                        value = Enum.ToObject(p.ParameterType, value);
-                    return value;
-                }).ToArray();
-
-                Svc.Log.Information($"Unloading sync plugin {internalName}");
-                unload.Invoke(localPlugin, args);
-                return;
+                Svc.Log.Warning($"Could not find a loaded plugin named {internalName} to unload");
+                return false;
             }
 
-            Svc.Log.Warning($"Could not find a loaded plugin named {internalName} to unload");
+            Svc.Log.Information($"Unloading sync plugin {internalName}");
+            InvokeWithDefaults(localPlugin, "UnloadAsync");
+            return true;
         }
         catch (Exception ex)
         {
             Svc.Log.Warning($"Failed to unload {internalName}: {ex.Message}");
+            return false;
         }
+    }
+
+    private void TryLoadPlugin(string internalName)
+    {
+        try
+        {
+            var localPlugin = FindLocalPlugin(internalName, mustBeLoaded: false);
+            if (localPlugin == null)
+            {
+                Svc.Log.Warning($"Could not find a plugin named {internalName} to re-enable");
+                return;
+            }
+
+            if (localPlugin.GetType().GetProperty("IsLoaded")?.GetValue(localPlugin) is true)
+            {
+                Svc.Log.Information($"{internalName} is already loaded again");
+                return;
+            }
+
+            Svc.Log.Information($"Re-enabling sync plugin {internalName}");
+            InvokeWithDefaults(localPlugin, "LoadAsync");
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Failed to re-enable {internalName}: {ex.Message}");
+        }
+    }
+
+    private static object? FindLocalPlugin(string internalName, bool mustBeLoaded)
+    {
+        var pluginManager = ECommons.Reflection.DalamudReflector.GetPluginManager();
+        var installed = (System.Collections.IEnumerable)pluginManager.GetType()
+            .GetProperty("InstalledPlugins")!.GetValue(pluginManager)!;
+
+        foreach (var localPlugin in installed)
+        {
+            var type = localPlugin.GetType();
+            if ((string?)type.GetProperty("InternalName")?.GetValue(localPlugin) != internalName)
+                continue;
+            if (mustBeLoaded && type.GetProperty("IsLoaded")?.GetValue(localPlugin) is not true)
+                continue;
+
+            return localPlugin;
+        }
+
+        return null;
+    }
+
+    private static void InvokeWithDefaults(object localPlugin, string methodName)
+    {
+        var method = localPlugin.GetType().GetMethods().First(m => m.Name == methodName);
+        var args = method.GetParameters().Select(p =>
+        {
+            // LoadAsync's required reason parameter; everything else has defaults.
+            if (p.ParameterType == typeof(PluginLoadReason))
+                return (object?)PluginLoadReason.Installer;
+
+            var value = p.HasDefaultValue ? p.DefaultValue : null;
+            if (value != null && p.ParameterType.IsEnum && value.GetType() != p.ParameterType)
+                value = Enum.ToObject(p.ParameterType, value);
+            return value;
+        }).ToArray();
+
+        method.Invoke(localPlugin, args);
     }
 
     private void DoRestore()
