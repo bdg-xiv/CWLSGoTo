@@ -72,5 +72,31 @@
     "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/LogoutOnTell.zip",
     "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/LogoutOnTell.zip",
     "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/LogoutOnTell.zip"
+  },
+  {
+    "Author": "bdg",
+    "Name": "Mod Guard",
+    "InternalName": "ModGuard",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Keeps your Penumbra mods private: when a mod-sync plugin (Lightless, Snowcloak, Sphene, PlayerSync, or any Mare Synchronos fork - the watch list is editable) is loaded, Mod Guard hides all your Penumbra mods by force-assigning an empty temporary collection to your character, so sync plugins have nothing to share. Once the sync plugins are gone (or on demand), it restores your previous Penumbra setup exactly as it was - your real collection and mod settings are never touched. Use /modguard to open the control window. Requires Penumbra.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "penumbra",
+      "privacy",
+      "mare",
+      "sync",
+      "mods"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Hides all your Penumbra mods while mod-sync plugins are active.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdgarcia/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/ModGuard.zip",
+    "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/ModGuard.zip",
+    "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/ModGuard.zip"
   }
 ]
