@@ -50,3 +50,11 @@ jobs:
         if-no-files-found: error
         retention-days: 1
 
+    - name: Store ModGuard artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ModGuard
+        path: .\ModGuard\bin\x64\Release\ModGuard\*
+        if-no-files-found: error
+        retention-days: 1
+

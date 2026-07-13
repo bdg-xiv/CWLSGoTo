@@ -44,7 +44,8 @@ jobs:
         $plugins = @(
           @{ Project = "SamplePlugin"; InternalName = "CWLSGoTo" },
           @{ Project = "DesynthAllCommand"; InternalName = "DesynthAllCommand" },
-          @{ Project = "LogoutOnTell"; InternalName = "LogoutOnTell" }
+          @{ Project = "LogoutOnTell"; InternalName = "LogoutOnTell" },
+          @{ Project = "ModGuard"; InternalName = "ModGuard" }
         )
 
         $manifests = @()

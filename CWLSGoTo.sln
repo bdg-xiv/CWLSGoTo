@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesynthAllCommand", "Desynt
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LogoutOnTell", "LogoutOnTell\LogoutOnTell.csproj", "{F3DABDF7-57DD-4ACE-9CFF-45CCF4B7144C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModGuard", "ModGuard\ModGuard.csproj", "{3F7599E0-3B7A-4A99-B81A-6DD897FAAD01}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -27,6 +29,10 @@ Global
 		{F3DABDF7-57DD-4ACE-9CFF-45CCF4B7144C}.Debug|x64.Build.0 = Debug|x64
 		{F3DABDF7-57DD-4ACE-9CFF-45CCF4B7144C}.Release|x64.ActiveCfg = Release|x64
 		{F3DABDF7-57DD-4ACE-9CFF-45CCF4B7144C}.Release|x64.Build.0 = Release|x64
+		{3F7599E0-3B7A-4A99-B81A-6DD897FAAD01}.Debug|x64.ActiveCfg = Debug|x64
+		{3F7599E0-3B7A-4A99-B81A-6DD897FAAD01}.Debug|x64.Build.0 = Debug|x64
+		{3F7599E0-3B7A-4A99-B81A-6DD897FAAD01}.Release|x64.ActiveCfg = Release|x64
+		{3F7599E0-3B7A-4A99-B81A-6DD897FAAD01}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,0 +1,14 @@
+{
+  "Author": "bdg",
+  "Name": "Mod Guard",
+  "Punchline": "Hides all your Penumbra mods while mod-sync plugins are active.",
+  "Description": "Keeps your Penumbra mods private: when a mod-sync plugin (Lightless, Snowcloak, Sphene, PlayerSync, or any Mare Synchronos fork - the watch list is editable) is loaded, Mod Guard hides all your Penumbra mods by force-assigning an empty temporary collection to your character, so sync plugins have nothing to share. Once the sync plugins are gone (or on demand), it restores your previous Penumbra setup exactly as it was - your real collection and mod settings are never touched. Use /modguard to open the control window. Requires Penumbra.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "penumbra",
+    "privacy",
+    "mare",
+    "sync",
+    "mods"
+  ]
+}
