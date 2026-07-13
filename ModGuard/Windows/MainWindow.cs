@@ -29,11 +29,21 @@ public class MainWindow : Window, IDisposable
 
         if (!plugin.PenumbraAvailable)
             ImGui.TextColored(Red, "Penumbra is not available!");
+        if (config.IncludeGlamourer && !plugin.GlamourerAvailable)
+            ImGui.TextColored(Red, "Glamourer is not available!");
 
         if (plugin.ModsHidden)
-            ImGui.TextColored(Orange, "Your Penumbra mods are currently HIDDEN.");
+        {
+            ImGui.TextColored(Orange, "Your mods are currently HIDDEN:");
+            if (config.ActiveTempCollection != null)
+                ImGui.TextColored(Orange, "  - Penumbra mods");
+            if (config.SavedGlamourerState != null)
+                ImGui.TextColored(Orange, "  - Glamourer state");
+        }
         else
-            ImGui.TextColored(Green, "Your Penumbra mods are visible (normal).");
+        {
+            ImGui.TextColored(Green, "Your mods are visible (normal).");
+        }
 
         if (plugin.ModsHidden)
         {
@@ -52,6 +62,13 @@ public class MainWindow : Window, IDisposable
         if (ImGui.Checkbox("Automatically hide mods while a sync plugin is loaded", ref auto))
         {
             config.AutoMode = auto;
+            config.Save();
+        }
+
+        var includeGlamourer = config.IncludeGlamourer;
+        if (ImGui.Checkbox("Also hide Glamourer state (glamours/customizations)", ref includeGlamourer))
+        {
+            config.IncludeGlamourer = includeGlamourer;
             config.Save();
         }
         ImGui.TextWrapped("Mods are restored automatically once no watched sync plugin is loaded anymore (only if they were hidden automatically - a manual hide stays until you restore it).");

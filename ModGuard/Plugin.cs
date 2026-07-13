@@ -6,12 +6,16 @@ using ECommons;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.Throttlers;
+using Glamourer.Api.Enums;
+using Glamourer.Api.IpcSubscribers;
 using ModGuard.Windows;
 using Penumbra.Api.Enums;
 using Penumbra.Api.IpcSubscribers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using GlamourerApiVersion = Glamourer.Api.IpcSubscribers.ApiVersion;
+using PenumbraApiVersion = Penumbra.Api.IpcSubscribers.ApiVersion;
 
 namespace ModGuard;
 
@@ -22,10 +26,14 @@ public sealed class Plugin : IDalamudPlugin
 
     private const string CommandName = "/modguard";
     private const int LocalPlayerActorIndex = 0;
+    // "MODG" - lock key used when reverting Glamourer state so automation or other
+    // plugins can't reapply designs while hidden.
+    private const uint GlamourerLockKey = 0x4D4F4447;
 
     public Configuration Configuration { get; }
     public bool PenumbraAvailable { get; private set; }
-    public bool ModsHidden => Configuration.ActiveTempCollection != null;
+    public bool GlamourerAvailable { get; private set; }
+    public bool ModsHidden => Configuration.ActiveTempCollection != null || Configuration.SavedGlamourerState != null;
 
     private readonly List<string> detectedSyncPlugins = [];
     public IReadOnlyList<string> DetectedSyncPlugins => detectedSyncPlugins;
@@ -33,11 +41,17 @@ public sealed class Plugin : IDalamudPlugin
     public readonly WindowSystem WindowSystem = new("ModGuard");
     private readonly MainWindow mainWindow;
 
-    private readonly ApiVersion penumbraApiVersion;
+    private readonly PenumbraApiVersion penumbraApiVersion;
     private readonly CreateTemporaryCollection createTempCollection;
     private readonly AssignTemporaryCollection assignTempCollection;
     private readonly DeleteTemporaryCollection deleteTempCollection;
     private readonly RedrawObject redrawObject;
+
+    private readonly GlamourerApiVersion glamourerApiVersion;
+    private readonly GetStateBase64 glamourerGetState;
+    private readonly ApplyState glamourerApplyState;
+    private readonly RevertState glamourerRevertState;
+    private readonly UnlockState glamourerUnlockState;
 
     private bool validatedPersistedState;
 
@@ -47,11 +61,17 @@ public sealed class Plugin : IDalamudPlugin
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        penumbraApiVersion = new ApiVersion(PluginInterface);
+        penumbraApiVersion = new PenumbraApiVersion(PluginInterface);
         createTempCollection = new CreateTemporaryCollection(PluginInterface);
         assignTempCollection = new AssignTemporaryCollection(PluginInterface);
         deleteTempCollection = new DeleteTemporaryCollection(PluginInterface);
         redrawObject = new RedrawObject(PluginInterface);
+
+        glamourerApiVersion = new GlamourerApiVersion(PluginInterface);
+        glamourerGetState = new GetStateBase64(PluginInterface);
+        glamourerApplyState = new ApplyState(PluginInterface);
+        glamourerRevertState = new RevertState(PluginInterface);
+        glamourerUnlockState = new UnlockState(PluginInterface);
 
         mainWindow = new MainWindow(this);
         WindowSystem.AddWindow(mainWindow);
@@ -64,7 +84,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Opens the Mod Guard window (hide/restore Penumbra mods around sync plugins)."
+            HelpMessage = "Opens the Mod Guard window (hide/restore Penumbra mods and Glamourer state around sync plugins)."
         });
     }
 
@@ -77,7 +97,12 @@ public sealed class Plugin : IDalamudPlugin
         if (!EzThrottler.Throttle("ModGuardPoll", 2000))
             return;
 
-        PenumbraAvailable = CheckPenumbraAvailable();
+        PenumbraAvailable = CheckAvailable(() => penumbraApiVersion.Invoke().Breaking == 5);
+        GlamourerAvailable = CheckAvailable(() =>
+        {
+            glamourerApiVersion.Invoke();
+            return true;
+        });
         UpdateDetectedSyncPlugins();
 
         if (!PenumbraAvailable)
@@ -97,21 +122,21 @@ public sealed class Plugin : IDalamudPlugin
 
         if (detectedSyncPlugins.Count > 0 && !ModsHidden)
         {
-            Svc.Log.Information($"Sync plugin detected ({string.Join(", ", detectedSyncPlugins)}), hiding Penumbra mods");
+            Svc.Log.Information($"Sync plugin detected ({string.Join(", ", detectedSyncPlugins)}), hiding mods");
             HideMods(auto: true);
         }
         else if (detectedSyncPlugins.Count == 0 && ModsHidden && Configuration.WasAutoHidden)
         {
-            Svc.Log.Information("No sync plugins loaded anymore, restoring Penumbra mods");
+            Svc.Log.Information("No sync plugins loaded anymore, restoring mods");
             RestoreMods();
         }
     }
 
-    private bool CheckPenumbraAvailable()
+    private static bool CheckAvailable(Func<bool> check)
     {
         try
         {
-            return penumbraApiVersion.Invoke().Breaking == 5;
+            return check();
         }
         catch
         {
@@ -149,8 +174,11 @@ public sealed class Plugin : IDalamudPlugin
             var ec = assignTempCollection.Invoke(guid, LocalPlayerActorIndex, forceAssignment: true);
             if (ec is PenumbraApiEc.CollectionMissing)
             {
-                Svc.Log.Information("Previously persisted hidden state is stale (Penumbra restarted), clearing it");
+                Svc.Log.Information("Previously persisted hidden state is stale (game restarted), clearing it");
                 Configuration.ActiveTempCollection = null;
+                // Logging back in re-applied Glamourer automation already; reapplying a
+                // stale captured state later could overwrite newer changes.
+                Configuration.SavedGlamourerState = null;
                 Configuration.Save();
             }
             else
@@ -169,10 +197,33 @@ public sealed class Plugin : IDalamudPlugin
         if (ModsHidden)
             return;
 
+        var hiddenParts = new List<string>();
+
+        if (HidePenumbra())
+            hiddenParts.Add("Penumbra mods");
+
+        if (Configuration.IncludeGlamourer && HideGlamourer())
+            hiddenParts.Add("Glamourer state");
+
+        if (hiddenParts.Count == 0)
+        {
+            Svc.Chat.PrintError("[ModGuard] Nothing could be hidden - is Penumbra loaded and are you logged in?");
+            return;
+        }
+
+        Configuration.WasAutoHidden = auto;
+        Configuration.Save();
+
+        TryRedrawSelf();
+        Svc.Chat.Print($"[ModGuard] Hidden: {string.Join(" + ", hiddenParts)}.");
+    }
+
+    private bool HidePenumbra()
+    {
         if (!PenumbraAvailable)
         {
-            Svc.Chat.PrintError("[ModGuard] Penumbra is not available, cannot hide mods.");
-            return;
+            Svc.Log.Warning("Penumbra is not available, cannot hide mods");
+            return false;
         }
 
         try
@@ -180,36 +231,105 @@ public sealed class Plugin : IDalamudPlugin
             var ec = createTempCollection.Invoke("ModGuard", "ModGuard Hidden Mods", out var guid);
             if (ec != PenumbraApiEc.Success)
             {
-                Svc.Chat.PrintError($"[ModGuard] Failed to create the hiding collection ({ec}).");
-                return;
+                Svc.Log.Warning($"Failed to create the hiding collection ({ec})");
+                return false;
             }
 
             var assignEc = assignTempCollection.Invoke(guid, LocalPlayerActorIndex, forceAssignment: true);
             if (assignEc != PenumbraApiEc.Success)
             {
-                Svc.Chat.PrintError($"[ModGuard] Failed to assign the hiding collection ({assignEc}). Are you logged in?");
+                Svc.Log.Warning($"Failed to assign the hiding collection ({assignEc})");
                 deleteTempCollection.Invoke(guid);
-                return;
+                return false;
             }
 
             Configuration.ActiveTempCollection = guid;
-            Configuration.WasAutoHidden = auto;
-            Configuration.Save();
-
-            redrawObject.Invoke(LocalPlayerActorIndex);
-            Svc.Chat.Print("[ModGuard] Penumbra mods hidden.");
+            return true;
         }
         catch (Exception ex)
         {
             Svc.Log.Warning($"Failed to hide mods via Penumbra IPC: {ex.Message}");
-            Svc.Chat.PrintError("[ModGuard] Failed to hide mods, see /xllog.");
+            return false;
+        }
+    }
+
+    private bool HideGlamourer()
+    {
+        if (!GlamourerAvailable)
+        {
+            Svc.Log.Warning("Glamourer is not available, skipping its state");
+            return false;
+        }
+
+        try
+        {
+            var (getEc, state) = glamourerGetState.Invoke(LocalPlayerActorIndex);
+            if (getEc != GlamourerApiEc.Success || state == null)
+            {
+                Svc.Log.Warning($"Could not capture the current Glamourer state ({getEc}), skipping it");
+                return false;
+            }
+
+            // Revert to plain game state and lock it with our key so automation or
+            // other plugins can't reapply designs while hidden.
+            var revertEc = glamourerRevertState.Invoke(LocalPlayerActorIndex, GlamourerLockKey,
+                ApplyFlag.Equipment | ApplyFlag.Customization | ApplyFlag.Lock);
+            if (revertEc is not GlamourerApiEc.Success and not GlamourerApiEc.NothingDone)
+            {
+                Svc.Log.Warning($"Could not revert the Glamourer state ({revertEc})");
+                return false;
+            }
+
+            Configuration.SavedGlamourerState = state;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Failed to hide Glamourer state via IPC: {ex.Message}");
+            return false;
         }
     }
 
     public void RestoreMods()
     {
-        if (Configuration.ActiveTempCollection is not { } guid)
+        if (!ModsHidden)
             return;
+
+        var restoredParts = new List<string>();
+        var failed = false;
+
+        if (Configuration.ActiveTempCollection != null)
+        {
+            if (RestorePenumbra())
+                restoredParts.Add("Penumbra mods");
+            else
+                failed = true;
+        }
+
+        if (Configuration.SavedGlamourerState != null)
+        {
+            if (RestoreGlamourer())
+                restoredParts.Add("Glamourer state");
+            else
+                failed = true;
+        }
+
+        Configuration.Save();
+
+        if (restoredParts.Count > 0)
+        {
+            TryRedrawSelf();
+            Svc.Chat.Print($"[ModGuard] Restored: {string.Join(" + ", restoredParts)}.");
+        }
+
+        if (failed)
+            Svc.Chat.PrintError("[ModGuard] Some parts could not be restored, see /xllog.");
+    }
+
+    private bool RestorePenumbra()
+    {
+        if (Configuration.ActiveTempCollection is not { } guid)
+            return false;
 
         try
         {
@@ -218,28 +338,64 @@ public sealed class Plugin : IDalamudPlugin
             var ec = deleteTempCollection.Invoke(guid);
             if (ec is not PenumbraApiEc.Success and not PenumbraApiEc.CollectionMissing)
             {
-                Svc.Chat.PrintError($"[ModGuard] Failed to remove the hiding collection ({ec}).");
-                return;
+                Svc.Log.Warning($"Failed to remove the hiding collection ({ec})");
+                return false;
             }
 
             Configuration.ActiveTempCollection = null;
-            Configuration.Save();
-
-            redrawObject.Invoke(LocalPlayerActorIndex);
-            Svc.Chat.Print("[ModGuard] Penumbra mods restored.");
+            return true;
         }
         catch (Exception ex)
         {
             Svc.Log.Warning($"Failed to restore mods via Penumbra IPC: {ex.Message}");
-            Svc.Chat.PrintError("[ModGuard] Failed to restore mods, see /xllog.");
+            return false;
+        }
+    }
+
+    private bool RestoreGlamourer()
+    {
+        if (Configuration.SavedGlamourerState is not { } state)
+            return false;
+
+        try
+        {
+            var applyEc = glamourerApplyState.Invoke(state, LocalPlayerActorIndex, GlamourerLockKey,
+                ApplyFlag.Equipment | ApplyFlag.Customization);
+            if (applyEc is not GlamourerApiEc.Success and not GlamourerApiEc.NothingDone)
+            {
+                Svc.Log.Warning($"Could not reapply the saved Glamourer state ({applyEc})");
+                return false;
+            }
+
+            glamourerUnlockState.Invoke(LocalPlayerActorIndex, GlamourerLockKey);
+            Configuration.SavedGlamourerState = null;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Failed to restore Glamourer state via IPC: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void TryRedrawSelf()
+    {
+        try
+        {
+            if (PenumbraAvailable)
+                redrawObject.Invoke(LocalPlayerActorIndex);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Failed to redraw: {ex.Message}");
         }
     }
 
     public void Dispose()
     {
         // Deliberately do NOT restore on unload: failing closed keeps mods private.
-        // The persisted guid lets a reloaded Mod Guard restore later, and a game
-        // restart clears temporary collections anyway.
+        // The persisted state lets a reloaded Mod Guard restore later, and a game
+        // restart clears temporary collections and Glamourer locks anyway.
         Svc.Framework.Update -= OnFrameworkUpdate;
 
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;

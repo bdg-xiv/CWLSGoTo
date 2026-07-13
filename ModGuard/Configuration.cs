@@ -11,6 +11,14 @@ public class Configuration : IPluginConfiguration
 
     public bool AutoMode { get; set; } = true;
 
+    // Also revert the character's Glamourer state while hiding, since sync plugins
+    // share glamours/customizations too, not just Penumbra mods.
+    public bool IncludeGlamourer { get; set; } = true;
+
+    // The character's Glamourer state captured right before reverting it, so it can
+    // be reapplied exactly on restore. Only set while hidden.
+    public string? SavedGlamourerState { get; set; }
+
     // Case-insensitive fragments matched against installed plugins' Name and
     // InternalName. Most sync plugins are Mare Synchronos forks, and several keep
     // "MareSynchronos" as their internal name, so that fragment is included too.
