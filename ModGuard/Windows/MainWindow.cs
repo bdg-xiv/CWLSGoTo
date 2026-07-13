@@ -45,10 +45,16 @@ public class MainWindow : Window, IDisposable
             ImGui.TextColored(Green, "Your mods are visible (normal).");
         }
 
-        if (plugin.ModsHidden)
+        if (plugin.PendingRestore)
+        {
+            ImGui.TextColored(Orange, "Waiting for sync plugins to unload before restoring...");
+        }
+        else if (plugin.ModsHidden)
         {
             if (ImGui.Button("Restore my mods now"))
                 plugin.RestoreMods();
+            if (plugin.DetectedSyncPlugins.Count > 0)
+                ImGui.TextWrapped("Restoring will first unload the sync plugins listed below.");
         }
         else
         {
@@ -82,7 +88,7 @@ public class MainWindow : Window, IDisposable
         }
         else
         {
-            foreach (var name in plugin.DetectedSyncPlugins)
+            foreach (var (name, _) in plugin.DetectedSyncPlugins)
                 ImGui.TextColored(Orange, $"  {name}");
         }
 

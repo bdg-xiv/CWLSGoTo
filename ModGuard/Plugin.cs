@@ -35,8 +35,12 @@ public sealed class Plugin : IDalamudPlugin
     public bool GlamourerAvailable { get; private set; }
     public bool ModsHidden => Configuration.ActiveTempCollection != null || Configuration.SavedGlamourerState != null;
 
-    private readonly List<string> detectedSyncPlugins = [];
-    public IReadOnlyList<string> DetectedSyncPlugins => detectedSyncPlugins;
+    private readonly List<(string Name, string InternalName)> detectedSyncPlugins = [];
+    public IReadOnlyList<(string Name, string InternalName)> DetectedSyncPlugins => detectedSyncPlugins;
+
+    // Set while waiting for unloaded sync plugins to actually disappear before restoring.
+    public bool PendingRestore { get; private set; }
+    private DateTime pendingRestoreDeadline = DateTime.MinValue;
 
     public readonly WindowSystem WindowSystem = new("ModGuard");
     private readonly MainWindow mainWindow;
@@ -117,12 +121,28 @@ public sealed class Plugin : IDalamudPlugin
             ValidatePersistedHiddenState();
         }
 
+        // A restore is queued behind sync plugins unloading; fire it once they're gone.
+        if (PendingRestore)
+        {
+            if (detectedSyncPlugins.Count == 0)
+            {
+                PendingRestore = false;
+                DoRestore();
+            }
+            else if (DateTime.UtcNow > pendingRestoreDeadline)
+            {
+                PendingRestore = false;
+                Svc.Chat.PrintError("[ModGuard] Sync plugins are still loaded, keeping mods hidden.");
+            }
+            return;
+        }
+
         if (!Configuration.AutoMode || !Player.Available)
             return;
 
         if (detectedSyncPlugins.Count > 0 && !ModsHidden)
         {
-            Svc.Log.Information($"Sync plugin detected ({string.Join(", ", detectedSyncPlugins)}), hiding mods");
+            Svc.Log.Information($"Sync plugin detected ({string.Join(", ", detectedSyncPlugins.Select(p => p.Name))}), hiding mods");
             HideMods(auto: true);
         }
         else if (detectedSyncPlugins.Count == 0 && ModsHidden && Configuration.WasAutoHidden)
@@ -156,8 +176,8 @@ public sealed class Plugin : IDalamudPlugin
                     plugin.InternalName.Contains(t, StringComparison.OrdinalIgnoreCase) ||
                     plugin.Name.Contains(t, StringComparison.OrdinalIgnoreCase)))
             {
-                if (!detectedSyncPlugins.Contains(plugin.Name))
-                    detectedSyncPlugins.Add(plugin.Name);
+                if (!detectedSyncPlugins.Any(p => p.InternalName == plugin.InternalName))
+                    detectedSyncPlugins.Add((plugin.Name, plugin.InternalName));
             }
         }
     }
@@ -292,9 +312,67 @@ public sealed class Plugin : IDalamudPlugin
 
     public void RestoreMods()
     {
-        if (!ModsHidden)
+        if (!ModsHidden || PendingRestore)
             return;
 
+        // Restoring while a sync plugin is still running would share the mods the
+        // moment they come back (and auto mode would immediately re-hide them), so
+        // unload the sync plugins first and restore once they are actually gone.
+        if (detectedSyncPlugins.Count > 0)
+        {
+            var names = string.Join(", ", detectedSyncPlugins.Select(p => p.Name));
+            Svc.Chat.Print($"[ModGuard] Disabling {names} before restoring...");
+            foreach (var (_, internalName) in detectedSyncPlugins.ToList())
+                TryUnloadPlugin(internalName);
+
+            PendingRestore = true;
+            pendingRestoreDeadline = DateTime.UtcNow.AddSeconds(20);
+            return;
+        }
+
+        DoRestore();
+    }
+
+    private void TryUnloadPlugin(string internalName)
+    {
+        try
+        {
+            var pluginManager = ECommons.Reflection.DalamudReflector.GetPluginManager();
+            var installed = (System.Collections.IEnumerable)pluginManager.GetType()
+                .GetProperty("InstalledPlugins")!.GetValue(pluginManager)!;
+
+            foreach (var localPlugin in installed)
+            {
+                var type = localPlugin.GetType();
+                if ((string?)type.GetProperty("InternalName")?.GetValue(localPlugin) != internalName)
+                    continue;
+                if (type.GetProperty("IsLoaded")?.GetValue(localPlugin) is not true)
+                    continue;
+
+                var unload = type.GetMethods().First(m => m.Name == "UnloadAsync");
+                var args = unload.GetParameters().Select(p =>
+                {
+                    var value = p.HasDefaultValue ? p.DefaultValue : null;
+                    if (value != null && p.ParameterType.IsEnum && value.GetType() != p.ParameterType)
+                        value = Enum.ToObject(p.ParameterType, value);
+                    return value;
+                }).ToArray();
+
+                Svc.Log.Information($"Unloading sync plugin {internalName}");
+                unload.Invoke(localPlugin, args);
+                return;
+            }
+
+            Svc.Log.Warning($"Could not find a loaded plugin named {internalName} to unload");
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Failed to unload {internalName}: {ex.Message}");
+        }
+    }
+
+    private void DoRestore()
+    {
         var restoredParts = new List<string>();
         var failed = false;
 
