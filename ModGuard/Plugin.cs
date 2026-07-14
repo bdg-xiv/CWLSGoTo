@@ -25,6 +25,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
     private const string CommandName = "/modguard";
+    private const string ToggleCommandName = "/mg";
     private const int LocalPlayerActorIndex = 0;
     // "MODG" - lock key used when reverting Glamourer state so automation or other
     // plugins can't reapply designs while hidden.
@@ -98,9 +99,29 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Opens the Mod Guard window (hide/restore Penumbra mods and Glamourer state around sync plugins)."
         });
+
+        Svc.Commands.AddHandler(ToggleCommandName, new CommandInfo(OnToggleCommand)
+        {
+            HelpMessage = "Toggles Mod Guard: hides your mods if visible, restores them if hidden."
+        });
     }
 
     private void OnCommand(string command, string args) => ToggleMainWindow();
+
+    // Behaves exactly like pressing the currently shown button in the window.
+    private void OnToggleCommand(string command, string args)
+    {
+        if (PendingRestore)
+        {
+            Svc.Chat.Print("[ModGuard] Still waiting for sync plugins to unload...");
+            return;
+        }
+
+        if (ModsHidden)
+            RestoreMods();
+        else
+            HideMods(auto: false);
+    }
 
     private void ToggleMainWindow() => mainWindow.Toggle();
 
@@ -556,6 +577,7 @@ public sealed class Plugin : IDalamudPlugin
         mainWindow.Dispose();
 
         Svc.Commands.RemoveHandler(CommandName);
+        Svc.Commands.RemoveHandler(ToggleCommandName);
 
         ECommonsMain.Dispose();
     }
