@@ -40,8 +40,10 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
 
                 // patched from upstream: the no-fates grace timer only runs while the
                 // zone is actually dry; any other state resets it.
-                if (state != GrindState.WaitingForFates)
+                if (state != GrindState.WaitingForFates) {
                     _noFatesSince = null;
+                    _consecutiveDrySwaps = 0;
+                }
 
                 HandleIntegrations();
 
@@ -90,6 +92,7 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
     private long FollowUpWatchUntilMs { get; set; }
     private uint? WaitForExpiryFateId { get; set; } // id for when we leave a collect fate. Stay in zone until fate is null
     private DateTime? _noFatesSince; // patched: when the current zone first reported no fates
+    private int _consecutiveDrySwaps; // patched: zone swaps in a row without finding any fate
 
     public IOrderedEnumerable<PublicEvent> AvailableFates => FateToolKit.ApplySortOrder(PublicEvent.Fates.Where(tweak.FateConditions), tweak.Config.SortOrder);
     private bool HasTwistOfFate => Player.Status.HasTwistOfFate();
@@ -530,7 +533,16 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
             await Mount();
             await TeleportTo(destination, Vector3.Zero);
             await tweak.GetCurrentMode().OnSwapZone(fromTerritoryId, destination, CancelToken);
-            _noFatesSince = null; // patched: the new zone gets its own 30s grace period
+
+            // patched: don't restart the 30s grace in every dry zone - hop through the
+            // rotation checking for fates immediately, and only pause for another 30s
+            // once every zone has been checked without finding anything.
+            _consecutiveDrySwaps++;
+            var rotationSize = tweak.GetEffectiveSwapZones()?.Count ?? 3;
+            if (_consecutiveDrySwaps >= rotationSize) {
+                _consecutiveDrySwaps = 0;
+                _noFatesSince = DateTime.UtcNow;
+            }
         }
         else {
             using var scope = BeginScope("WaitForFates");
