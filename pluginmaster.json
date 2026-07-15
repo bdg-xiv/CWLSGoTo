@@ -128,7 +128,7 @@
     "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
-    "AssemblyVersion": "69.193.0.5",
+    "AssemblyVersion": "69.193.0.6",
     "Description": "Tweaks that are sometimes simple, sometimes not.",
     "ApplicableVersion": "any",
     "Tags": [
