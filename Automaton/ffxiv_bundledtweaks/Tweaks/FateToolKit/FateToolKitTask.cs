@@ -38,6 +38,11 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
                 var state = State;
                 tweak.CurrentState = state.ToString();
 
+                // patched from upstream: the no-fates grace timer only runs while the
+                // zone is actually dry; any other state resets it.
+                if (state != GrindState.WaitingForFates)
+                    _noFatesSince = null;
+
                 HandleIntegrations();
 
                 switch (state) {
@@ -84,6 +89,7 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
     private uint? FollowUpFateId { get; set; } // id to store to check if NextFate is a follow up to this
     private long FollowUpWatchUntilMs { get; set; }
     private uint? WaitForExpiryFateId { get; set; } // id for when we leave a collect fate. Stay in zone until fate is null
+    private DateTime? _noFatesSince; // patched: when the current zone first reported no fates
 
     public IOrderedEnumerable<PublicEvent> AvailableFates => FateToolKit.ApplySortOrder(PublicEvent.Fates.Where(tweak.FateConditions), tweak.Config.SortOrder);
     private bool HasTwistOfFate => Player.Status.HasTwistOfFate();
@@ -494,6 +500,18 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
             return;
         }
 
+        // patched from upstream: give the current zone 30 seconds to spawn a new fate
+        // before swapping to another zone.
+        _noFatesSince ??= DateTime.UtcNow;
+        var waitedForFates = DateTime.UtcNow - _noFatesSince.Value;
+        if (waitedForFates < TimeSpan.FromSeconds(30)) {
+            using var scope = BeginScope("WaitForFates");
+            Status = $"Waiting for fates to spawn ({30 - (int)waitedForFates.TotalSeconds}s until zone swap)";
+            await Mount();
+            await NextFrame(60);
+            return;
+        }
+
         var hasEffectiveZones = tweak.GetEffectiveSwapZones() is { Count: > 0 } || tweak.HasSelectedSwapZones;
         // patched from upstream: swap zones even while Twist of Fate is up - when the
         // current zone has no fates left, move on to another allowed zone instead of
@@ -512,6 +530,7 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
             await Mount();
             await TeleportTo(destination, Vector3.Zero);
             await tweak.GetCurrentMode().OnSwapZone(fromTerritoryId, destination, CancelToken);
+            _noFatesSince = null; // patched: the new zone gets its own 30s grace period
         }
         else {
             using var scope = BeginScope("WaitForFates");
