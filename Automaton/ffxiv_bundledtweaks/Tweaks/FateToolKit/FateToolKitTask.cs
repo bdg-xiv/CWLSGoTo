@@ -636,11 +636,16 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
             ? agent->Tabs[currentTabIndex].Zones.ToArray()
             : agent->Tabs.ToArray().SelectMany(tab => tab.Zones.ToArray());
 
-        return zones.FirstOrNull(zone => zone.NeededFates - zone.FateProgress > 0)?.TerritoryTypeId;
+        // patched from upstream: the fallback pickers must also respect the Dawntrail
+        // restriction to the last three zones, otherwise a null preferred zone could
+        // still teleport into Urqopacha/Kozama'uka/Yak T'el.
+        return zones.FirstOrNull(zone => zone.NeededFates - zone.FateProgress > 0 && !FateToolKit.DawntrailExcludedZones.Contains(zone.TerritoryTypeId))?.TerritoryTypeId;
     }
 
     private uint GetRandomSameExpacZone() {
-        var rows = TerritoryType.Where(x => x.IsInUse && x.TerritoryIntendedUse.Value.StructsEnum is TerritoryIntendedUse.Overworld && x.ExVersion.RowId == Player.Territory.Value.ExVersion.RowId && !x.IsPvpZone);
+        var rows = TerritoryType.Where(x => x.IsInUse && x.TerritoryIntendedUse.Value.StructsEnum is TerritoryIntendedUse.Overworld && x.ExVersion.RowId == Player.Territory.Value.ExVersion.RowId && !x.IsPvpZone
+            // patched from upstream: see GetNextAchievementZone
+            && !FateToolKit.DawntrailExcludedZones.Contains(x.RowId));
         return rows[new Random().Next(rows.Length)].RowId;
     }
 }

@@ -91,6 +91,7 @@ public class FateToolKit : Tweak<FateToolKitConfig, FateToolKitWindow>, IFateGri
     internal static readonly uint[] DawntrailPriorityZones = [1192, 1191]; // Living Memory, Heritage Found
     internal const uint DawntrailBackupZone = 1190; // Shaaloani
     internal static readonly HashSet<uint> DawntrailGrindZones = [.. DawntrailPriorityZones, DawntrailBackupZone];
+    internal static readonly HashSet<uint> DawntrailExcludedZones = [1187, 1188, 1189]; // Urqopacha, Kozama'uka, Yak T'el
 
     private int _lastSwapCompletedCount = -1;
     private int _unproductiveSwaps;
