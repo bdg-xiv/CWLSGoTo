@@ -509,8 +509,10 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
         var waitedForFates = DateTime.UtcNow - _noFatesSince.Value;
         if (waitedForFates < TimeSpan.FromSeconds(30)) {
             using var scope = BeginScope("WaitForFates");
-            Status = $"Waiting for fates to spawn ({30 - (int)waitedForFates.TotalSeconds}s until zone swap)";
+            // mount first: Mount() sets its own status while actually mounting, so the
+            // countdown must be written afterwards to stay visible during the wait.
             await Mount();
+            Status = $"Waiting for fates to spawn ({30 - (int)waitedForFates.TotalSeconds}s until zone swap)";
             await NextFrame(60);
             return;
         }

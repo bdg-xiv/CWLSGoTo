@@ -307,8 +307,18 @@ public abstract class TaskBase : AutoTask {
         using var scope = BeginScope(nameof(Mount));
         if (!Player.CanMount) return; // early return if not in mounting territories
 
+        // patched from upstream: don't clobber the caller's status when already
+        // mounted, and give up instead of hanging forever when mounting keeps
+        // failing (e.g. a lingering combat flag after a fate).
+        if (Player.Mounted) return;
+
         Status = "Mounting";
+        var deadline = DateTime.UtcNow.AddSeconds(10);
         while (!Player.Mounted) {
+            if (DateTime.UtcNow > deadline) {
+                Warning("Mounting did not complete in time, continuing unmounted");
+                return;
+            }
             if (!Player.IsBusy && !ActionManager.IsActionInUse(ActionType.GeneralAction, 24))
                 ActionManager.UseAction(ActionType.GeneralAction, 24);
             await NextFrame();
