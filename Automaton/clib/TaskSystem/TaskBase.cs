@@ -212,6 +212,7 @@ public abstract class TaskBase : AutoTask {
             (Svc.ClientState.TerritoryType != destinationId || allowSameZoneTeleport)) {
             Status = $"Teleporting to {destinationName}";
 
+            var teleportAttempts = 0;
             while (true) { // infinite loops are my passion
                 // patched from upstream: cancel any active auto-movement before casting.
                 // A running navmesh path (or override movement) cancels the teleport cast
@@ -221,10 +222,25 @@ public abstract class TaskBase : AutoTask {
                 movement.Enabled = false;
                 await WaitWhile(() => Player.IsMoving, "WaitStopMoving");
 
+                // patched from upstream: never stay stuck in the teleporting state. If it
+                // keeps failing (e.g. the game reports another teleport already underway),
+                // give up and let the caller re-evaluate and try again later.
+                if (++teleportAttempts > 6) {
+                    Warning($"Teleport to {destinationName} did not go through after {teleportAttempts - 1} attempts, giving up for now");
+                    return;
+                }
+
                 var sawCast = false;
                 var sawUiFade = false;
-                ErrorIf(!ActionManager.Teleport(teleportAetheryteId), $"Failed to teleport to {teleportAetheryteId}");
+                if (!ActionManager.Teleport(teleportAetheryteId)) {
+                    // patched from upstream: a rejected request ("another teleport is
+                    // already underway") used to hard-error; back off and retry instead.
+                    Warning($"Teleport request to {destinationName} was rejected (attempt {teleportAttempts}), retrying shortly");
+                    await NextFrame(120);
+                    continue;
+                }
 
+                var castDeadline = DateTime.UtcNow.AddSeconds(10);
                 while (true) {
                     var isUiFading = Player.IsUiFading;
                     var isCasting = Player?.IsCasting ?? false;
@@ -243,6 +259,14 @@ public abstract class TaskBase : AutoTask {
                     // id resets after cast but elapsed doesn't until a new cast occurs. I'm assuming that it cannot be 5 and the teleport still gets cancelled
                     if (sawCast && !isCasting && !sawUiFade && ActionManager.GetCastAction() is not { Elapsed: 5 })
                         break;
+
+                    // patched from upstream: if the cast never even starts (the game
+                    // silently swallowed the request because another teleport is still
+                    // pending), stop watching and retry instead of waiting forever.
+                    if (!sawCast && DateTime.UtcNow > castDeadline) {
+                        Warning($"Teleport cast to {destinationName} never started, retrying");
+                        break;
+                    }
 
                     await NextFrame();
                 }
