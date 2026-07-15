@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LogoutOnTell", "LogoutOnTel
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModGuard", "ModGuard\ModGuard.csproj", "{3F7599E0-3B7A-4A99-B81A-6DD897FAAD01}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TypoGuard", "TypoGuard\TypoGuard.csproj", "{6B83E295-1133-4A81-A518-1F1D87A50626}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -33,6 +35,10 @@ Global
 		{3F7599E0-3B7A-4A99-B81A-6DD897FAAD01}.Debug|x64.Build.0 = Debug|x64
 		{3F7599E0-3B7A-4A99-B81A-6DD897FAAD01}.Release|x64.ActiveCfg = Release|x64
 		{3F7599E0-3B7A-4A99-B81A-6DD897FAAD01}.Release|x64.Build.0 = Release|x64
+		{6B83E295-1133-4A81-A518-1F1D87A50626}.Debug|x64.ActiveCfg = Debug|x64
+		{6B83E295-1133-4A81-A518-1F1D87A50626}.Debug|x64.Build.0 = Debug|x64
+		{6B83E295-1133-4A81-A518-1F1D87A50626}.Release|x64.ActiveCfg = Release|x64
+		{6B83E295-1133-4A81-A518-1F1D87A50626}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

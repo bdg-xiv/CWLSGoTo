@@ -58,3 +58,11 @@ jobs:
         if-no-files-found: error
         retention-days: 1
 
+    - name: Store TypoGuard artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: TypoGuard
+        path: .\TypoGuard\bin\x64\Release\TypoGuard\*
+        if-no-files-found: error
+        retention-days: 1
+
