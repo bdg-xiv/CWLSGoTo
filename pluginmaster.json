@@ -123,5 +123,28 @@
     "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/TypoGuard.zip",
     "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/TypoGuard.zip",
     "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/TypoGuard.zip"
+  },
+  {
+    "Author": "croizat",
+    "Name": "CBT",
+    "InternalName": "Automaton",
+    "AssemblyVersion": "69.193.0.1",
+    "Description": "Tweaks that are sometimes simple, sometimes not.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "automation"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "IconUrl": "https://s3.puni.sh/media/plugin/34/icon-z405dwrdjem.png",
+    "Punchline": "Yet another tweaks collection plugin.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdgarcia/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/Automaton.zip",
+    "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/Automaton.zip",
+    "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/Automaton.zip"
   }
 ]
