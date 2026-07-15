@@ -98,5 +98,30 @@
     "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/ModGuard.zip",
     "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/ModGuard.zip",
     "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/ModGuard.zip"
+  },
+  {
+    "Author": "bdg",
+    "Name": "Typo Guard",
+    "InternalName": "TypoGuard",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "On Latin American keyboard layouts, / is Shift+7, so a missed Shift sends \"7artisan\" into chat instead of running /artisan. Typo Guard intercepts outgoing chat and blocks any message that starts with a 7 followed by a letter, printing what it blocked instead of sending it. If you really meant to send such a message, send it again within 5 seconds and it goes through. Toggle with /typoguard (also accepts on/off/status); the setting persists.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "chat",
+      "typo",
+      "keyboard",
+      "commands"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Blocks chat messages that start with 7 - mistyped slash commands.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdgarcia/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/TypoGuard.zip",
+    "DownloadLinkUpdate": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/TypoGuard.zip",
+    "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/TypoGuard.zip"
   }
 ]
