@@ -495,7 +495,10 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
         }
 
         var hasEffectiveZones = tweak.GetEffectiveSwapZones() is { Count: > 0 } || tweak.HasSelectedSwapZones;
-        if (!HasTwistOfFate && (hasEffectiveZones || tweak.Config.SwapZones)) {
+        // patched from upstream: swap zones even while Twist of Fate is up - when the
+        // current zone has no fates left, move on to another allowed zone instead of
+        // waiting in place to preserve the buff.
+        if (hasEffectiveZones || tweak.Config.SwapZones) {
             using var scope = BeginScope("SwapZones");
             var destination = tweak.GetNextPreferredSwapZone(Player.Territory.RowId) ?? GetNextAchievementZone() ?? GetRandomSameExpacZone();
             if (destination == Player.Territory.RowId) {
