@@ -1,0 +1,42 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+    <PropertyGroup>
+		<RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+        <Use_DalamudPackager>false</Use_DalamudPackager>
+		<LangVersion>preview</LangVersion>
+		<PackageId>croizat.$(AssemblyName)</PackageId>
+		<Title>clib</Title>
+    </PropertyGroup>
+
+	<Target Name="CheckDalamudSdkVersion" BeforeTargets="Build">
+		<PropertyGroup>
+			<_Proj>$([System.IO.File]::ReadAllText('$(MSBuildProjectFile)'))</_Proj>
+			<_SdkStart>Sdk="</_SdkStart>
+			<_SdkIdx>$([System.String]::Copy($(_Proj)).IndexOf($(_SdkStart)))</_SdkIdx>
+		</PropertyGroup>
+		<PropertyGroup Condition="$(_SdkIdx) &gt;= 0">
+			<_AfterSdk>$([System.String]::Copy($(_Proj)).Substring($([MSBuild]::Add($(_SdkIdx), $(_SdkStart.Length)))))</_AfterSdk>
+			<_SlashIdx>$([System.String]::Copy($(_AfterSdk)).IndexOf('/'))</_SlashIdx>
+			<_QuoteIdx>$([System.String]::Copy($(_AfterSdk)).IndexOf('"'))</_QuoteIdx>
+			<_SdkName Condition="$(_SlashIdx) &gt; 0 AND $(_SlashIdx) &lt; $(_QuoteIdx)">$([System.String]::Copy($(_AfterSdk)).Substring(0, $(_SlashIdx)))</_SdkName>
+			<_SdkVer Condition="$(_SlashIdx) &gt; 0 AND $(_QuoteIdx) &gt; $(_SlashIdx)">$([System.String]::Copy($(_AfterSdk)).Substring($([MSBuild]::Add($(_SlashIdx), 1)), $([MSBuild]::Subtract($(_QuoteIdx), $([MSBuild]::Add($(_SlashIdx), 1))))))</_SdkVer>
+			<_PropName>PackageVersion_$([System.String]::Copy($(_SdkName)).Replace('.', '_'))</_PropName>
+			<_VerUrl>https://raw.githubusercontent.com/goatcorp/Dalamud.NET.Sdk/master/Dalamud.NET.Sdk/Sdk/SdkPackageVersions.props</_VerUrl>
+			<_VerFile>$(MSBuildProjectDirectory)\obj\latest-sdk-versions.props</_VerFile>
+		</PropertyGroup>
+		<DownloadFile SourceUrl="$(_VerUrl)" DestinationFolder="$(MSBuildProjectDirectory)\obj" DestinationFileName="latest-sdk-versions.props" Condition="!Exists('$(_VerFile)') Or '$([System.IO.File]::GetLastWriteTime($(_VerFile)).ToString(&quot;yyyy-MM-dd&quot;))' != '$([System.DateTime]::Now.ToString(&quot;yyyy-MM-dd&quot;))'" ContinueOnError="true" />
+		<PropertyGroup Condition="Exists('$(_VerFile)')">
+			<_VerContent>$([System.IO.File]::ReadAllText('$(_VerFile)'))</_VerContent>
+			<_TagStart>&lt;$(_PropName)&gt;</_TagStart>
+			<_TagEnd>&lt;/$(_PropName)&gt;</_TagEnd>
+			<_TagStartIdx>$([System.String]::Copy($(_VerContent)).IndexOf($(_TagStart)))</_TagStartIdx>
+			<_TagEndIdx>$([System.String]::Copy($(_VerContent)).IndexOf($(_TagEnd)))</_TagEndIdx>
+			<_LatestVer Condition="$(_TagStartIdx) &gt;= 0 AND $(_TagEndIdx) &gt; $(_TagStartIdx)">$([System.String]::Copy($(_VerContent)).Substring($([MSBuild]::Add($(_TagStartIdx), $(_TagStart.Length))), $([MSBuild]::Subtract($(_TagEndIdx), $([MSBuild]::Add($(_TagStartIdx), $(_TagStart.Length)))))))</_LatestVer>
+		</PropertyGroup>
+		<Warning Condition="'$(_LatestVer)' != '' AND '$(_SdkVer)' != '' AND '$(_LatestVer)' != '$(_SdkVer)'" Text="Outdated $(_SdkName): Current version is $(_SdkVer), latest version is $(_LatestVer)." />
+	</Target>
+
+	<ItemGroup>
+	  <PackageReference Include="AllaganLib.GameSheets" Version="2.2.2" />
+	  <PackageReference Include="LuminaSupplemental.Excel" Version="4.3.3" />
+	</ItemGroup>
+</Project>

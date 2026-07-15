@@ -1,0 +1,18 @@
+framework:
+    - migrate config name to something agnostic
+existing tweaks:
+    - migrate taskmanager stuff to use the async system
+    - write up GTA requirements
+    - relay helper: minion support, prevent double relaying
+new tweaks:
+    - leve turn in helper
+    - Some sort of go to npc command that incorporates itemvendorlocation/lifestream/navmesh
+    - /tplast command to teleport to the last linked loc
+
+date with destiny adjustments
+    - zone whitelist/blacklist
+    - auto zone change
+    - support for the achievements
+    - fate whitelist/blacklist
+
+g2a/achievement tracker: move to their own plugins?

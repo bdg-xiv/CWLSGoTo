@@ -26,6 +26,9 @@ jobs:
     - name: Build with dotnet
       run: dotnet build --configuration Release
 
+    - name: Build Automaton (vendored CBT)
+      run: dotnet build Automaton/ffxiv_bundledtweaks.sln --configuration Release
+
     - name: Store CWLSGoTo artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -63,6 +66,14 @@ jobs:
       with:
         name: TypoGuard
         path: .\TypoGuard\bin\x64\Release\TypoGuard\*
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Store Automaton artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Automaton
+        path: .\Automaton\ffxiv_bundledtweaks\bin\x64\Release\Automaton\*
         if-no-files-found: error
         retention-days: 1
 

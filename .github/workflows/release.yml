@@ -34,6 +34,9 @@ jobs:
     - name: Build with dotnet
       run: dotnet build --configuration Release
 
+    - name: Build Automaton (vendored CBT)
+      run: dotnet build Automaton/ffxiv_bundledtweaks.sln --configuration Release
+
     - name: Stage release assets and generate pluginmaster.json
       shell: pwsh
       run: |
@@ -46,7 +49,8 @@ jobs:
           @{ Project = "DesynthAllCommand"; InternalName = "DesynthAllCommand" },
           @{ Project = "LogoutOnTell"; InternalName = "LogoutOnTell" },
           @{ Project = "ModGuard"; InternalName = "ModGuard" },
-          @{ Project = "TypoGuard"; InternalName = "TypoGuard" }
+          @{ Project = "TypoGuard"; InternalName = "TypoGuard" },
+          @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 
         $manifests = @()

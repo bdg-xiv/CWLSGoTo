@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+    <PropertyGroup>
+        <Version>69.193.0.1</Version>
+        <LangVersion>preview</LangVersion>
+		<GenerateErrorForMissingTargetingPacks>false</GenerateErrorForMissingTargetingPacks>
+		<LocalCS>false</LocalCS>
+
+		<Author>croizat</Author>
+		<Name>CBT</Name>
+		<InternalName>Automaton</InternalName>
+		<Punchline>Yet another tweaks collection plugin.</Punchline>
+		<Description>Tweaks that are sometimes simple, sometimes not.</Description>
+		<IconUrl>https://s3.puni.sh/media/plugin/34/icon-z405dwrdjem.png</IconUrl>
+		<RepoUrl>https://github.com/Jaksuhn/ffxiv-bundleoftweaks</RepoUrl>
+		<Tags>automation</Tags>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))'">
+        <DalamudLibPath>$(DALAMUD_HOME)/</DalamudLibPath>
+    </PropertyGroup>
+
+	<PropertyGroup Condition="'$(LocalCS)'=='true'">
+		<DefineConstants>LOCAL_CS</DefineConstants>
+		<Use_Dalamud_FFXIVClientStructs>false</Use_Dalamud_FFXIVClientStructs>
+	</PropertyGroup>
+	
+	<ItemGroup Condition="'$(LocalCS)'=='true'">
+		<ProjectReference Include="..\..\..\FFXIVClientStructs\FFXIVClientStructs\FFXIVClientStructs.csproj" Private="true" />
+		<ProjectReference Include="..\..\..\FFXIVClientStructs\InteropGenerator.Runtime\InteropGenerator.Runtime.csproj" Private="true" />
+		<ProjectReference Include="..\..\..\FFXIVClientStructs\InteropGenerator\InteropGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+	</ItemGroup>
+	<Target Name="Clean CS" Condition="'$(Configuration)'!='LocalCS' and $([MSBuild]::IsOSPlatform('Windows'))" BeforeTargets="PreBuildEvent">
+		<Exec Command="if exist &quot;$(TargetDir)FFXIVClientStructs.dll&quot; del &quot;$(TargetDir)FFXIVClientStructs.dll&quot;" EchoOff="true" StandardErrorImportance="low" StandardOutputImportance="low" />
+		<Exec Command="if exist &quot;$(TargetDir)InteropGenerator.Runtime.dll&quot; del &quot;$(TargetDir)InteropGenerator.Runtime.dll&quot;" EchoOff="true" StandardErrorImportance="low" StandardOutputImportance="low" />
+	</Target>
+	<Target Name="Ensure CExporter" Condition="'$(Configuration)'=='LocalCS'" BeforeTargets="PreBuildEvent">
+		<Exec Command="dotnet run --no-restore -v q --project ..\FFXIVClientStructs\CExporter\CExporter.csproj --quiet --no-write --strip-color" />
+	</Target>
+
+    <ItemGroup>
+        <PackageReference Include="ECommons" Version="3.2.0.6" />
+        <PackageReference Include="KamiToolKit" Version="1.1.2" />
+        <PackageReference Include="NetStone" Version="1.4.1" />
+        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+        <PackageReference Include="TimeZoneNames" Version="7.0.0" />
+        <PackageReference Include="YamlDotNet" Version="16.3.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\AutoRetainerAPI\AutoRetainerAPI\AutoRetainerAPI.csproj" />
+        <ProjectReference Include="..\clib\clib.csproj" />
+		<ProjectReference Include="..\InteropSourceGenerators\InteropSourceGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+</Project>
