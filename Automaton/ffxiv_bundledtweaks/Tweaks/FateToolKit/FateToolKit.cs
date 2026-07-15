@@ -86,6 +86,15 @@ public class FateToolKit : Tweak<FateToolKitConfig, FateToolKitWindow>, IFateGri
         [FateSortCriteria.Name] = f => f.Name,
     };
 
+    // patched from upstream: Dawntrail fate grinding is restricted to the last three
+    // zones - Living Memory and Heritage Found as priority, Shaaloani as backup.
+    internal static readonly uint[] DawntrailPriorityZones = [1192, 1191]; // Living Memory, Heritage Found
+    internal const uint DawntrailBackupZone = 1190; // Shaaloani
+    internal static readonly HashSet<uint> DawntrailGrindZones = [.. DawntrailPriorityZones, DawntrailBackupZone];
+
+    private int _lastSwapCompletedCount = -1;
+    private int _unproductiveSwaps;
+
     public string CurrentState { get; internal set; } = "Idle";
     public int CompletedCount { get; private set; }
     public int? RunUntilCompleted { get; private set; }
@@ -112,6 +121,8 @@ public class FateToolKit : Tweak<FateToolKitConfig, FateToolKitWindow>, IFateGri
                 PendingStopWhenSafe = false;
                 ZoneItemTargets = [];
                 CompletedCount = 0;
+                _lastSwapCompletedCount = -1;
+                _unproductiveSwaps = 0;
                 RefreshZoneItemTargets();
                 Svc.Automation.Start(new FateGrind(this));
             }
@@ -236,6 +247,26 @@ public class FateToolKit : Tweak<FateToolKitConfig, FateToolKitWindow>, IFateGri
         var pool = GetEffectiveSwapZones();
         if (pool is null || pool.Count == 0)
             return null;
+
+        // patched from upstream: when grinding the restricted Dawntrail trio, rotate
+        // between the two priority zones (Living Memory, Heritage Found) and only fall
+        // back to Shaaloani after both priority zones came up dry in a row (no fate
+        // completed between consecutive zone swaps).
+        if (pool.SetEquals(DawntrailGrindZones)) {
+            var productive = _lastSwapCompletedCount >= 0 && CompletedCount > _lastSwapCompletedCount;
+            if (_lastSwapCompletedCount >= 0 && !productive)
+                _unproductiveSwaps++;
+            else
+                _unproductiveSwaps = 0;
+            _lastSwapCompletedCount = CompletedCount;
+
+            if (_unproductiveSwaps >= 2 && currentTerritoryId != DawntrailBackupZone) {
+                _unproductiveSwaps = 0;
+                return DawntrailBackupZone;
+            }
+
+            return DawntrailPriorityZones.FirstOrDefault(z => z != currentTerritoryId, DawntrailPriorityZones[0]);
+        }
 
         var zones = GetOrderedSwapZones(pool);
 

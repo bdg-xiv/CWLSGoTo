@@ -221,7 +221,12 @@ public sealed class GemstoneGrindMode : IFateGrindMode {
         if (unlocked.Count == 0)
             return new HashSet<uint>();
         var topEx = unlocked.Max(r => r.ExVersion.RowId);
-        return unlocked.Where(r => r.ExVersion.RowId == topEx).Select(r => r.RowId).ToHashSet();
+        var zones = unlocked.Where(r => r.ExVersion.RowId == topEx).Select(r => r.RowId).ToHashSet();
+        // patched from upstream: in Dawntrail, only grind the last three zones
+        // (Shaaloani, Heritage Found, Living Memory) instead of the whole expansion.
+        if (topEx == 5)
+            zones.IntersectWith(FateToolKit.DawntrailGrindZones);
+        return zones;
     }
 
     public bool IsComplete(IFateGrindRunState _) => GetGemstoneRemaining() == 0;

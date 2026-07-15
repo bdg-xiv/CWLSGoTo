@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
     <PropertyGroup>
-        <Version>69.193.0.1</Version>
+        <Version>69.193.0.2</Version>
         <LangVersion>preview</LangVersion>
 		<GenerateErrorForMissingTargetingPacks>false</GenerateErrorForMissingTargetingPacks>
 		<LocalCS>false</LocalCS>
 
-		<Author>croizat</Author>
+		<Author>bdg</Author>
 		<Name>CBT</Name>
 		<InternalName>Automaton</InternalName>
 		<Punchline>Yet another tweaks collection plugin.</Punchline>
