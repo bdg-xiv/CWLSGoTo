@@ -125,10 +125,10 @@
     "DownloadLinkTesting": "https://github.com/bdgarcia/CWLSGoTo/releases/download/latest/TypoGuard.zip"
   },
   {
-    "Author": "croizat",
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
-    "AssemblyVersion": "69.193.0.1",
+    "AssemblyVersion": "69.193.0.2",
     "Description": "Tweaks that are sometimes simple, sometimes not.",
     "ApplicableVersion": "any",
     "Tags": [
