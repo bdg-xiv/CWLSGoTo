@@ -213,6 +213,14 @@ public abstract class TaskBase : AutoTask {
             Status = $"Teleporting to {destinationName}";
 
             while (true) { // infinite loops are my passion
+                // patched from upstream: cancel any active auto-movement before casting.
+                // A running navmesh path (or override movement) cancels the teleport cast
+                // instantly, which made this loop spam teleport attempts until the mover
+                // reached its destination on its own.
+                Svc.Navmesh.Stop();
+                movement.Enabled = false;
+                await WaitWhile(() => Player.IsMoving, "WaitStopMoving");
+
                 var sawCast = false;
                 var sawUiFade = false;
                 ErrorIf(!ActionManager.Teleport(teleportAetheryteId), $"Failed to teleport to {teleportAetheryteId}");
