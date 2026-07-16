@@ -60,6 +60,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private bool validatedPersistedState;
     private DateTime? pendingRedrawAt;
+    private int redrawsRemaining;
 
     public Plugin()
     {
@@ -112,6 +113,14 @@ public sealed class Plugin : IDalamudPlugin
     // Behaves exactly like pressing the currently shown button in the window.
     private void OnToggleCommand(string command, string args)
     {
+        // "/mg redraw" forces a clean redraw - handy if the character is stuck black.
+        if (args.Trim().Equals("redraw", StringComparison.OrdinalIgnoreCase))
+        {
+            RequestRedraw();
+            Svc.Chat.Print("[ModGuard] Redrawing...");
+            return;
+        }
+
         if (PendingRestore)
         {
             Svc.Chat.Print("[ModGuard] Still waiting for sync plugins to unload...");
@@ -128,13 +137,19 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnFrameworkUpdate(Dalamud.Plugin.Services.IFramework framework)
     {
-        // A deferred redraw runs on its own timing, not behind the 2s poll throttle.
+        // Deferred redraws run on their own timing, not behind the 2s poll throttle.
         if (pendingRedrawAt is { } redrawAt)
         {
             if (DateTime.UtcNow >= redrawAt && Player.Available && Player.Interactable)
             {
-                pendingRedrawAt = null;
                 DoRedraw();
+                // A single redraw can land while Penumbra is still recomputing the
+                // collection (black skin); follow up with another after a longer wait
+                // so a fully-settled redraw always applies last.
+                if (--redrawsRemaining > 0)
+                    pendingRedrawAt = DateTime.UtcNow.AddMilliseconds(1500);
+                else
+                    pendingRedrawAt = null;
             }
         }
 
@@ -562,11 +577,15 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     // Defer the redraw instead of firing it synchronously: deleting a temporary
-    // collection (or applying Glamourer state, which redraws on its own) needs a moment
+    // collection (and applying Glamourer state, which redraws on its own) needs a moment
     // to settle, and redrawing on top of a half-swapped collection renders the skin
-    // black. Waiting ~600ms and letting a single redraw be the authoritative one avoids
-    // the race, which is worst right after login when the game isn't fully ready.
-    private void RequestRedraw() => pendingRedrawAt = DateTime.UtcNow.AddMilliseconds(600);
+    // black. Wait ~1s, then redraw twice (spaced apart) so a fully-settled redraw always
+    // applies last. This is worst right after login when the game isn't fully ready.
+    private void RequestRedraw()
+    {
+        redrawsRemaining = 2;
+        pendingRedrawAt = DateTime.UtcNow.AddMilliseconds(1000);
+    }
 
     private void DoRedraw()
     {
