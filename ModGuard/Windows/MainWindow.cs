@@ -81,6 +81,14 @@ public class MainWindow : Window, IDisposable
         }
         ImGui.TextWrapped("Mods are restored automatically once no watched sync plugin is loaded anymore (only if they were hidden automatically - a manual hide stays until you restore it).");
 
+        var unloadOnRestore = config.UnloadSyncOnRestore;
+        if (ImGui.Checkbox("Unload sync plugins when restoring", ref unloadOnRestore))
+        {
+            config.UnloadSyncOnRestore = unloadOnRestore;
+            config.Save();
+        }
+        ImGui.TextColored(Orange, "Warning: Mare-style sync plugins render your character and may turn it black if unloaded mid-draw. Leave this off unless a sync plugin tolerates hot-unloading.");
+
         ImGui.Separator();
 
         ImGui.Text("Sync plugins currently loaded:");

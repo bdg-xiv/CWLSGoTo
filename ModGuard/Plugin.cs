@@ -61,6 +61,9 @@ public sealed class Plugin : IDalamudPlugin
     private bool validatedPersistedState;
     private DateTime? pendingRedrawAt;
     private int redrawsRemaining;
+    // Set by a manual restore so auto mode doesn't immediately re-hide while a sync
+    // plugin is still loaded; cleared by a manual hide or on the next login.
+    private bool manuallyRevealed;
 
     public Plugin()
     {
@@ -92,6 +95,7 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.AddWindow(mainWindow);
 
         Svc.Framework.Update += OnFrameworkUpdate;
+        Svc.ClientState.Login += OnLogin;
 
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleMainWindow;
@@ -107,6 +111,10 @@ public sealed class Plugin : IDalamudPlugin
             HelpMessage = "Toggles Mod Guard: hides your mods if visible, restores them if hidden."
         });
     }
+
+    // Fresh login re-engages auto-hide (a previous session's manual reveal shouldn't
+    // carry over and leave mods exposed to a sync plugin).
+    private void OnLogin() => manuallyRevealed = false;
 
     private void OnCommand(string command, string args) => ToggleMainWindow();
 
@@ -197,7 +205,7 @@ public sealed class Plugin : IDalamudPlugin
         if (!Configuration.AutoMode || !Player.Available)
             return;
 
-        if (detectedSyncPlugins.Count > 0 && !ModsHidden)
+        if (detectedSyncPlugins.Count > 0 && !ModsHidden && !manuallyRevealed)
         {
             Svc.Log.Information($"Sync plugin detected ({string.Join(", ", detectedSyncPlugins.Select(p => p.Name))}), hiding mods");
             HideMods(auto: true);
@@ -280,6 +288,11 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (ModsHidden)
             return;
+
+        // A manual hide (or an auto-hide once reveal is no longer in effect) ends any
+        // manual-reveal suppression.
+        if (!auto)
+            manuallyRevealed = false;
 
         var hiddenParts = new List<string>();
 
@@ -392,10 +405,15 @@ public sealed class Plugin : IDalamudPlugin
         if (!ModsHidden || PendingRestore)
             return;
 
-        // Restoring while a sync plugin is still running would share the mods the
-        // moment they come back (and auto mode would immediately re-hide them), so
-        // unload the sync plugins first and restore once they are actually gone.
-        if (detectedSyncPlugins.Count > 0)
+        // Suppress auto-hide until the next hide/login so a restore isn't instantly
+        // undone while a sync plugin is still loaded. Harmless when no sync is present.
+        manuallyRevealed = true;
+
+        // Optionally unload the sync plugins first so they don't re-share the mods the
+        // moment they come back (and auto mode doesn't immediately re-hide them).
+        // Default off: Mare-style plugins render the character continuously and don't
+        // tolerate being unloaded mid-draw - killing one leaves the character black.
+        if (Configuration.UnloadSyncOnRestore && detectedSyncPlugins.Count > 0)
         {
             var names = string.Join(", ", detectedSyncPlugins.Select(p => p.Name));
             Svc.Chat.Print($"[ModGuard] Disabling {names} before restoring...");
@@ -617,6 +635,7 @@ public sealed class Plugin : IDalamudPlugin
         // The persisted state lets a reloaded Mod Guard restore later, and a game
         // restart clears temporary collections and Glamourer locks anyway.
         Svc.Framework.Update -= OnFrameworkUpdate;
+        Svc.ClientState.Login -= OnLogin;
 
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleMainWindow;

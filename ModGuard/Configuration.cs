@@ -12,6 +12,11 @@ public class Configuration : IPluginConfiguration
 
     public bool AutoMode { get; set; } = true;
 
+    // Whether "restore" should unload the detected sync plugins first. Off by default:
+    // Mare-style plugins render the character continuously and being unloaded mid-draw
+    // leaves the character black. Hiding still keeps mods private without unloading.
+    public bool UnloadSyncOnRestore { get; set; } = false;
+
     // Also revert the character's Glamourer state while hiding, since sync plugins
     // share glamours/customizations too, not just Penumbra mods.
     public bool IncludeGlamourer { get; set; } = true;
