@@ -59,6 +59,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly UnlockState glamourerUnlockState;
 
     private bool validatedPersistedState;
+    private DateTime? pendingRedrawAt;
 
     public Plugin()
     {
@@ -127,6 +128,16 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnFrameworkUpdate(Dalamud.Plugin.Services.IFramework framework)
     {
+        // A deferred redraw runs on its own timing, not behind the 2s poll throttle.
+        if (pendingRedrawAt is { } redrawAt)
+        {
+            if (DateTime.UtcNow >= redrawAt && Player.Available && Player.Interactable)
+            {
+                pendingRedrawAt = null;
+                DoRedraw();
+            }
+        }
+
         if (!EzThrottler.Throttle("ModGuardPoll", 2000))
             return;
 
@@ -263,7 +274,7 @@ public sealed class Plugin : IDalamudPlugin
         Configuration.WasAutoHidden = auto;
         Configuration.Save();
 
-        TryRedrawSelf();
+        RequestRedraw();
         Svc.Chat.Print($"[ModGuard] Hidden: {string.Join(" + ", hiddenParts)}.");
 
         // With the mods safely hidden, bring back any sync plugins the restore
@@ -490,7 +501,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (restoredParts.Count > 0)
         {
-            TryRedrawSelf();
+            RequestRedraw();
             Svc.Chat.Print($"[ModGuard] Restored: {string.Join(" + ", restoredParts)}.");
         }
 
@@ -550,7 +561,14 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private void TryRedrawSelf()
+    // Defer the redraw instead of firing it synchronously: deleting a temporary
+    // collection (or applying Glamourer state, which redraws on its own) needs a moment
+    // to settle, and redrawing on top of a half-swapped collection renders the skin
+    // black. Waiting ~600ms and letting a single redraw be the authoritative one avoids
+    // the race, which is worst right after login when the game isn't fully ready.
+    private void RequestRedraw() => pendingRedrawAt = DateTime.UtcNow.AddMilliseconds(600);
+
+    private void DoRedraw()
     {
         try
         {
