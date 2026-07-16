@@ -167,13 +167,15 @@ public sealed class Plugin : IDalamudPlugin
         if (!PenumbraAvailable)
             return;
 
-        // If we believe mods are hidden from a previous session, verify the temporary
-        // collection actually still exists: a game restart kills temporary collections,
-        // leaving a stale guid behind.
+        // Reset any persisted hidden state on startup: temporary collections are
+        // destroyed when the game closes, so a saved guid from a previous session is
+        // dead. Re-assigning it left the character on a nonexistent collection (black
+        // skin that no redraw could fix). Instead clean up any orphan and start
+        // visible; auto mode re-hides freshly on a valid session-local collection.
         if (!validatedPersistedState)
         {
             validatedPersistedState = true;
-            ValidatePersistedHiddenState();
+            ResetPersistedHiddenStateOnStartup();
         }
 
         // A restore is queued behind sync plugins unloading; fire it once they're gone.
@@ -237,34 +239,41 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private void ValidatePersistedHiddenState()
+    private void ResetPersistedHiddenStateOnStartup()
     {
-        if (Configuration.ActiveTempCollection is not { } guid)
+        var hadState = Configuration.ActiveTempCollection != null || Configuration.SavedGlamourerState != null;
+        if (!hadState)
             return;
 
         try
         {
-            // Re-asserting the assignment doubles as an existence check: if Penumbra
-            // restarted since we hid, the collection is gone and this reports missing.
-            var ec = assignTempCollection.Invoke(guid, LocalPlayerActorIndex, forceAssignment: true);
-            if (ec is PenumbraApiEc.CollectionMissing)
-            {
-                Svc.Log.Information("Previously persisted hidden state is stale (game restarted), clearing it");
-                Configuration.ActiveTempCollection = null;
-                // Logging back in re-applied Glamourer automation already; reapplying a
-                // stale captured state later could overwrite newer changes.
-                Configuration.SavedGlamourerState = null;
-                Configuration.Save();
-            }
-            else
-            {
-                Svc.Log.Information("Re-attached to the persisted hidden state from a previous session");
-            }
+            // Delete any orphaned collection: if it somehow survived (plugin reload with
+            // Penumbra still running) this removes it and unassigns it; if it's dead
+            // (game restart) this is a harmless no-op reporting CollectionMissing.
+            if (Configuration.ActiveTempCollection is { } guid)
+                deleteTempCollection.Invoke(guid);
         }
         catch (Exception ex)
         {
-            Svc.Log.Warning($"Could not validate the persisted hidden state: {ex.Message}");
+            Svc.Log.Warning($"Could not clean up the persisted collection on startup: {ex.Message}");
         }
+
+        // Drop any persisted Glamourer lock the previous session may have left dangling.
+        try
+        {
+            glamourerUnlockState.Invoke(LocalPlayerActorIndex, GlamourerLockKey);
+        }
+        catch
+        {
+            // Glamourer may be absent; ignore.
+        }
+
+        Configuration.ActiveTempCollection = null;
+        Configuration.SavedGlamourerState = null;
+        Configuration.Save();
+
+        Svc.Log.Information("Reset persisted hidden state on startup; starting with mods visible");
+        RequestRedraw();
     }
 
     public void HideMods(bool auto)
@@ -330,6 +339,7 @@ public sealed class Plugin : IDalamudPlugin
                 return false;
             }
 
+            Svc.Log.Information($"Hid Penumbra mods: created+assigned empty collection {guid} (create={ec}, assign={assignEc})");
             Configuration.ActiveTempCollection = guid;
             return true;
         }
@@ -540,6 +550,7 @@ public sealed class Plugin : IDalamudPlugin
                 return false;
             }
 
+            Svc.Log.Information($"Restored Penumbra mods: deleted collection {guid} (delete={ec})");
             Configuration.ActiveTempCollection = null;
             return true;
         }
