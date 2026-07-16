@@ -77,7 +77,7 @@
     "Author": "bdg",
     "Name": "Mod Guard",
     "InternalName": "ModGuard",
-    "AssemblyVersion": "0.0.0.5",
+    "AssemblyVersion": "0.0.0.6",
     "Description": "Keeps your mods private: when a mod-sync plugin (Lightless, Snowcloak, Sphene, PlayerSync, or any Mare Synchronos fork - the watch list is editable) is loaded, Mod Guard hides all your Penumbra mods by force-assigning an empty temporary collection to your character, and reverts + locks your Glamourer state, so sync plugins have nothing to share. Once the sync plugins are gone (or on demand), it restores everything exactly as it was - your real Penumbra collection, mod settings, and captured Glamourer state are never lost. Use /modguard to open the control window. Requires Penumbra; Glamourer optional.",
     "ApplicableVersion": "any",
     "Tags": [
