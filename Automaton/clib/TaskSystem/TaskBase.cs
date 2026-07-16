@@ -155,21 +155,44 @@ public abstract class TaskBase : AutoTask {
             //ErrorIf(waypoints is not { Count: > 0 }, "Failed to produce a path"); // TODO: teleport to nearest aetheryte on failure or something
             //ErrorIf(!Svc.Navmesh.MoveTo(waypoints!, fly), "Failed to MoveTo");
 
-            ErrorIf(!Svc.Navmesh.PathfindAndMoveCloseTo(dest, Player.InFlight || config.Movement.HasFlag(MovementOptions.Fly) && Control.CanFly, config.Tolerance ?? 3f), "Failed to start pathfinding to destination");
-
             Status = $"Moving to {dest}";
             using var stop = new OnDispose(Svc.Navmesh.Stop);
-            await NextFrame(); // tick so that vnav has a chance to flip to IsRunning
 
-            if (stopCondition is null) {
-                await WaitWhile(() => !Player.WithinRange(dest, tolerance) && (Svc.Navmesh.PathfindingInProgress || Svc.Navmesh.IsRunning()), "Navigate");
-            }
-            else {
-                await WaitWhile(() => !Player.WithinRange(dest, tolerance) && !stopCondition() && (Svc.Navmesh.PathfindingInProgress || Svc.Navmesh.IsRunning()), "Navigate");
-                if (stopCondition() && onStopReached is not null) {
-                    Svc.Navmesh.Stop(); // must be stopped because onStopReached's MoveTo (if present) calls !PathfindingInProgress
-                    await onStopReached();
+            // patched from upstream: manual player input can cancel the navmesh path,
+            // which previously made this method return silently and left the caller
+            // idle. Keep re-pathing until arrival, the stop condition fires, or the
+            // interruptions don't stop.
+            var repathAttempts = 0;
+            while (true) {
+                ErrorIf(!Svc.Navmesh.PathfindAndMoveCloseTo(dest, Player.InFlight || config.Movement.HasFlag(MovementOptions.Fly) && Control.CanFly, config.Tolerance ?? 3f), "Failed to start pathfinding to destination");
+                await NextFrame(); // tick so that vnav has a chance to flip to IsRunning
+
+                if (stopCondition is null) {
+                    await WaitWhile(() => !Player.WithinRange(dest, tolerance) && (Svc.Navmesh.PathfindingInProgress || Svc.Navmesh.IsRunning()), "Navigate");
                 }
+                else {
+                    await WaitWhile(() => !Player.WithinRange(dest, tolerance) && !stopCondition() && (Svc.Navmesh.PathfindingInProgress || Svc.Navmesh.IsRunning()), "Navigate");
+                    if (stopCondition()) {
+                        if (onStopReached is not null) {
+                            Svc.Navmesh.Stop(); // must be stopped because onStopReached's MoveTo (if present) calls !PathfindingInProgress
+                            await onStopReached();
+                        }
+                        break;
+                    }
+                }
+
+                if (Player.WithinRange(dest, tolerance))
+                    break;
+
+                if (++repathAttempts > 20) {
+                    Warning($"Navigation to {dest} keeps getting interrupted, giving up for now");
+                    break;
+                }
+
+                Log($"Path was interrupted, re-pathing to {dest} (attempt {repathAttempts})");
+                await WaitWhile(() => Player.IsMoving, "WaitForManualMovementStop");
+                if (Player.WithinRange(dest, tolerance))
+                    break;
             }
         }
 
@@ -221,6 +244,16 @@ public abstract class TaskBase : AutoTask {
                 Svc.Navmesh.Stop();
                 movement.Enabled = false;
                 await WaitWhile(() => Player.IsMoving, "WaitStopMoving");
+
+                // patched from upstream: teleporting is impossible while in combat (e.g.
+                // the chocobo pulled aggro) - wait for combat to drop instead of burning
+                // retry attempts on requests the game is guaranteed to refuse.
+                if (Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat]) {
+                    Status = $"Waiting for combat to end before teleporting to {destinationName}";
+                    await WaitWhile(() => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat], "WaitOutCombat");
+                    Status = $"Teleporting to {destinationName}";
+                    await WaitWhile(() => Player.IsMoving, "WaitStopMovingAfterCombat");
+                }
 
                 // patched from upstream: never stay stuck in the teleporting state. If it
                 // keeps failing (e.g. the game reports another teleport already underway),
@@ -339,6 +372,12 @@ public abstract class TaskBase : AutoTask {
         Status = "Mounting";
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (!Player.Mounted) {
+            // patched from upstream: mounting is impossible while in combat (e.g. the
+            // chocobo pulled aggro) - hold the timeout until combat ends so we mount
+            // as soon as it's actually possible instead of giving up mid-fight.
+            if (Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat])
+                deadline = DateTime.UtcNow.AddSeconds(10);
+
             if (DateTime.UtcNow > deadline) {
                 Warning("Mounting did not complete in time, continuing unmounted");
                 return;

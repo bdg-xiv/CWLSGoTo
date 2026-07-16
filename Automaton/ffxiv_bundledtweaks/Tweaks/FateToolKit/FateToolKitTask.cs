@@ -504,17 +504,22 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
         }
 
         // patched from upstream: give the current zone 30 seconds to spawn a new fate
-        // before swapping to another zone.
-        _noFatesSince ??= DateTime.UtcNow;
-        var waitedForFates = DateTime.UtcNow - _noFatesSince.Value;
-        if (waitedForFates < TimeSpan.FromSeconds(30)) {
-            using var scope = BeginScope("WaitForFates");
-            // mount first: Mount() sets its own status while actually mounting, so the
-            // countdown must be written afterwards to stay visible during the wait.
-            await Mount();
-            Status = $"Waiting for fates to spawn ({30 - (int)waitedForFates.TotalSeconds}s until zone swap)";
-            await NextFrame(60);
-            return;
+        // before swapping to another zone - but only when standing in a zone we
+        // actually farm; in a city or any other non-farmable zone, swap immediately.
+        var farmPool = tweak.GetEffectiveSwapZones();
+        var inFarmableZone = farmPool is null || farmPool.Contains(Player.Territory.RowId);
+        if (inFarmableZone) {
+            _noFatesSince ??= DateTime.UtcNow;
+            var waitedForFates = DateTime.UtcNow - _noFatesSince.Value;
+            if (waitedForFates < TimeSpan.FromSeconds(30)) {
+                using var scope = BeginScope("WaitForFates");
+                // mount first: Mount() sets its own status while actually mounting, so the
+                // countdown must be written afterwards to stay visible during the wait.
+                await Mount();
+                Status = $"Waiting for fates to spawn ({30 - (int)waitedForFates.TotalSeconds}s until zone swap)";
+                await NextFrame(60);
+                return;
+            }
         }
 
         var hasEffectiveZones = tweak.GetEffectiveSwapZones() is { Count: > 0 } || tweak.HasSelectedSwapZones;

@@ -704,7 +704,7 @@ local Settings = {
 }
 
 local RETAINER_CHECK_INTERVAL_SECONDS = 60
-local ECHO_ALL_LOGS = false
+local ECHO_ALL_LOGS = true -- patched: echo helper activity to chat
 
 local equipGearsetSlot = -1
 local gearsetEquipped = false
