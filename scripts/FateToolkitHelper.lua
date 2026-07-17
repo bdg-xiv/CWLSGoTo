@@ -2409,28 +2409,15 @@ function RestoreTextAdvanceState()
 end
 
 function EnsureBossModPreferredState()
-    local bossmodRuntime = GetBossModRuntime()
+    -- patched: the CBT build in use accepts BossModReborn natively (it exposes the
+    -- same "BossMod." IPC surface), so never swap the plugin pair anymore - run with
+    -- whichever of BossMod/BossModReborn the user has enabled.
     local bossModEnabled = GetPluginEnabledState("BossMod")
     local rebornEnabled = GetPluginEnabledState("BossModReborn")
-    if bossModEnabled == nil or rebornEnabled == nil then
+    if bossModEnabled == true or rebornEnabled == true then
         return
     end
-    if bossmodRuntime.recordedState == nil then
-        bossmodRuntime.recordedState = {
-            bossModEnabled = bossModEnabled,
-            bossModRebornEnabled = rebornEnabled
-        }
-    end
-    if bossModEnabled == true and rebornEnabled == false then
-        return
-    end
-    if bossModEnabled == false and rebornEnabled == true then
-        Dalamud.Log("[Toolkit Helper] Switching BossMod plugin pair (BossMod disabled, BossModReborn enabled)")
-        SetPluginEnabledState("BossModReborn", false)
-        SetPluginEnabledState("BossMod", true)
-        yield("/wait 2")
-        bossmodRuntime.stateChanged = true
-    end
+    Dalamud.Log("[Toolkit Helper] Neither BossMod nor BossModReborn is enabled; fate combat automation will not work")
 end
 
 function RestoreBossModPreferredState()
