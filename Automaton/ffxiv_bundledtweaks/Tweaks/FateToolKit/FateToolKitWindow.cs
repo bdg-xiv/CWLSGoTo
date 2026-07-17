@@ -61,11 +61,17 @@ public class FateToolKitWindow : MinimisableWindow {
             ImGui.TooltipOnHover(_tweak.Running, $"Stop. Ctrl+{SeIconChar.MouseLeftClick.ToIconString()} soft stop");
 
             ImGui.SameLine();
-            DrawHeaderChip(
-                $"Automation: {(_tweak.Running ? Svc.Automation.Status : "Stopped")}",
-                _tweak.Running ? Colors.ChipGold : Colors.ChipMuted,
-                Colors.Grey2
-            );
+            // Clicking the automation chip force-completes the current step (e.g. when
+            // you're already at the fate but the mover is stuck), so the task proceeds
+            // to the next action.
+            if (DrawHeaderChip(
+                    $"Automation: {(_tweak.Running ? Svc.Automation.Status : "Stopped")}",
+                    _tweak.Running ? Colors.ChipGold : Colors.ChipMuted,
+                    Colors.Grey2)
+                && _tweak.Running) {
+                Svc.Automation.CurrentTask?.RequestSkip();
+            }
+            ImGui.TooltipOnHover(_tweak.Running, "Click to force-finish the current step and move on");
 
             ImGui.SameLine();
             DrawHeaderChip(
@@ -205,12 +211,12 @@ public class FateToolKitWindow : MinimisableWindow {
         }
     }
 
-    private static void DrawHeaderChip(string text, EzColor background, EzColor textColor) {
+    private static bool DrawHeaderChip(string text, EzColor background, EzColor textColor) {
         using var chipColor = ImRaii.PushColor(ImGuiCol.Button, (uint)background)
             .Push(ImGuiCol.ButtonHovered, (uint)background)
             .Push(ImGuiCol.ButtonActive, (uint)background)
             .Push(ImGuiCol.Text, (uint)textColor);
-        ImGui.Button(text);
+        return ImGui.Button(text);
     }
 
     private void DrawSettings() {

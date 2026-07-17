@@ -167,11 +167,12 @@ public abstract class TaskBase : AutoTask {
                 ErrorIf(!Svc.Navmesh.PathfindAndMoveCloseTo(dest, Player.InFlight || config.Movement.HasFlag(MovementOptions.Fly) && Control.CanFly, config.Tolerance ?? 3f), "Failed to start pathfinding to destination");
                 await NextFrame(); // tick so that vnav has a chance to flip to IsRunning
 
+                bool navCompleted;
                 if (stopCondition is null) {
-                    await WaitWhile(() => !Player.WithinRange(dest, tolerance) && (Svc.Navmesh.PathfindingInProgress || Svc.Navmesh.IsRunning()), "Navigate");
+                    navCompleted = await WaitWhile(() => !Player.WithinRange(dest, tolerance) && (Svc.Navmesh.PathfindingInProgress || Svc.Navmesh.IsRunning()), "Navigate");
                 }
                 else {
-                    await WaitWhile(() => !Player.WithinRange(dest, tolerance) && !stopCondition() && (Svc.Navmesh.PathfindingInProgress || Svc.Navmesh.IsRunning()), "Navigate");
+                    navCompleted = await WaitWhile(() => !Player.WithinRange(dest, tolerance) && !stopCondition() && (Svc.Navmesh.PathfindingInProgress || Svc.Navmesh.IsRunning()), "Navigate");
                     if (stopCondition()) {
                         if (onStopReached is not null) {
                             Svc.Navmesh.Stop(); // must be stopped because onStopReached's MoveTo (if present) calls !PathfindingInProgress
@@ -179,6 +180,13 @@ public abstract class TaskBase : AutoTask {
                         }
                         break;
                     }
+                }
+
+                // patched from upstream: the user force-completed this move from the UI
+                // (already at the destination); stop and proceed to the next step.
+                if (!navCompleted) {
+                    Svc.Navmesh.Stop();
+                    break;
                 }
 
                 if (Player.WithinRange(dest, tolerance))
@@ -237,6 +245,12 @@ public abstract class TaskBase : AutoTask {
 
             var teleportAttempts = 0;
             while (true) { // infinite loops are my passion
+                // patched from upstream: user force-skipped this step from the UI.
+                if (ConsumeSkip()) {
+                    Warning($"Teleport to {destinationName} skipped by user");
+                    return;
+                }
+
                 // patched from upstream: cancel any active auto-movement before casting.
                 // A running navmesh path (or override movement) cancels the teleport cast
                 // instantly, which made this loop spam teleport attempts until the mover
@@ -275,6 +289,12 @@ public abstract class TaskBase : AutoTask {
 
                 var castDeadline = DateTime.UtcNow.AddSeconds(10);
                 while (true) {
+                    // patched from upstream: user force-skipped this step from the UI.
+                    if (ConsumeSkip()) {
+                        Warning($"Teleport to {destinationName} skipped by user");
+                        return;
+                    }
+
                     var isUiFading = Player.IsUiFading;
                     var isCasting = Player?.IsCasting ?? false;
 
@@ -372,6 +392,12 @@ public abstract class TaskBase : AutoTask {
         Status = "Mounting";
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (!Player.Mounted) {
+            // patched from upstream: user force-skipped this step from the UI.
+            if (ConsumeSkip()) {
+                Warning("Mounting skipped by user");
+                return;
+            }
+
             // patched from upstream: mounting is impossible while in combat (e.g. the
             // chocobo pulled aggro) - hold the timeout until combat ends so we mount
             // as soon as it's actually possible instead of giving up mid-fight.

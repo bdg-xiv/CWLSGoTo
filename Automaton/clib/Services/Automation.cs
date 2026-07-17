@@ -37,6 +37,19 @@ public abstract class AutoTask {
     private readonly CancellationTokenSource _cts = new();
     private readonly List<string> _debugContext = [];
 
+    // Set by the UI to force the current wait/step to finish as if it succeeded, so the
+    // task proceeds to the next action (e.g. when the character is already at the fate
+    // but the mover is stuck). One-shot: consumed by the next wait it interrupts.
+    private volatile bool _skipRequested;
+    public void RequestSkip() => _skipRequested = true;
+    public bool SkipRequested => _skipRequested;
+    protected bool ConsumeSkip() {
+        if (!_skipRequested)
+            return false;
+        _skipRequested = false;
+        return true;
+    }
+
     private readonly List<IDisposable> _disposables = [];
     private static readonly AsyncLocal<AutoTask?> _activeTask = new();
 
@@ -85,34 +98,45 @@ public abstract class AutoTask {
     /// <summary>
     /// Wait until condition function returns false, checking once every N frames
     /// </summary>
-    protected async Task WaitWhile(Func<bool> condition, string scopeName, int checkFrequency = 1, bool logContinuously = false) {
+    // returns true if the wait completed normally, false if it was force-skipped from the UI
+    protected async Task<bool> WaitWhile(Func<bool> condition, string scopeName, int checkFrequency = 1, bool logContinuously = false) {
         using var scope = BeginScope(scopeName);
         Log("waiting...");
         while (condition()) {
+            if (ConsumeSkip()) {
+                Log("skipped by user");
+                return false;
+            }
             if (logContinuously)
                 Log("waiting...");
             await NextFrame(checkFrequency);
         }
+        return true;
     }
 
-    protected async Task WaitWhile(Func<bool> condition, Func<bool> earlyStop, string scopeName, int checkFrequency = 1, bool logContinuously = false) {
+    protected async Task<bool> WaitWhile(Func<bool> condition, Func<bool> earlyStop, string scopeName, int checkFrequency = 1, bool logContinuously = false) {
         using var scope = BeginScope(scopeName);
         Log($"waiting...");
         while (condition()) {
             if (earlyStop())
-                return;
+                return true;
+            if (ConsumeSkip()) {
+                Log("skipped by user");
+                return false;
+            }
             if (logContinuously)
                 Log("waiting...");
             await NextFrame(checkFrequency);
         }
+        return true;
     }
 
     /// <summary>
     /// Wait until condition function returns true, checking once every N frames
     /// </summary>
-    protected async Task WaitUntil(Func<bool> condition, string scopeName, int checkFrequency = 1, bool logContinuously = false) => await WaitWhile(() => !condition(), scopeName, checkFrequency, logContinuously);
+    protected async Task<bool> WaitUntil(Func<bool> condition, string scopeName, int checkFrequency = 1, bool logContinuously = false) => await WaitWhile(() => !condition(), scopeName, checkFrequency, logContinuously);
 
-    protected async Task WaitUntil(Func<bool> condition, Func<bool> earlyStop, string scopeName, int checkFrequency = 1, bool logContinuously = false) => await WaitWhile(() => !condition(), earlyStop, scopeName, checkFrequency, logContinuously);
+    protected async Task<bool> WaitUntil(Func<bool> condition, Func<bool> earlyStop, string scopeName, int checkFrequency = 1, bool logContinuously = false) => await WaitWhile(() => !condition(), earlyStop, scopeName, checkFrequency, logContinuously);
 
     /// <summary>
     /// Wait until a condition function returns true, then wait until it returns false.
