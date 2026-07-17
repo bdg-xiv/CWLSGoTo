@@ -4921,6 +4921,11 @@ State = CharacterState.idle
 
 Dalamud.Log("[Toolkit Helper] Starting toolkit helper loop")
 
+-- patched: make sure Wrath Combo's auto-rotation is off when the helper starts
+EchoAll("Ensuring Wrath auto-rotation is off")
+Dalamud.Log("[Toolkit Helper] Ensuring Wrath auto-rotation is off")
+yield("/wrath auto off")
+
 yield("/vfate")
 
 while not Runtime.stopScript do
