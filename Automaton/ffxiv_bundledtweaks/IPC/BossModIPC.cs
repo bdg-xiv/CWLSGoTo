@@ -9,6 +9,11 @@ namespace ComplexTweaks.IPC;
 public class BossModIPC : BaseIPC {
     public override string Name => "BossMod";
     public override string Repo => Veyn;
+    // patched from upstream: BossModReborn registers the identical IPC surface under
+    // the same "BossMod." prefix (verified: Presets.* and ObstacleMap.* endpoints,
+    // VBM Default/VBM AI presets, and BossMod.Autorotation.* module type names all
+    // match), so either plugin satisfies this integration.
+    public override IEnumerable<string> InternalNames => ["BossMod", "BossModReborn"];
     public BossModIPC() => EzIPC.Init(this, Name);
 
     /// <remarks> string name </remarks>
