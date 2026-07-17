@@ -198,7 +198,10 @@ public abstract class TaskBase : AutoTask {
                 }
 
                 Log($"Path was interrupted, re-pathing to {dest} (attempt {repathAttempts})");
-                await WaitWhile(() => Player.IsMoving, "WaitForManualMovementStop");
+                // patched: a user skip during this wait ends the whole move instead of
+                // re-pathing; navigation is stopped by the OnDispose on exit.
+                if (!await WaitWhile(() => Player.IsMoving, "WaitForManualMovementStop"))
+                    break;
                 if (Player.WithinRange(dest, tolerance))
                     break;
             }
@@ -257,16 +260,22 @@ public abstract class TaskBase : AutoTask {
                 // reached its destination on its own.
                 Svc.Navmesh.Stop();
                 movement.Enabled = false;
-                await WaitWhile(() => Player.IsMoving, "WaitStopMoving");
+                if (!await WaitWhile(() => Player.IsMoving, "WaitStopMoving")) {
+                    Warning($"Teleport to {destinationName} skipped by user");
+                    return;
+                }
 
                 // patched from upstream: teleporting is impossible while in combat (e.g.
                 // the chocobo pulled aggro) - wait for combat to drop instead of burning
                 // retry attempts on requests the game is guaranteed to refuse.
                 if (Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat]) {
                     Status = $"Waiting for combat to end before teleporting to {destinationName}";
-                    await WaitWhile(() => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat], "WaitOutCombat");
+                    var combatEnded = await WaitWhile(() => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat], "WaitOutCombat");
                     Status = $"Teleporting to {destinationName}";
-                    await WaitWhile(() => Player.IsMoving, "WaitStopMovingAfterCombat");
+                    if (!combatEnded || !await WaitWhile(() => Player.IsMoving, "WaitStopMovingAfterCombat")) {
+                        Warning($"Teleport to {destinationName} skipped by user");
+                        return;
+                    }
                 }
 
                 // patched from upstream: never stay stuck in the teleporting state. If it
