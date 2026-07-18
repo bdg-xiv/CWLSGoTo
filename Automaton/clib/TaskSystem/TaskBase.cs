@@ -435,7 +435,19 @@ public abstract class TaskBase : AutoTask {
         }
 
         Status = "Dismounting";
+        // patched from upstream: bound the dismount so a spot where landing never
+        // completes can't hang this forever - give up with a warning and let the
+        // caller retry (callers verify Player.Mounted afterwards).
+        var deadline = DateTime.UtcNow.AddSeconds(20);
         while (Player.Mounted) {
+            if (ConsumeSkip()) {
+                Log("Dismount skipped by user");
+                return;
+            }
+            if (DateTime.UtcNow > deadline) {
+                Warning("Dismounting did not complete in time");
+                return;
+            }
             // we are assuming from here on out that you cannot possibly be above ground that is unlandable
             if (Player.InFlight && !Player.IsAirDismountable) {
                 Log($"Descending");

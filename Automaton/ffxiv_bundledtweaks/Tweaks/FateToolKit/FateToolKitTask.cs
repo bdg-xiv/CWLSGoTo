@@ -52,6 +52,19 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
                         await Revive();
                         break;
                     case GrindState.Engaging:
+                        // patched from upstream: if the move ended early (stop condition,
+                        // skip, re-path give-up) we can enter the fate still mounted or
+                        // flying, and BossMod can't fight from a mount - keep dismounting
+                        // until it actually sticks.
+                        if (Player.Mounted) {
+                            Status = "Dismounting to engage";
+                            await Dismount();
+                            if (Player.Mounted) {
+                                Warning("Dismount did not complete, retrying");
+                                await NextFrame(30);
+                                break;
+                            }
+                        }
                         // this should only ever happen during hot reloading vbm during a fate
                         if (PublicEvent.CurrentFate is { IsOnMap: true } current && !Svc.BossMod.HasTempMap())
                             await GenerateObstacleMap(current);
