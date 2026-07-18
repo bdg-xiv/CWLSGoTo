@@ -111,12 +111,14 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
     public IOrderedEnumerable<PublicEvent> AvailableFates => FateToolKit.ApplySortOrder(PublicEvent.Fates.Where(f => tweak.FateConditions(f) && f.Id != WaitForExpiryFateId), tweak.Config.SortOrder);
     private bool HasTwistOfFate => Player.Status.HasTwistOfFate();
 
-    // patched from upstream: a collect (hand-in) fate is only done when the fate
-    // itself completes. Personal hand-ins are NOT a stop condition - hand-ins come
-    // in batches of 10 and repeat until the fate reaches 100%, so stopping early
-    // (especially when grinding solo) would leave the fate unfinishable.
+    // patched from upstream: a collect (hand-in) fate is done for us only when the
+    // fate itself completed AND our personal batch of 10 is handed in. Before 100%
+    // hand-ins repeat in batches of 10, so stopping at 10 could leave the fate
+    // unfinishable when grinding solo; after 100% the results window still accepts
+    // hand-ins, so keep going until our credit is in. If nothing more can be
+    // handed in, the fate's own expiry (CurrentFate becoming null) ends the state.
     private static bool IsCollectFateDone(PublicEvent f)
-        => f is { Rule: PublicEvent.FateRule.Collect, Progress: >= 100 };
+        => f is { Rule: PublicEvent.FateRule.Collect, Progress: >= 100 } && f.HandInCount >= 10;
 
     private GrindState State {
         get {
