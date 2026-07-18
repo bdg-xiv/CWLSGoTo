@@ -163,6 +163,14 @@ public unsafe class PublicEvent(nint address, FateType fateType, uint id) {
         0
     );
 
+    /// <summary>How many items this player has handed in to a collect fate's npc (capped at 10 by the game).</summary>
+    public int HandInCount => GetValue(
+        fate => fate.As<FateContext>()->HandInCount,
+        _ => 0,
+        _ => 0,
+        0
+    );
+
     public int Duration => GetValue(
         fate => fate.As<FateContext>()->Duration,
         dynamicEvent => (int)dynamicEvent.SecondsDuration,

@@ -107,8 +107,17 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
     private DateTime? _noFatesSince; // patched: when the current zone first reported no fates
     private int _consecutiveDrySwaps; // patched: zone swaps in a row without finding any fate
 
-    public IOrderedEnumerable<PublicEvent> AvailableFates => FateToolKit.ApplySortOrder(PublicEvent.Fates.Where(tweak.FateConditions), tweak.Config.SortOrder);
+    // patched from upstream: exclude the collect fate we're waiting out - once our
+    // hand-ins are capped it can sit below the MaxProgress filter and would
+    // otherwise be re-selected immediately after we leave it.
+    public IOrderedEnumerable<PublicEvent> AvailableFates => FateToolKit.ApplySortOrder(PublicEvent.Fates.Where(f => tweak.FateConditions(f) && f.Id != WaitForExpiryFateId), tweak.Config.SortOrder);
     private bool HasTwistOfFate => Player.Status.HasTwistOfFate();
+
+    // patched from upstream: a collect (hand-in) fate is done for us once the fate
+    // itself is complete or our personal hand-in credit is capped (the game stops
+    // accepting at 10) - killing or collecting past that point earns nothing.
+    private static bool IsCollectFateDone(PublicEvent f)
+        => f is { Rule: PublicEvent.FateRule.Collect } && (f.Progress >= 100 || f.HandInCount >= 10);
 
     private GrindState State {
         get {
@@ -129,9 +138,10 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
                     FollowUpFateId = null;
 
                 // treat completed collect fates as done and wait for out of combat/not busy before trying to move away
-                if (current is { Rule: PublicEvent.FateRule.Collect, Progress: >= 100, Id: var id } && !Player.IsBusy) {
-                    WaitForExpiryFateId = id;
-                    return AvailableFates.FirstOrDefault(f => f.Id != id) is { } ? GrindState.BetweenFates : GrindState.WaitingForFates;
+                // patched from upstream: "done" now includes capped personal hand-ins, not just fate completion
+                if (IsCollectFateDone(current) && !Player.IsBusy) {
+                    WaitForExpiryFateId = current.Id;
+                    return AvailableFates.FirstOrDefault(f => f.Id != current.Id) is { } ? GrindState.BetweenFates : GrindState.WaitingForFates;
                 }
                 Status = "Engaging";
                 return GrindState.Engaging;
@@ -259,9 +269,9 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
         using var scope = BeginScope(nameof(MoveToFate));
 
         IEnumerable<PublicEvent> GetAvailableFates() {
-            // If current is a collect at 100% we're leaving it; pick a different fate.
-            if (PublicEvent.CurrentFate is { Rule: PublicEvent.FateRule.Collect, Progress: >= 100, Id: var currentId })
-                return AvailableFates.Where(f => f.Id != currentId);
+            // If current is a collect we're done with, we're leaving it; pick a different fate.
+            if (PublicEvent.CurrentFate is { } current && IsCollectFateDone(current))
+                return AvailableFates.Where(f => f.Id != current.Id);
             return AvailableFates;
         }
 
@@ -585,7 +595,7 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
     private void HandleIntegrations() {
         if (PublicEvent.CurrentFate is { } fate) {
             // when we leave collect fates early, it's still CurrentFate, so we need to ignore that and deactivate anyway
-            if (fate is { Rule: PublicEvent.FateRule.Collect, Progress: >= 100 } && (NextFate is null || NextFate.Id != fate.Id)) {
+            if (IsCollectFateDone(fate) && (NextFate is null || NextFate.Id != fate.Id)) {
                 // don't deactivate before we're out of combat
                 if (Svc.Condition[ConditionFlag.InCombat])
                     return;
@@ -595,7 +605,7 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
 
             // only activate for the fate we're pathfinding to (or any if NextFate is null)
             if (NextFate is { } next && fate.Id != next.Id
-                && !(fate is { Rule: PublicEvent.FateRule.Collect, Progress: >= 100 } && Svc.Condition[ConditionFlag.InCombat])) {
+                && !(IsCollectFateDone(fate) && Svc.Condition[ConditionFlag.InCombat])) {
                 DeactivateIntegrations(clearNextFate: false);
                 return;
             }
@@ -612,6 +622,12 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
                     Service.BossMod.SetActive(_presetName);
             }
             Svc.BossMod.AddTransientStrategy(_presetName, "BossMod.Autorotation.MiscAI.AutoTarget", "MaxTargets", PullSize.ToString());
+            // patched from upstream: once a hand-in fate is done for us, stop
+            // acquiring new fate mobs - already-aggroed mobs keep their priority
+            // and get finished off, so combat can end and we either wait out the
+            // results timer or move to the next fate in the zone.
+            Svc.BossMod.AddTransientStrategy(_presetName, "BossMod.Autorotation.MiscAI.AutoTarget", "FATE",
+                IsCollectFateDone(fate) ? "Disabled" : "Enabled");
 
             if (PublicEvent.CurrentFate is { Rule: PublicEvent.FateRule.Collect } && !Svc.TextAdvance.IsInExternalControl())
                 Svc.TextAdvance.EnableExternalControl(Name, new() { EnableTalkSkip = true, EnableRequestFill = true, EnableRequestHandin = true });
