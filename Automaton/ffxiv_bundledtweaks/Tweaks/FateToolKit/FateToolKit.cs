@@ -74,6 +74,12 @@ public class FateToolKit : Tweak<FateToolKitConfig, FateToolKitWindow>, IFateGri
                 .ArgInt("count", min: 1)
                 .Handle((tweak, args) => tweak.RunUntil(args.Get<int>("count"))))
             .Sub("stop", $"Stops {nameof(FateGrind)} task", node => node.Handle((tweak, _) => tweak.Running = false))
+            // patched from upstream: the default (bare) command toggles the window,
+            // closing it when already open; "show" forces it open for scripts.
+            .Sub("show", "Opens the FATE tracker window (never closes it)", node => node.Handle((tweak, _) => {
+                if (tweak.Window<FateToolKitWindow>() is { } window)
+                    window.IsOpen = true;
+            }))
     );
 
     private static readonly Dictionary<FateSortCriteria, Func<PublicEvent, IComparable>> SortKeys = new() {

@@ -1,7 +1,7 @@
 --[=====[
 [[SND Metadata]]
 author: baanderson40
-version: 2.0.5
+version: 2.0.6
 description: |
   Toolkit Helper adds support utilities around Fate Tool Kit automation:
   - AutoRetainer monitoring and Limsa bell handling
@@ -4952,7 +4952,9 @@ EchoAll("Ensuring Wrath auto-rotation is off")
 Dalamud.Log("[Toolkit Helper] Ensuring Wrath auto-rotation is off")
 yield("/wrath auto off")
 
-yield("/vfate")
+-- patched: "show" forces the tracker window open; the bare command toggles
+-- and would close the window if it was already open when the helper starts.
+yield("/vfate show")
 
 while not Runtime.stopScript do
     -- patched: safe pause point (see WaitWhileHelperPaused)
