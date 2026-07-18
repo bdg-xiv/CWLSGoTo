@@ -623,11 +623,16 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
             }
             Svc.BossMod.AddTransientStrategy(_presetName, "BossMod.Autorotation.MiscAI.AutoTarget", "MaxTargets", PullSize.ToString());
             // patched from upstream: once a hand-in fate is done for us, stop
-            // acquiring new fate mobs - already-aggroed mobs keep their priority
-            // and get finished off, so combat can end and we either wait out the
+            // acquiring new fate mobs AND stop the FATE helper's ground-node
+            // pickup / npc hand-in - BMR gates those on its own mirrored fate
+            // state, which can be stale, while our FateContext read is
+            // authoritative. Already-aggroed mobs keep their priority and get
+            // finished off, so combat can end and we either wait out the
             // results timer or move to the next fate in the zone.
-            Svc.BossMod.AddTransientStrategy(_presetName, "BossMod.Autorotation.MiscAI.AutoTarget", "FATE",
-                IsCollectFateDone(fate) ? "Disabled" : "Enabled");
+            var collectDone = IsCollectFateDone(fate);
+            Svc.BossMod.AddTransientStrategy(_presetName, "BossMod.Autorotation.MiscAI.AutoTarget", "FATE", collectDone ? "Disabled" : "Enabled");
+            Svc.BossMod.AddTransientStrategy(_presetName, "BossMod.Autorotation.MiscAI.FateUtils", "Collect", collectDone ? "Disabled" : "Enabled");
+            Svc.BossMod.AddTransientStrategy(_presetName, "BossMod.Autorotation.MiscAI.FateUtils", "Hand-in", collectDone ? "Disabled" : "Enabled");
 
             if (PublicEvent.CurrentFate is { Rule: PublicEvent.FateRule.Collect } && !Svc.TextAdvance.IsInExternalControl())
                 Svc.TextAdvance.EnableExternalControl(Name, new() { EnableTalkSkip = true, EnableRequestFill = true, EnableRequestHandin = true });
