@@ -164,7 +164,18 @@ public abstract class TaskBase : AutoTask {
             // interruptions don't stop.
             var repathAttempts = 0;
             while (true) {
-                ErrorIf(!Svc.Navmesh.PathfindAndMoveCloseTo(dest, Player.InFlight || config.Movement.HasFlag(MovementOptions.Fly) && Control.CanFly, config.Tolerance ?? 3f), "Failed to start pathfinding to destination");
+                // patched from upstream: vnavmesh rejects a new SimpleMove request
+                // while a previous pathfind task is still winding down (a one-frame
+                // race — "Pathfinding complete" lands milliseconds after the
+                // rejection). Wait it out and retry instead of failing the task.
+                var startAttempts = 0;
+                while (!Svc.Navmesh.PathfindAndMoveCloseTo(dest, Player.InFlight || config.Movement.HasFlag(MovementOptions.Fly) && Control.CanFly, config.Tolerance ?? 3f)) {
+                    ErrorIf(++startAttempts > 20, "Failed to start pathfinding to destination");
+                    Log($"vnavmesh rejected pathfind request, retrying (attempt {startAttempts})");
+                    if (!await WaitWhile(() => Svc.Navmesh.PathfindInProgress || Svc.Navmesh.PathfindingInProgress, "WaitForPathfinderIdle"))
+                        return; // user skip
+                    await NextFrame(5);
+                }
                 await NextFrame(); // tick so that vnav has a chance to flip to IsRunning
 
                 bool navCompleted;
