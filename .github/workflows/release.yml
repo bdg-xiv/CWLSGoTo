@@ -50,6 +50,7 @@ jobs:
           @{ Project = "LogoutOnTell"; InternalName = "LogoutOnTell" },
           @{ Project = "ModGuard"; InternalName = "ModGuard" },
           @{ Project = "TypoGuard"; InternalName = "TypoGuard" },
+          @{ Project = "ModSnap"; InternalName = "ModSnap" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 

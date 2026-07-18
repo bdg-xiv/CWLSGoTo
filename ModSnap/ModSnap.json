@@ -1,0 +1,15 @@
+{
+  "Author": "bdg",
+  "Name": "Mod Snap",
+  "Punchline": "Right-click a player to save their current mods and appearance into Penumbra and Glamourer.",
+  "Description": "Adds a 'Save Mods + Appearance' entry to the right-click menu on players (and a /modsnap command for your current target). It snapshots everything currently applied to that character - including mods streamed in by sync plugins like PlayerSync or Mare forks - by driving Penumbra's own Character Pack (PCP) export and immediately installing the result: the mods land in your Penumbra library under the PCP folder, a 'PCP/<name>' collection is created and assigned, and Glamourer creates a ready-to-apply design named after the player (with the mod already associated). The .pcp file itself is kept in Penumbra's export folder so you can archive or share it. Requires a current Penumbra with Character Pack support; Glamourer with 'Attach to PCP' enabled (default) for the design.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "penumbra",
+    "glamourer",
+    "snapshot",
+    "sync",
+    "mods",
+    "pcp"
+  ]
+}
