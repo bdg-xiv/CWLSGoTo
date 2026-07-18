@@ -271,7 +271,11 @@ public abstract class TaskBase : AutoTask {
                 // reached its destination on its own.
                 Svc.Navmesh.Stop();
                 movement.Enabled = false;
-                if (!await WaitWhile(() => Player.IsMoving, "WaitStopMoving")) {
+                // patched: bounded — a stuck IsMoving flag must not hang the teleport
+                // state; past the deadline just attempt the cast and let the retry
+                // counter deal with a cancelled cast.
+                var stopMoveBy = DateTime.UtcNow.AddSeconds(15);
+                if (!await WaitWhile(() => Player.IsMoving && DateTime.UtcNow <= stopMoveBy, "WaitStopMoving")) {
                     Warning($"Teleport to {destinationName} skipped by user");
                     return;
                 }
@@ -283,7 +287,8 @@ public abstract class TaskBase : AutoTask {
                     Status = $"Waiting for combat to end before teleporting to {destinationName}";
                     var combatEnded = await WaitWhile(() => Svc.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InCombat], "WaitOutCombat");
                     Status = $"Teleporting to {destinationName}";
-                    if (!combatEnded || !await WaitWhile(() => Player.IsMoving, "WaitStopMovingAfterCombat")) {
+                    var stopMoveAfterCombatBy = DateTime.UtcNow.AddSeconds(15);
+                    if (!combatEnded || !await WaitWhile(() => Player.IsMoving && DateTime.UtcNow <= stopMoveAfterCombatBy, "WaitStopMovingAfterCombat")) {
                         Warning($"Teleport to {destinationName} skipped by user");
                         return;
                     }
@@ -323,6 +328,12 @@ public abstract class TaskBase : AutoTask {
                     if (isUiFading)
                         sawUiFade = true;
 
+                    // patched from upstream: while the cast or the zone transfer is
+                    // actually running, keep pushing the deadline out; it only expires
+                    // once nothing has been happening for a while.
+                    if (isCasting || isUiFading)
+                        castDeadline = DateTime.UtcNow.AddSeconds(10);
+
                     if (sawUiFade && !isUiFading) {
                         await WaitUntil(() => GameMain.IsTerritoryLoaded && Player.Interactable, "WaitTransportFinish");
                         return;
@@ -333,11 +344,15 @@ public abstract class TaskBase : AutoTask {
                     if (sawCast && !isCasting && !sawUiFade && ActionManager.GetCastAction() is not { Elapsed: 5 })
                         break;
 
-                    // patched from upstream: if the cast never even starts (the game
-                    // silently swallowed the request because another teleport is still
-                    // pending), stop watching and retry instead of waiting forever.
-                    if (!sawCast && DateTime.UtcNow > castDeadline) {
-                        Warning($"Teleport cast to {destinationName} never started, retrying");
+                    // patched from upstream: no cast and no transfer in progress for
+                    // 10 seconds - whatever the game did with the request, it is not
+                    // teleporting. Cancel this attempt and retry instead of waiting
+                    // forever (covers both a cast that never starts and a completed
+                    // cast whose transfer silently never happens).
+                    if (DateTime.UtcNow > castDeadline) {
+                        Warning(sawCast
+                            ? $"Teleport cast to {destinationName} ended but no transfer happened, retrying"
+                            : $"Teleport cast to {destinationName} never started, retrying");
                         break;
                     }
 
