@@ -1,7 +1,7 @@
 --[=====[
 [[SND Metadata]]
 author: baanderson40
-version: 2.0.4
+version: 2.0.5
 description: |
   Toolkit Helper adds support utilities around Fate Tool Kit automation:
   - AutoRetainer monitoring and Limsa bell handling
@@ -13,6 +13,11 @@ plugin_dependencies:
 - vnavmesh
 - Automaton
 configs:
+  Pause helper?:
+    description: |
+      Safely pause the helper loop. Use this instead of SND's pause button,
+      which can hard-freeze the game while a Lua script is running.
+    default: false
   Gearset Slot:
     description: Optional gearset slot number to equip before farming (0 disables).
     default: 0
@@ -1210,6 +1215,37 @@ function EchoAll(message)
     end
 end
 
+-- patched: cooperative pause via the "Pause helper?" config checkbox. SND's own
+-- pause button can hard-freeze the game (its Lua engine blocks the main thread
+-- waiting for resume), so the helper polls this flag and idles safely instead.
+local helperPauseEchoed = false
+
+function IsHelperPauseRequested()
+    local ok, paused = pcall(Config.Get, "Pause helper?")
+    return ok and paused == true
+end
+
+function WaitWhileHelperPaused()
+    if not IsHelperPauseRequested() then
+        if helperPauseEchoed then
+            helperPauseEchoed = false
+            EchoAll("Helper resumed")
+        end
+        return
+    end
+    if not helperPauseEchoed then
+        helperPauseEchoed = true
+        EchoAll("Helper paused - uncheck 'Pause helper?' in the script settings to resume")
+        Dalamud.Log("[Toolkit Helper] Helper paused via config")
+    end
+    repeat
+        yield("/wait 0.5")
+    until not IsHelperPauseRequested()
+    helperPauseEchoed = false
+    EchoAll("Helper resumed")
+    Dalamud.Log("[Toolkit Helper] Helper resumed via config")
+end
+
 function SetAutoRetainerMultiMode(enabled)
     if not IPC or not IPC.AutoRetainer or not IPC.AutoRetainer.SetMultiModeEnabled then
         Dalamud.Log("[Toolkit Helper] Unable to set AutoRetainer multi-mode; IPC unavailable")
@@ -2189,6 +2225,9 @@ function WaitWithStuckMonitor(duration)
     local step = 0.5
     local deadline = os.clock() + duration
     while os.clock() < deadline do
+        -- patched: honor the safe pause even inside long waits (e.g. while
+        -- farming toward the gemstone goal), not just the main loop.
+        WaitWhileHelperPaused()
         UpdateStuckMonitor()
         local remaining = deadline - os.clock()
         if remaining <= 0 then
@@ -4916,6 +4955,8 @@ yield("/wrath auto off")
 yield("/vfate")
 
 while not Runtime.stopScript do
+    -- patched: safe pause point (see WaitWhileHelperPaused)
+    WaitWhileHelperPaused()
     local allowRepairBusy = State == CharacterState.repairGear
     if not Svc.Condition[CharacterCondition.betweenAreas]
         and (allowRepairBusy or not Svc.Condition[CharacterCondition.occupiedMateriaExtractionAndRepair])
