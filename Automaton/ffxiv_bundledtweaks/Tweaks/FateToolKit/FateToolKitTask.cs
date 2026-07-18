@@ -107,17 +107,16 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
     private DateTime? _noFatesSince; // patched: when the current zone first reported no fates
     private int _consecutiveDrySwaps; // patched: zone swaps in a row without finding any fate
 
-    // patched from upstream: exclude the collect fate we're waiting out - once our
-    // hand-ins are capped it can sit below the MaxProgress filter and would
-    // otherwise be re-selected immediately after we leave it.
+    // patched from upstream: never re-select the collect fate we're waiting out.
     public IOrderedEnumerable<PublicEvent> AvailableFates => FateToolKit.ApplySortOrder(PublicEvent.Fates.Where(f => tweak.FateConditions(f) && f.Id != WaitForExpiryFateId), tweak.Config.SortOrder);
     private bool HasTwistOfFate => Player.Status.HasTwistOfFate();
 
-    // patched from upstream: a collect (hand-in) fate is done for us once the fate
-    // itself is complete or our personal hand-in credit is capped (the game stops
-    // accepting at 10) - killing or collecting past that point earns nothing.
+    // patched from upstream: a collect (hand-in) fate is only done when the fate
+    // itself completes. Personal hand-ins are NOT a stop condition - hand-ins come
+    // in batches of 10 and repeat until the fate reaches 100%, so stopping early
+    // (especially when grinding solo) would leave the fate unfinishable.
     private static bool IsCollectFateDone(PublicEvent f)
-        => f is { Rule: PublicEvent.FateRule.Collect } && (f.Progress >= 100 || f.HandInCount >= 10);
+        => f is { Rule: PublicEvent.FateRule.Collect, Progress: >= 100 };
 
     private GrindState State {
         get {
@@ -138,7 +137,6 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
                     FollowUpFateId = null;
 
                 // treat completed collect fates as done and wait for out of combat/not busy before trying to move away
-                // patched from upstream: "done" now includes capped personal hand-ins, not just fate completion
                 if (IsCollectFateDone(current) && !Player.IsBusy) {
                     WaitForExpiryFateId = current.Id;
                     return AvailableFates.FirstOrDefault(f => f.Id != current.Id) is { } ? GrindState.BetweenFates : GrindState.WaitingForFates;
