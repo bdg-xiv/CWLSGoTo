@@ -1,3 +1,4 @@
+using ECommons.Configuration;
 using ECommons.ImGuiMethods.TerritorySelection;
 using Lumina.Excel.Sheets;
 using TerritoryIntendedUse = FFXIVClientStructs.FFXIV.Client.Enums.TerritoryIntendedUse;
@@ -29,6 +30,9 @@ public class FateToolKitConfig {
     public string DisplayNameFormat = "[{Level}] {Name}";
     public Vector4 BarColour = new(0.404f, 0.259f, 0.541f, 1f);
     public Dictionary<FateType, HashSet<uint>> Blacklist = [];
+    // patched from upstream: zone selector state survives restarts and updates.
+    public HashSet<uint> SelectedSwapZones = [];
+    public bool ZoneSelectorOnlySelected;
     public List<FateSortOrder> SortOrder =
     [
         new() { Criteria = FateSortCriteria.HasBonusWithTwist, Descending = true },
@@ -101,7 +105,9 @@ public class FateToolKit : Tweak<FateToolKitConfig, FateToolKitWindow>, IFateGri
     public int? RunUntilCompleted { get; private set; }
     public int? RemainingUntilCompleted => RunUntilCompleted is { } runUntil ? Math.Max(0, runUntil - CompletedCount) : null;
     public int RelicsCompletedForStep => GetRelicsCompletedForStep(GetCurrentMode().RelicItemIds);
-    internal HashSet<uint> SelectedSwapZones { get; } = [];
+    // patched from upstream: swap-zone selection is stored in the config so it
+    // persists across plugin reloads, game restarts, and updates.
+    internal HashSet<uint> SelectedSwapZones => Config.SelectedSwapZones;
     internal string SelectedModeId {
         get;
         set {
@@ -284,7 +290,7 @@ public class FateToolKit : Tweak<FateToolKitConfig, FateToolKitWindow>, IFateGri
     }
 
     internal void OpenZoneSelector() {
-        var selector = new TerritorySelector(SelectedSwapZones, (_, selected) => {
+        var selector = new PersistentZoneSelector(Config, SelectedSwapZones, (_, selected) => {
             SelectedSwapZones.Clear();
             foreach (var zoneId in selected)
                 SelectedSwapZones.Add(zoneId);
@@ -295,6 +301,28 @@ public class FateToolKit : Tweak<FateToolKitConfig, FateToolKitWindow>, IFateGri
 
         selector.HiddenCategories = [TerritorySelector.Category.All];
         selector.SelectedCategory = TerritorySelector.Category.World;
+    }
+
+    // patched from upstream: restores the "Only selected" checkbox from the config,
+    // tracks it while the window is open (the checkbox has no change callback), and
+    // saves the config to disk on close so the state survives restarts and updates.
+    private sealed class PersistentZoneSelector : TerritorySelector {
+        private readonly FateToolKitConfig _config;
+
+        public PersistentZoneSelector(FateToolKitConfig config, IEnumerable<uint> selected, Action<TerritorySelector, HashSet<uint>> callback, string title) : base(selected, callback, title) {
+            _config = config;
+            OnlySelected = config.ZoneSelectorOnlySelected;
+        }
+
+        public override void Draw() {
+            base.Draw();
+            _config.ZoneSelectorOnlySelected = OnlySelected;
+        }
+
+        public override void OnClose() {
+            base.OnClose();
+            EzConfig.Save();
+        }
     }
 
     public void ToggleRunning() {
