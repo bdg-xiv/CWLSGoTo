@@ -59,6 +59,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly UnlockState glamourerUnlockState;
 
     private bool validatedPersistedState;
+    private bool pendingLoginCleanup;
     private DateTime? pendingRedrawAt;
     private int redrawsRemaining;
     // Set by a manual restore so auto mode doesn't immediately re-hide while a sync
@@ -96,6 +97,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Framework.Update += OnFrameworkUpdate;
         Svc.ClientState.Login += OnLogin;
+        Svc.ClientState.Logout += OnLogout;
 
         PluginInterface.UiBuilder.Draw += WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleMainWindow;
@@ -114,7 +116,47 @@ public sealed class Plugin : IDalamudPlugin
 
     // Fresh login re-engages auto-hide (a previous session's manual reveal shouldn't
     // carry over and leave mods exposed to a sync plugin).
-    private void OnLogin() => manuallyRevealed = false;
+    private void OnLogin()
+    {
+        manuallyRevealed = false;
+
+        // A hidden state that predates this login is poison: the temporary collection's
+        // assignment does not survive a relog cleanly, and a character stuck on a stale
+        // assignment renders with black skin that no redraw can fix. Restore fully once
+        // the player is loaded; auto mode then re-hides with a fresh collection.
+        if (ModsHidden)
+            pendingLoginCleanup = true;
+    }
+
+    // Never let the hidden state span a logout. Restoring here, while the character
+    // still exists, deletes the temporary collection while Penumbra can still clean up
+    // its assignment and reapplies the saved Glamourer state. Auto mode re-hides
+    // freshly right after the next login, so mods are only ever exposed for the brief
+    // window a fresh login already has.
+    private void OnLogout(int type, int code)
+    {
+        if (!ModsHidden)
+            return;
+
+        PendingRestore = false;
+        Svc.Log.Information("Logging out while hidden, restoring so the state cannot go stale across the relog");
+        try
+        {
+            if (Configuration.ActiveTempCollection != null)
+                RestorePenumbra();
+
+            // If the actor is already gone this fails harmlessly; the saved state then
+            // remains in the config and the login cleanup finishes the job.
+            if (Configuration.SavedGlamourerState != null)
+                RestoreGlamourer();
+
+            Configuration.Save();
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Logout restore failed, the login cleanup will retry: {ex.Message}");
+        }
+    }
 
     private void OnCommand(string command, string args) => ToggleMainWindow();
 
@@ -184,6 +226,29 @@ public sealed class Plugin : IDalamudPlugin
         {
             validatedPersistedState = true;
             ResetPersistedHiddenStateOnStartup();
+        }
+
+        // Restore a hidden state left over from before this login (set by OnLogin when
+        // the logout-time restore did not fully run). Waits until the player is
+        // interactable so the Glamourer reapply and redraw actually land; auto mode
+        // then re-hides with fresh state on a later poll.
+        if (pendingLoginCleanup)
+        {
+            if (!ModsHidden)
+            {
+                pendingLoginCleanup = false;
+            }
+            else if (Player.Available && Player.Interactable)
+            {
+                pendingLoginCleanup = false;
+                Svc.Log.Information("Hidden state from a previous login detected, restoring it before anything else");
+                DoRestore();
+                return;
+            }
+            else
+            {
+                return;
+            }
         }
 
         // A restore is queued behind sync plugins unloading; fire it once they're gone.
@@ -636,6 +701,7 @@ public sealed class Plugin : IDalamudPlugin
         // restart clears temporary collections and Glamourer locks anyway.
         Svc.Framework.Update -= OnFrameworkUpdate;
         Svc.ClientState.Login -= OnLogin;
+        Svc.ClientState.Logout -= OnLogout;
 
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleMainWindow;
