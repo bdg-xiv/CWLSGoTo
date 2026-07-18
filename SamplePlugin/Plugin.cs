@@ -10,13 +10,20 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using ECommons;
+using ECommons.Automation;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using ECommons.Throttlers;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
+using Newtonsoft.Json.Linq;
 using SamplePlugin.Windows;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.Loader;
 using System;
 using static ECommons.GenericHelpers;
 
@@ -31,6 +38,8 @@ public sealed class Plugin : IDalamudPlugin
     private const string CommandName = "/cwlsgoto";
     private const string TeleportThrottleName = "CWLSGoToTeleport";
     private const string BusyCheckThrottleName = "CWLSGoToLifestreamBusyCheck";
+    private const string MountCheckThrottleName = "CWLSGoToMountCheck";
+    private const string MountSummonThrottleName = "CWLSGoToMountSummon";
 
     public Configuration Configuration { get; }
 
@@ -47,6 +56,19 @@ public sealed class Plugin : IDalamudPlugin
     private uint nextGoToLinkId;
     private (Aetheryte Aetheryte, uint WorldId, DateTime Deadline)? pendingWorldTeleport;
     private DateTime nextWaitDiagnosticLog = DateTime.MinValue;
+
+    // Tracks the "after the teleport landed" follow-up: open the Hunt Train
+    // Assistant window and mount up using HTA's own mount settings.
+    private sealed class ArrivalTask
+    {
+        public required uint TerritoryId;
+        public DateTime Deadline;
+        public bool SawTransition; // saw the teleport cast/loading actually happen
+        public bool Arrived;
+        public int MountId = -1;
+    }
+
+    private ArrivalTask? pendingArrival;
 
     public Plugin()
     {
@@ -147,10 +169,27 @@ public sealed class Plugin : IDalamudPlugin
         if (link.World == null || link.World.Value.RowId == Svc.PlayerState.CurrentWorld.RowId)
         {
             TryTeleportToAetheryte(link.Aetheryte);
+            // The arrival watcher waits until it has seen the teleport cast/loading
+            // happen, so a declined teleport just times out quietly.
+            BeginArrivalWatch(link.Aetheryte, sawTransition: false);
             return;
         }
 
         GoToWorldThenAetheryte(link.World.Value, link.Aetheryte);
+    }
+
+    private void BeginArrivalWatch(Aetheryte aetheryte, bool sawTransition)
+    {
+        pendingArrival = new ArrivalTask
+        {
+            TerritoryId = aetheryte.Territory.RowId,
+            Deadline = DateTime.UtcNow.AddSeconds(60),
+            SawTransition = sawTransition,
+        };
+
+        // Idempotent (re)subscribe: the world-hop path may already have us hooked.
+        Svc.Framework.Update -= OnFrameworkUpdate;
+        Svc.Framework.Update += OnFrameworkUpdate;
     }
 
     private void GoToWorldThenAetheryte(World world, Aetheryte aetheryte)
@@ -187,13 +226,22 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        if (pendingWorldTeleport == null)
+        if (pendingWorldTeleport == null && pendingArrival == null)
         {
             Svc.Framework.Update -= OnFrameworkUpdate;
             return;
         }
 
-        var pending = pendingWorldTeleport.Value;
+        if (pendingWorldTeleport != null)
+            UpdateWorldTeleport();
+
+        if (pendingArrival != null)
+            UpdateArrival();
+    }
+
+    private void UpdateWorldTeleport()
+    {
+        var pending = pendingWorldTeleport!.Value;
 
         var loggingNow = DateTime.UtcNow >= nextWaitDiagnosticLog;
         if (loggingNow)
@@ -218,7 +266,6 @@ public sealed class Plugin : IDalamudPlugin
             {
                 Svc.Log.Warning($"Gave up waiting for the world hop to land: still on world {Svc.PlayerState.CurrentWorld.RowId} (target {pending.WorldId}) and Lifestream reports no transfer in progress.");
                 pendingWorldTeleport = null;
-                Svc.Framework.Update -= OnFrameworkUpdate;
                 return;
             }
 
@@ -232,7 +279,6 @@ public sealed class Plugin : IDalamudPlugin
         {
             Svc.Log.Warning($"Timed out waiting to teleport to aetheryte {pending.Aetheryte.RowId} after a world hop.");
             pendingWorldTeleport = null;
-            Svc.Framework.Update -= OnFrameworkUpdate;
             return;
         }
 
@@ -241,7 +287,14 @@ public sealed class Plugin : IDalamudPlugin
         {
             Svc.Log.Information($"Already in the target territory {Svc.ClientState.TerritoryType} after world hop");
             pendingWorldTeleport = null;
-            Svc.Framework.Update -= OnFrameworkUpdate;
+            // We just transitioned here, so the arrival follow-up can fire as
+            // soon as the player is ready.
+            pendingArrival = new ArrivalTask
+            {
+                TerritoryId = pending.Aetheryte.Territory.RowId,
+                Deadline = DateTime.UtcNow.AddSeconds(60),
+                SawTransition = true,
+            };
             return;
         }
 
@@ -267,6 +320,154 @@ public sealed class Plugin : IDalamudPlugin
         // reports whether the request was accepted, not whether the character actually
         // arrived. Keep retrying (throttled) until we observe the territory actually change.
         TryTeleportToAetheryte(pending.Aetheryte);
+    }
+
+    private void UpdateArrival()
+    {
+        var arrival = pendingArrival!;
+
+        if (!arrival.Arrived && DateTime.UtcNow > arrival.Deadline)
+        {
+            Svc.Log.Information("Gave up waiting for the teleport to land; skipping the mount and Hunt Train Assistant window.");
+            pendingArrival = null;
+            return;
+        }
+
+        // Require having actually seen the teleport start (cast or loading screen)
+        // so we don't fire instantly when the target zone is the current zone.
+        if (!arrival.SawTransition)
+        {
+            if (Svc.Condition[ConditionFlag.Casting]
+                || Svc.Condition[ConditionFlag.BetweenAreas]
+                || Svc.Condition[ConditionFlag.BetweenAreas51]
+                || !IsScreenReady())
+                arrival.SawTransition = true;
+            return;
+        }
+
+        if (Svc.ClientState.TerritoryType != arrival.TerritoryId)
+            return;
+
+        if (!IsScreenReady() || !Player.Interactable
+            || Svc.Condition[ConditionFlag.Casting]
+            || Svc.Condition[ConditionFlag.BetweenAreas]
+            || Svc.Condition[ConditionFlag.BetweenAreas51])
+            return;
+
+        if (!arrival.Arrived)
+        {
+            arrival.Arrived = true;
+            arrival.Deadline = DateTime.UtcNow.AddSeconds(20); // window for the mount attempts
+            OpenHuntTrainAssistantUi();
+
+            var (useMount, mountId) = ReadHtaMountSettings();
+            if (!useMount)
+            {
+                pendingArrival = null;
+                return;
+            }
+
+            arrival.MountId = mountId;
+            Svc.Log.Information($"Arrived; mounting with Hunt Train Assistant settings (mount id {mountId}, 0 = roulette)");
+        }
+
+        if (TryMountWithHtaSettings(arrival.MountId) || DateTime.UtcNow > arrival.Deadline)
+            pendingArrival = null;
+    }
+
+    /// <summary>Mirror of Hunt Train Assistant's TaskMount.MountIfCan, driven by HTA's own config.</summary>
+    private static unsafe bool TryMountWithHtaSettings(int configuredMountId)
+    {
+        if (Player.Mounted)
+            return true;
+        if (configuredMountId == -1)
+            return true;
+
+        // Hold off while a mount transition or cast is in progress, and briefly after.
+        if (Svc.Condition[ConditionFlag.MountOrOrnamentTransition] || Svc.Condition[ConditionFlag.Casting])
+            EzThrottler.Throttle(MountCheckThrottleName, 2000, rethrottle: true);
+        if (!EzThrottler.Check(MountCheckThrottleName))
+            return false;
+
+        // If mount roulette is unusable, mounting is impossible here (city, combat, ...).
+        if (ActionManager.Instance()->GetActionStatus(ActionType.GeneralAction, 9) != 0)
+            return true;
+
+        var mountId = configuredMountId;
+        if (mountId != 0 && !PlayerState.Instance()->IsMountUnlocked((uint)mountId))
+            mountId = 0;
+
+        if (!Player.IsAnimationLocked && EzThrottler.Throttle(MountSummonThrottleName))
+        {
+            if (mountId != 0 && Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Mount>().GetRowOrDefault((uint)mountId)?.Singular.ExtractText() is { Length: > 0 } mountName)
+                Chat.ExecuteCommand($"/mount \"{mountName}\"");
+            else
+                Chat.ExecuteGeneralAction(9);
+        }
+
+        return false;
+    }
+
+    /// <summary>Reads UseMount/Mount from Hunt Train Assistant's config file so we follow its settings live.</summary>
+    private (bool UseMount, int MountId) ReadHtaMountSettings()
+    {
+        try
+        {
+            var pluginConfigsDir = PluginInterface.ConfigDirectory.Parent;
+            var path = pluginConfigsDir == null ? null : Path.Combine(pluginConfigsDir.FullName, "HuntTrainAssistant", "DefaultConfig.json");
+            if (path == null || !File.Exists(path))
+            {
+                Svc.Log.Warning("Hunt Train Assistant config not found; skipping the mount after teleport.");
+                return (false, -1);
+            }
+
+            var json = JObject.Parse(File.ReadAllText(path));
+            return (json.Value<bool?>("UseMount") ?? false, json.Value<int?>("Mount") ?? 0);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Failed to read Hunt Train Assistant mount settings: {ex.Message}");
+            return (false, -1);
+        }
+    }
+
+    private void OpenHuntTrainAssistantUi()
+    {
+        try
+        {
+            // HTA's /hta command toggles its window, so reach into its EzConfigGui
+            // (in HTA's own ECommons copy) and force the window open instead.
+            var opened = false;
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly.GetName().Name != "HuntTrainAssistant")
+                    continue;
+
+                var ecommons = AssemblyLoadContext.GetLoadContext(assembly)?.Assemblies
+                    .FirstOrDefault(a => a.GetName().Name == "ECommons");
+                if (ecommons?.GetType("ECommons.SimpleGui.EzConfigGui")?
+                        .GetProperty("Window", BindingFlags.Public | BindingFlags.Static)?
+                        .GetValue(null) is Window window)
+                {
+                    window.IsOpen = true;
+                    opened = true;
+                }
+            }
+
+            if (opened)
+            {
+                Svc.Log.Information("Opened the Hunt Train Assistant window.");
+                return;
+            }
+
+            // Fallback: HTA's own toggle command (only reached when reflection found nothing).
+            Svc.Commands.ProcessCommand("/hta");
+            Svc.Log.Information("Hunt Train Assistant window not reachable via reflection; issued /hta instead.");
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Failed to open the Hunt Train Assistant window: {ex.Message}");
+        }
     }
 
     private bool LifestreamIsBusy()
