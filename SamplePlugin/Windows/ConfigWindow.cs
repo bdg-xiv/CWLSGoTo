@@ -24,6 +24,7 @@ public class ConfigWindow : Window, IDisposable
         (XivChatType.Shout, "Shout"),
         (XivChatType.FreeCompany, "Free Company"),
         (XivChatType.TellIncoming, "Whisper (Tell)"),
+        (XivChatType.Echo, "Echo (Faloop / plugin messages)"),
     ];
 
     private readonly Configuration configuration;

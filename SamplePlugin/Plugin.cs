@@ -75,6 +75,8 @@ public sealed class Plugin : IDalamudPlugin
         ECommonsMain.Init(PluginInterface, this);
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        if (Configuration.Migrate())
+            Configuration.Save();
 
         configWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(configWindow);
