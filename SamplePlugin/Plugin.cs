@@ -118,6 +118,10 @@ public sealed class Plugin : IDalamudPlugin
         if (mapLink == null)
             return;
 
+        // Death reports (e.g. Faloop's "... was killed") have nothing to travel to.
+        if (message.Message.TextValue.Contains("killed", StringComparison.OrdinalIgnoreCase))
+            return;
+
         var aetheryte = MapManager.GetNearestAetheryte(mapLink);
         if (aetheryte == null)
         {
