@@ -232,9 +232,9 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
+        // Hunts never expire on their own - they leave the list only via a kill
+        // report, the row's remove button, or Clear all.
         Hunts.Insert(0, new HuntEntry(label, worldName, world, aetheryte, mapLink, DateTime.UtcNow));
-        while (Hunts.Count > 30)
-            Hunts.RemoveAt(Hunts.Count - 1);
 
         if (Configuration.AutoOpenHuntWindow)
             huntTrackerWindow.IsOpen = true;
