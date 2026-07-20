@@ -51,6 +51,7 @@ jobs:
           @{ Project = "ModGuard"; InternalName = "ModGuard" },
           @{ Project = "TypoGuard"; InternalName = "TypoGuard" },
           @{ Project = "ModSnap"; InternalName = "ModSnap" },
+          @{ Project = "AutoLister"; InternalName = "AutoLister" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 

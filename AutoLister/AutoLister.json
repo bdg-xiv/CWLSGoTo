@@ -1,0 +1,12 @@
+{
+  "Author": "bdg",
+  "Name": "Auto Lister",
+  "Punchline": "One-click bulk market listing: prices every sellable inventory item like Dagobert and puts it up for sale.",
+  "Description": "Adds an 'Auto List' button next to Dagobert's 'Auto Pinch' on the retainer sell list. Clicking it goes through every marketable item in the fourth inventory bag (the bottom-right quarter), puts each up for sale, opens the price comparison, undercuts the cheapest matching HQ/NQ listing by 1 gil and confirms - until the bag has no more sellable items or the retainer's 20 sell slots are full. The price-checking logic mirrors Dagobert's auto pinch.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "market",
+    "retainer",
+    "automation"
+  ]
+}

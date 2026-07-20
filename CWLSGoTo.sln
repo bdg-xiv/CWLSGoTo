@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TypoGuard", "TypoGuard\Typo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModSnap", "ModSnap\ModSnap.csproj", "{8C4A21DA-90BE-45D3-9F2B-4E7C50A1B36E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoLister", "AutoLister\AutoLister.csproj", "{5E1FA4D8-2C6B-4A0F-9B7D-83E4C1A9F062}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -45,6 +47,10 @@ Global
 		{8C4A21DA-90BE-45D3-9F2B-4E7C50A1B36E}.Debug|x64.Build.0 = Debug|x64
 		{8C4A21DA-90BE-45D3-9F2B-4E7C50A1B36E}.Release|x64.ActiveCfg = Release|x64
 		{8C4A21DA-90BE-45D3-9F2B-4E7C50A1B36E}.Release|x64.Build.0 = Release|x64
+		{5E1FA4D8-2C6B-4A0F-9B7D-83E4C1A9F062}.Debug|x64.ActiveCfg = Debug|x64
+		{5E1FA4D8-2C6B-4A0F-9B7D-83E4C1A9F062}.Debug|x64.Build.0 = Debug|x64
+		{5E1FA4D8-2C6B-4A0F-9B7D-83E4C1A9F062}.Release|x64.ActiveCfg = Release|x64
+		{5E1FA4D8-2C6B-4A0F-9B7D-83E4C1A9F062}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
