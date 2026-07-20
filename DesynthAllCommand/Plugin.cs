@@ -220,13 +220,21 @@ public sealed class Plugin : IDalamudPlugin
         {
             var entry = agent->ItemList + i;
 
-            if (Config.SkipGearsetItems && IsInGearset(entry))
+            // Resolve the actual inventory slot the way SimpleTweaks does instead of
+            // trusting the agent entry's own ItemId field: that field misread in
+            // practice (every item was classified as granting no skill), while the
+            // InventoryType/InventorySlot fields are proven by SimpleTweaks' window.
+            var container = InventoryManager.Instance()->GetInventoryContainer(entry->InventoryType);
+            var slot = container != null ? container->GetInventorySlot((int)entry->InventorySlot) : null;
+            var itemId = slot != null && slot->ItemId != 0 ? slot->ItemId : NormalizeItemId(entry->ItemId);
+
+            if (Config.SkipGearsetItems && IsInGearset(itemId, slot))
             {
                 skippedGearset++;
                 continue;
             }
 
-            if (Config.OnlySkillGain && !GrantsDesynthSkill(entry->ItemId))
+            if (Config.OnlySkillGain && !GrantsDesynthSkill(itemId))
             {
                 skippedNoSkill++;
                 continue;
@@ -238,6 +246,9 @@ public sealed class Plugin : IDalamudPlugin
         return -1;
     }
 
+    // Gear sets and some agent lists store HQ items as item id + 1,000,000.
+    private static uint NormalizeItemId(uint rawId) => rawId > 1_000_000 ? rawId - 1_000_000 : rawId;
+
     /// <summary>
     /// Same check SimpleTweaks' Extended Desynthesis Window uses for its yellow/red vs green
     /// coloring: skill still rises while the class's desynthesis level is below the item's
@@ -247,10 +258,17 @@ public sealed class Plugin : IDalamudPlugin
     {
         var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
         if (item == null)
+        {
+            Svc.Log.Debug($"Item {itemId} has no Item sheet row, treating as no skill gain");
             return false;
+        }
 
         var desynthLevel = PlayerState.Instance()->GetDesynthesisLevel(item.Value.ClassJobRepair.RowId);
-        return desynthLevel < MaxDesynthLevel && desynthLevel < item.Value.LevelItem.RowId + 50;
+        var cap = MaxDesynthLevel;
+        var grants = (cap == 0 || desynthLevel < cap) && desynthLevel < item.Value.LevelItem.RowId + 50;
+        Svc.Log.Debug($"{item.Value.Name.ExtractText()} ({itemId}): ilvl {item.Value.LevelItem.RowId}, "
+                      + $"desynth level {desynthLevel:F0}, cap {cap} -> {(grants ? "grants skill" : "no skill gain")}");
+        return grants;
     }
 
     private uint MaxDesynthLevel
@@ -270,16 +288,12 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private static unsafe bool IsInGearset(AgentSalvage.SalvageListItem* entry)
+    private static unsafe bool IsInGearset(uint itemId, InventoryItem* slot)
     {
         // Gear sets store HQ items as item id + 1,000,000. The HQ flag lives on the
-        // inventory slot, so resolve it; if the slot can't be resolved (list briefly out
-        // of sync with the inventory), check both variants to stay on the safe side.
-        var itemId = entry->ItemId;
+        // inventory slot; when the slot couldn't be resolved, check both variants
+        // to stay on the safe side.
         uint? gearsetItemId = null;
-
-        var container = InventoryManager.Instance()->GetInventoryContainer(entry->InventoryType);
-        var slot = container != null ? container->GetInventorySlot((int)entry->InventorySlot) : null;
         if (slot != null && slot->ItemId == itemId)
             gearsetItemId = slot->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) ? itemId + 1_000_000 : itemId;
 
