@@ -40,6 +40,7 @@ public sealed class Plugin : IDalamudPlugin
     private const string BusyCheckThrottleName = "CWLSGoToLifestreamBusyCheck";
     private const string MountCheckThrottleName = "CWLSGoToMountCheck";
     private const string MountSummonThrottleName = "CWLSGoToMountSummon";
+    private const string WorldHopStartThrottleName = "CWLSGoToWorldHopStart";
 
     public Configuration Configuration { get; }
 
@@ -54,7 +55,17 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ICallGateSubscriber<bool> lifestreamIsBusyIpc;
     private readonly List<(uint Id, Aetheryte Aetheryte, MapLinkPayload MapLink, World? World)> goToLinks = [];
     private uint nextGoToLinkId;
-    private (Aetheryte Aetheryte, uint WorldId, DateTime Deadline)? pendingWorldTeleport;
+    private sealed class WorldTeleportTask
+    {
+        public required Aetheryte Aetheryte;
+        public required uint WorldId;
+        public required string WorldName;
+        public required bool CrossDc;
+        public DateTime Deadline;
+        public int StartAttempts;
+    }
+
+    private WorldTeleportTask? pendingWorldTeleport;
     private DateTime nextWaitDiagnosticLog = DateTime.MinValue;
 
     // Tracks the "after the teleport landed" follow-up: open the Hunt Train
@@ -183,7 +194,8 @@ public sealed class Plugin : IDalamudPlugin
 
         if (link.World == null || link.World.Value.RowId == Svc.PlayerState.CurrentWorld.RowId)
         {
-            TryTeleportToAetheryte(link.Aetheryte);
+            if (!TryTeleportToAetheryte(link.Aetheryte))
+                NotifyChat("Teleport request was not accepted - are the Teleporter/Lifestream plugins enabled?");
             // The arrival watcher waits until it has seen the teleport cast/loading
             // happen, so a declined teleport just times out quietly.
             BeginArrivalWatch(link.Aetheryte, sawTransition: false);
@@ -211,32 +223,42 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
-            if (lifestreamIsBusyIpc.InvokeFunc())
-            {
-                Svc.Log.Warning("Lifestream is busy, ignoring Go To click.");
-                return;
-            }
-
             var worldName = world.Name.ExtractText();
             var sameDc = lifestreamCanVisitSameDcIpc.InvokeFunc(worldName);
             if (!sameDc && !lifestreamCanVisitCrossDcIpc.InvokeFunc(worldName))
             {
-                Svc.Log.Warning($"Lifestream cannot visit {worldName} from here.");
+                NotifyChat($"Lifestream reports it cannot visit {worldName} from here.");
                 return;
             }
 
-            pendingWorldTeleport = (aetheryte, world.RowId, DateTime.UtcNow.AddSeconds(30));
+            // Don't drop the click when Lifestream happens to be busy right now - queue
+            // the hop; the framework watcher issues (and retries) the transfer once
+            // Lifestream is free and the player is ready.
+            pendingWorldTeleport = new WorldTeleportTask
+            {
+                Aetheryte = aetheryte,
+                WorldId = world.RowId,
+                WorldName = worldName,
+                CrossDc = !sameDc,
+                Deadline = DateTime.UtcNow.AddSeconds(30),
+            };
             EzThrottler.Reset(TeleportThrottleName);
+            EzThrottler.Reset(WorldHopStartThrottleName);
+            Svc.Framework.Update -= OnFrameworkUpdate;
             Svc.Framework.Update += OnFrameworkUpdate;
-            Svc.Log.Information($"Starting world hop to {worldName} (world id {world.RowId}, crossDc={!sameDc}) then teleport to aetheryte {aetheryte.RowId} ({aetheryte.PlaceName.ValueNullable?.Name.ExtractText()})");
-            lifestreamTpAndChangeWorldIpc.InvokeAction(worldName, !sameDc, null, false, null, null, null);
+            Svc.Log.Information($"Queued world hop to {worldName} (world id {world.RowId}, crossDc={!sameDc}) then teleport to aetheryte {aetheryte.RowId} ({aetheryte.PlaceName.ValueNullable?.Name.ExtractText()})");
         }
         catch (Exception ex)
         {
-            Svc.Log.Warning($"Failed to invoke Lifestream IPC. Is the Lifestream plugin installed? {ex.Message}");
+            NotifyChat($"Failed to invoke Lifestream. Is the Lifestream plugin installed? ({ex.Message})");
             pendingWorldTeleport = null;
-            Svc.Framework.Update -= OnFrameworkUpdate;
         }
+    }
+
+    private static void NotifyChat(string text)
+    {
+        Svc.Log.Warning(text);
+        Svc.Chat.Print(text, "CWLS Go To");
     }
 
     private void OnFrameworkUpdate(IFramework framework)
@@ -256,7 +278,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void UpdateWorldTeleport()
     {
-        var pending = pendingWorldTeleport!.Value;
+        var pending = pendingWorldTeleport!;
 
         var loggingNow = DateTime.UtcNow >= nextWaitDiagnosticLog;
         if (loggingNow)
@@ -275,24 +297,52 @@ public sealed class Plugin : IDalamudPlugin
                 || (EzThrottler.Throttle(BusyCheckThrottleName, 1000) && LifestreamIsBusy());
             if (hopInProgress)
             {
-                pendingWorldTeleport = (pending.Aetheryte, pending.WorldId, DateTime.UtcNow.AddSeconds(30));
+                pending.Deadline = DateTime.UtcNow.AddSeconds(30);
+            }
+            else if (Player.Available && !Player.IsBusy && !Svc.Condition[ConditionFlag.InCombat]
+                && EzThrottler.Throttle(WorldHopStartThrottleName, 5000))
+            {
+                // Nothing is happening - issue (or re-issue) the world change instead
+                // of waiting for a transfer that never started: Lifestream may have
+                // been busy at click time, or the attempt was cancelled by combat,
+                // movement, or a failed gateway teleport.
+                if (pending.StartAttempts >= 3)
+                {
+                    NotifyChat($"Could not start the world transfer to {pending.WorldName} after {pending.StartAttempts} attempts, giving up.");
+                    pendingWorldTeleport = null;
+                    return;
+                }
+
+                pending.StartAttempts++;
+                pending.Deadline = DateTime.UtcNow.AddSeconds(30);
+                Svc.Log.Information($"Starting world transfer to {pending.WorldName} (attempt {pending.StartAttempts}, crossDc={pending.CrossDc})");
+                try
+                {
+                    lifestreamTpAndChangeWorldIpc.InvokeAction(pending.WorldName, pending.CrossDc, null, false, null, null, null);
+                }
+                catch (Exception ex)
+                {
+                    NotifyChat($"Failed to invoke Lifestream for the transfer to {pending.WorldName}: {ex.Message}");
+                    pendingWorldTeleport = null;
+                    return;
+                }
             }
             else if (DateTime.UtcNow > pending.Deadline)
             {
-                Svc.Log.Warning($"Gave up waiting for the world hop to land: still on world {Svc.PlayerState.CurrentWorld.RowId} (target {pending.WorldId}) and Lifestream reports no transfer in progress.");
+                NotifyChat($"Gave up waiting for the world transfer to {pending.WorldName}: still on world {Svc.PlayerState.CurrentWorld.RowId} and Lifestream reports no transfer in progress.");
                 pendingWorldTeleport = null;
                 return;
             }
 
             if (loggingNow)
-                Svc.Log.Information($"Waiting for world hop to land: playerAvailable={Player.Available}, currentWorld={Svc.PlayerState.CurrentWorld.RowId}, targetWorld={pending.WorldId}, hopInProgress={hopInProgress}");
+                Svc.Log.Information($"Waiting for world hop to land: playerAvailable={Player.Available}, currentWorld={Svc.PlayerState.CurrentWorld.RowId}, targetWorld={pending.WorldId}, hopInProgress={hopInProgress}, attempts={pending.StartAttempts}");
             return;
         }
 
         // On the target world now; the remaining deadline covers the local teleport phase.
         if (DateTime.UtcNow > pending.Deadline)
         {
-            Svc.Log.Warning($"Timed out waiting to teleport to aetheryte {pending.Aetheryte.RowId} after a world hop.");
+            NotifyChat($"Timed out waiting to teleport to the destination aetheryte after arriving on {pending.WorldName}.");
             pendingWorldTeleport = null;
             return;
         }
