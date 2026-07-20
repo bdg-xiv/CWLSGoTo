@@ -1,0 +1,13 @@
+{
+  "Author": "bdg",
+  "Name": "Gem Rate",
+  "Punchline": "Tracks how many bicolor gemstones you earn per hour.",
+  "Description": "Watches your Bicolor Gemstone count and shows a small window with the current total, how many you gained this session, your earn rate per hour (whole session and the last 15 minutes), and the estimated time until you hit the 1,500 cap. The session clock starts at your first gain so idle time before farming doesn't skew the rate. /gemrate toggles the window.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "fate",
+    "bicolor",
+    "gemstones",
+    "tracker"
+  ]
+}

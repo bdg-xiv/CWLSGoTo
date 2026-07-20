@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ModSnap", "ModSnap\ModSnap.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoLister", "AutoLister\AutoLister.csproj", "{5E1FA4D8-2C6B-4A0F-9B7D-83E4C1A9F062}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GemRate", "GemRate\GemRate.csproj", "{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -51,6 +53,10 @@ Global
 		{5E1FA4D8-2C6B-4A0F-9B7D-83E4C1A9F062}.Debug|x64.Build.0 = Debug|x64
 		{5E1FA4D8-2C6B-4A0F-9B7D-83E4C1A9F062}.Release|x64.ActiveCfg = Release|x64
 		{5E1FA4D8-2C6B-4A0F-9B7D-83E4C1A9F062}.Release|x64.Build.0 = Release|x64
+		{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}.Debug|x64.ActiveCfg = Debug|x64
+		{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}.Debug|x64.Build.0 = Debug|x64
+		{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}.Release|x64.ActiveCfg = Release|x64
+		{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
