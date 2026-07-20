@@ -63,6 +63,7 @@ public sealed class Plugin : IDalamudPlugin
         public required bool CrossDc;
         public DateTime Deadline;
         public int StartAttempts;
+        public bool Started; // a transfer visibly began; never re-issue after this
     }
 
     private WorldTeleportTask? pendingWorldTeleport;
@@ -291,15 +292,23 @@ public sealed class Plugin : IDalamudPlugin
             // click is wrong. Keep pushing the deadline out for as long as the hop is
             // still visibly in progress; the deadline only counts down once nothing is
             // happening anymore.
+            // The world-visit queue (Readying/WaitingToVisitOtherWorld) counts as in
+            // progress: re-issuing the transfer while queued resets the queue position,
+            // and giving up abandons a transfer that will still happen. This mirrors
+            // Hunt Train Assistant, which issues the transfer once and then only waits.
             var hopInProgress = !IsScreenReady()
                 || Svc.Condition[ConditionFlag.BetweenAreas]
                 || Svc.Condition[ConditionFlag.BetweenAreas51]
+                || Svc.Condition[ConditionFlag.ReadyingVisitOtherWorld]
+                || Svc.Condition[ConditionFlag.WaitingToVisitOtherWorld]
                 || (EzThrottler.Throttle(BusyCheckThrottleName, 1000) && LifestreamIsBusy());
             if (hopInProgress)
             {
+                if (pending.StartAttempts > 0)
+                    pending.Started = true;
                 pending.Deadline = DateTime.UtcNow.AddSeconds(30);
             }
-            else if (Player.Available && !Player.IsBusy && !Svc.Condition[ConditionFlag.InCombat]
+            else if (!pending.Started && Player.Available && !Player.IsBusy && !Svc.Condition[ConditionFlag.InCombat]
                 && EzThrottler.Throttle(WorldHopStartThrottleName, 5000))
             {
                 // Nothing is happening - issue (or re-issue) the world change instead
