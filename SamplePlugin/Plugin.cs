@@ -70,7 +70,8 @@ public sealed class Plugin : IDalamudPlugin
         public required bool CrossDc;
         public DateTime Deadline;
         public int StartAttempts;
-        public bool Started; // a transfer visibly began; never re-issue after this
+        public bool Started; // a transfer visibly began; don't re-issue while it shows progress
+        public DateTime LastProgressAt; // last time the hop was visibly doing something
     }
 
     private WorldTeleportTask? pendingWorldTeleport;
@@ -315,7 +316,7 @@ public sealed class Plugin : IDalamudPlugin
             return;
 
         if (Configuration.StopSndOnGoTo)
-            StopSomethingNeedDoing();
+            StopAutomationForGoTo();
 
         // Open the map and drop the flag right away, before teleporting.
         Svc.GameGui.OpenMapWithMapLink(mapLink);
@@ -333,24 +334,32 @@ public sealed class Plugin : IDalamudPlugin
         GoToWorldThenAetheryte(world.Value, aetheryte);
     }
 
-    /// <summary>Hard-stops all running SomethingNeedDoing macros so they can't fight the Go To flow.</summary>
-    private static void StopSomethingNeedDoing()
+    /// <summary>Hard-stops automation that would fight the Go To flow: SomethingNeedDoing
+    /// macros, the Automaton fate grinder, and any in-flight vnavmesh path. Waiting for the
+    /// SND stop to cascade into "/vfate stop" is too slow - the fate module keeps issuing
+    /// movement that cancels Lifestream's teleport/navigation - so stop them directly.</summary>
+    private static void StopAutomationForGoTo()
     {
-        try
+        // SND v15 exposes no IPC; its "/snd stop all" subcommand maps straight to
+        // MacroScheduler.StopAllMacros() - a hard cancel, not a pause. ProcessCommand
+        // invokes the registered handlers directly, and the ContainsKey guards make
+        // each call a silent no-op when that plugin isn't installed.
+        foreach (var (command, description) in ((string, string)[])
+                 [("/snd stop all", "SomethingNeedDoing macros"), ("/vfate stop", "fate grinder"), ("/vnav stop", "vnavmesh path")])
         {
-            // SND v15 exposes no IPC; its "/snd stop all" subcommand maps straight to
-            // MacroScheduler.StopAllMacros() - a hard cancel, not a pause. ProcessCommand
-            // invokes the registered handler directly, and the ContainsKey guard makes
-            // this a silent no-op when SND isn't installed.
-            if (Svc.Commands.Commands.ContainsKey("/snd"))
+            try
             {
-                Svc.Commands.ProcessCommand("/snd stop all");
-                Svc.Log.Information("Stopped all SomethingNeedDoing macros for Go To.");
+                var name = command.Split(' ')[0];
+                if (Svc.Commands.Commands.ContainsKey(name))
+                {
+                    Svc.Commands.ProcessCommand(command);
+                    Svc.Log.Information($"Stopped {description} for Go To.");
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Warning($"Could not stop SomethingNeedDoing macros: {ex.Message}");
+            catch (Exception ex)
+            {
+                Svc.Log.Warning($"Could not stop {description}: {ex.Message}");
+            }
         }
     }
 
@@ -390,6 +399,7 @@ public sealed class Plugin : IDalamudPlugin
                 WorldName = worldName,
                 CrossDc = !sameDc,
                 Deadline = DateTime.UtcNow.AddSeconds(30),
+                LastProgressAt = DateTime.UtcNow,
             };
             EzThrottler.Reset(TeleportThrottleName);
             EzThrottler.Reset(WorldHopStartThrottleName);
@@ -454,7 +464,19 @@ public sealed class Plugin : IDalamudPlugin
             {
                 if (pending.StartAttempts > 0)
                     pending.Started = true;
+                pending.LastProgressAt = DateTime.UtcNow;
                 pending.Deadline = DateTime.UtcNow.AddSeconds(30);
+            }
+            else if (pending.Started && DateTime.UtcNow - pending.LastProgressAt > TimeSpan.FromSeconds(10))
+            {
+                // The transfer visibly began but has now been idle for a sustained
+                // stretch with the world unchanged: the attempt died mid-way (e.g.
+                // another plugin's navigation hijacked Lifestream's pathing). The
+                // world-visit queue can't get us here - its conditions keep
+                // hopInProgress true - so re-issuing is safe.
+                Svc.Log.Warning($"World transfer to {pending.WorldName} stalled with no progress for 10s, allowing a retry");
+                pending.Started = false;
+                EzThrottler.Reset(WorldHopStartThrottleName);
             }
             else if (!pending.Started && Player.Available && !Player.IsBusy && !Svc.Condition[ConditionFlag.InCombat]
                 && EzThrottler.Throttle(WorldHopStartThrottleName, 5000))

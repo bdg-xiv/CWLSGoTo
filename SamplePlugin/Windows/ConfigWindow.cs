@@ -70,11 +70,11 @@ public class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled("/hunts toggles the hunt tracker window.");
 
         var stopSnd = configuration.StopSndOnGoTo;
-        if (ImGui.Checkbox("Stop SomethingNeedDoing scripts on Go To", ref stopSnd))
+        if (ImGui.Checkbox("Stop automation on Go To", ref stopSnd))
         {
             configuration.StopSndOnGoTo = stopSnd;
             configuration.Save();
         }
-        ImGui.TextDisabled("Hard-stops (not pauses) all running SND macros\nwhen a Go To starts from a link or the tracker.");
+        ImGui.TextDisabled("Hard-stops SND macros, the fate grinder and any active\nnavigation when a Go To starts from a link or the tracker.");
     }
 }
