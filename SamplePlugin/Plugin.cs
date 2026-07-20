@@ -174,6 +174,13 @@ public sealed class Plugin : IDalamudPlugin
             .Skip(linkIndex + 1)
             .OfType<TextPayload>()
             .Select(p => p.Text));
+
+        // The link's own display text repeats the zone name, and zone names can
+        // contain world names ("Ultima Thule" contains the JP world "Ultima") -
+        // remove the zone name before scanning for the destination world.
+        if (!string.IsNullOrEmpty(mapLink.PlaceName))
+            textAfterLink = textAfterLink.Replace(mapLink.PlaceName, " ", StringComparison.OrdinalIgnoreCase);
+
         var targetWorld = MapManager.ParseWorldFromText(textAfterLink);
 
         if (isPluginReport)
