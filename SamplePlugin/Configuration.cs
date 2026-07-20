@@ -25,6 +25,10 @@ public class Configuration : IPluginConfiguration
     // Pop the hunt tracker window open whenever a new hunt is tracked.
     public bool AutoOpenHuntWindow { get; set; } = true;
 
+    // Hard-stop (not pause) all running SomethingNeedDoing macros whenever a
+    // Go To starts, from either a chat link or the hunt tracker window.
+    public bool StopSndOnGoTo { get; set; } = true;
+
     /// <summary>Applies one-time migrations to configs saved by older versions. Returns true if changed.</summary>
     public bool Migrate()
     {

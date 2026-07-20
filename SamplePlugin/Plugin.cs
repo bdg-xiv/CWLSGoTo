@@ -309,6 +309,9 @@ public sealed class Plugin : IDalamudPlugin
         if (!Svc.PlayerState.IsLoaded)
             return;
 
+        if (Configuration.StopSndOnGoTo)
+            StopSomethingNeedDoing();
+
         // Open the map and drop the flag right away, before teleporting.
         Svc.GameGui.OpenMapWithMapLink(mapLink);
 
@@ -323,6 +326,27 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         GoToWorldThenAetheryte(world.Value, aetheryte);
+    }
+
+    /// <summary>Hard-stops all running SomethingNeedDoing macros so they can't fight the Go To flow.</summary>
+    private static void StopSomethingNeedDoing()
+    {
+        try
+        {
+            // SND v15 exposes no IPC; its "/snd stop all" subcommand maps straight to
+            // MacroScheduler.StopAllMacros() - a hard cancel, not a pause. ProcessCommand
+            // invokes the registered handler directly, and the ContainsKey guard makes
+            // this a silent no-op when SND isn't installed.
+            if (Svc.Commands.Commands.ContainsKey("/snd"))
+            {
+                Svc.Commands.ProcessCommand("/snd stop all");
+                Svc.Log.Information("Stopped all SomethingNeedDoing macros for Go To.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Could not stop SomethingNeedDoing macros: {ex.Message}");
+        }
     }
 
     private void BeginArrivalWatch(Aetheryte aetheryte, bool sawTransition)
