@@ -140,11 +140,16 @@ public sealed class Plugin : IDalamudPlugin
         if (!Configuration.WatchedChannels.Contains(message.LogKind))
             return;
 
+        // The hunt tracker is fed only by plugin reports (Faloop/Sonar print to Echo),
+        // never by player chatter - [Go To] links still work on every watched channel.
+        var isPluginReport = message.LogKind == XivChatType.Echo;
+
         // Death reports (e.g. Faloop's "... was killed") have nothing to travel to;
         // instead they clear the matching tracked hunt.
         if (message.Message.TextValue.Contains("killed", StringComparison.OrdinalIgnoreCase))
         {
-            RemoveKilledHunts(message.Message.TextValue);
+            if (isPluginReport)
+                RemoveKilledHunts(message.Message.TextValue);
             return;
         }
 
@@ -171,7 +176,8 @@ public sealed class Plugin : IDalamudPlugin
             .Select(p => p.Text));
         var targetWorld = MapManager.ParseWorldFromText(textAfterLink);
 
-        TrackHunt(payloads, linkIndex, targetWorld, aetheryte.Value, mapLink);
+        if (isPluginReport)
+            TrackHunt(payloads, linkIndex, targetWorld, aetheryte.Value, mapLink);
 
         var linkPayload = CreateGoToLink(aetheryte.Value, mapLink, targetWorld);
         message.Message = new SeStringBuilder()
