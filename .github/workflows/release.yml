@@ -85,23 +85,30 @@ jobs:
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add pluginmaster.json
-        $status = git status --porcelain
-        if ($status) {
+        # The freshly generated pluginmaster.json is authoritative - never merge it.
+        # On a push race, refetch master, reapply the generated file, and push again
+        # (a pull/rebase would hit an unresolvable conflict on the generated file).
+        Copy-Item pluginmaster.json "$env:RUNNER_TEMP/pluginmaster.json" -Force
+        $pushed = $false
+        for ($i = 0; $i -lt 5 -and -not $pushed; $i++) {
+          git fetch origin master
+          git reset --hard origin/master
+          Copy-Item "$env:RUNNER_TEMP/pluginmaster.json" pluginmaster.json -Force
+          git add pluginmaster.json
+          $status = git status --porcelain
+          if (-not $status) {
+            Write-Output "pluginmaster.json unchanged, skipping commit"
+            $pushed = $true
+            break
+          }
           git commit -m "Update pluginmaster.json [skip ci]"
-          $pushed = $false
-          for ($i = 0; $i -lt 5 -and -not $pushed; $i++) {
-            git push
-            if ($LASTEXITCODE -eq 0) {
-              $pushed = $true
-            } else {
-              git pull --rebase
-              Start-Sleep -Seconds 3
-            }
+          git push origin HEAD:master
+          if ($LASTEXITCODE -eq 0) {
+            $pushed = $true
+          } else {
+            Start-Sleep -Seconds 3
           }
-          if (-not $pushed) {
-            throw "Failed to push pluginmaster.json after retries"
-          }
-        } else {
-          Write-Output "pluginmaster.json unchanged, skipping commit"
+        }
+        if (-not $pushed) {
+          throw "Failed to push pluginmaster.json after retries"
         }
