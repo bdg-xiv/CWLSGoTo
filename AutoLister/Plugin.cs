@@ -585,8 +585,10 @@ public sealed class Plugin : IDalamudPlugin
         return true;
     }
 
+    // The name node's raw text contains SeString payloads (colors, item link);
+    // parse it and keep only the readable text (the HQ glyph survives as a char).
     private static unsafe string GetRetainerSellItemName(AddonRetainerSell* addon)
-        => addon->ItemName->NodeText.ToString();
+        => ReadSeString(&addon->ItemName->NodeText).TextValue;
 
     #endregion
 
