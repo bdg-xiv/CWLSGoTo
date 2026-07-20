@@ -1,3 +1,4 @@
+using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.IoC;
@@ -7,12 +8,18 @@ using ECommons.Automation;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
 using ECommons.Throttlers;
+using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using static ECommons.GenericHelpers;
+using Callback = ECommons.Automation.Callback;
 
 namespace DesynthAllCommand;
 
@@ -24,15 +31,25 @@ public sealed class Plugin : IDalamudPlugin
     private const string CommandName = "/desynthall";
 
     // Same event codes ECommons/PandorasBox use to drive the SalvageItemSelector/SalvageDialog addons.
-    private const int SelectFirstItemEventCode = 12;
+    // Event 12's value is the row index in the list, so it can select any item, not just the first.
+    private const int SelectItemEventCode = 12;
     private const int ConfirmDialogEventCode = 0;
 
     private readonly TaskManager taskManager;
     private bool yesAlreadyLocked;
+    private bool configOpen;
+
+    // Highest item level among all desynthesizable items = the hard cap desynthesis
+    // skill can reach. At or above it nothing grants skill anymore. Computed lazily.
+    private uint maxDesynthLevel;
+
+    internal Configuration Config { get; }
 
     public Plugin()
     {
         ECommonsMain.Init(PluginInterface, this);
+
+        Config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
         // TaskManager's constructor hooks Svc.Framework.Update, so it must be created
         // after ECommonsMain.Init - a field initializer would run too early and throw.
@@ -40,12 +57,52 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Opens the desynthesis window and desynthesizes everything in it automatically."
+            HelpMessage = "Desynthesizes everything in the desynthesis window. \"/desynthall config\" opens the settings."
         });
+
+        PluginInterface.UiBuilder.Draw += DrawConfigWindow;
+        PluginInterface.UiBuilder.OpenConfigUi += OpenConfigWindow;
+    }
+
+    private void OpenConfigWindow() => configOpen = true;
+
+    private void DrawConfigWindow()
+    {
+        if (!configOpen)
+            return;
+
+        ImGui.SetNextWindowSize(new Vector2(380, 0), ImGuiCond.FirstUseEver);
+        if (ImGui.Begin("DesynthAll Settings###DesynthAllSettings", ref configOpen, ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            var onlySkillGain = Config.OnlySkillGain;
+            if (ImGui.Checkbox("Only items that grant desynthesis skill", ref onlySkillGain))
+            {
+                Config.OnlySkillGain = onlySkillGain;
+                Config.Save();
+            }
+            ImGui.TextDisabled("Desynthesizes the items SimpleTweaks colors yellow/red and\nignores the green ones (your skill is 50+ above their item level).");
+
+            ImGui.Spacing();
+
+            var skipGearset = Config.SkipGearsetItems;
+            if (ImGui.Checkbox("Never desynthesize gear set items", ref skipGearset))
+            {
+                Config.SkipGearsetItems = skipGearset;
+                Config.Save();
+            }
+        }
+        ImGui.End();
     }
 
     private unsafe void OnCommand(string command, string args)
     {
+        if (args.Trim().Equals("config", StringComparison.OrdinalIgnoreCase)
+            || args.Trim().Equals("cfg", StringComparison.OrdinalIgnoreCase))
+        {
+            configOpen = !configOpen;
+            return;
+        }
+
         taskManager.Abort();
 
         // AgentInterface.Show() toggles: calling it while the window is open closes it,
@@ -93,20 +150,26 @@ public sealed class Plugin : IDalamudPlugin
             return null; // Aborts the rest of the queue.
         }
 
-        if (addon->ItemCount == 0)
+        var next = FindNextEligibleItem(out var skippedNoSkill, out var skippedGearset);
+        if (next < 0)
         {
-            Svc.Log.Information("No items left to desynthesize, done.");
-            Svc.Chat.Print("[DesynthAll] Done.");
+            var summary = "[DesynthAll] Done.";
+            if (skippedNoSkill > 0)
+                summary += $" Ignored {skippedNoSkill} item(s) that grant no desynthesis skill.";
+            if (skippedGearset > 0)
+                summary += $" Ignored {skippedGearset} gear set item(s).";
+            Svc.Log.Information(summary);
+            Svc.Chat.Print(summary);
             UnlockYesAlready();
             addon->AtkUnitBase.Close(true);
             return true;
         }
 
-        Svc.Log.Information($"Desynthesizing next item ({addon->ItemCount} in list)");
-        // DesynthFirst can end up waiting a while for the lingering occupied state from
+        Svc.Log.Information($"Desynthesizing next eligible item (index {next}, {addon->ItemCount} in list)");
+        // DesynthNext can end up waiting a while for the lingering occupied state from
         // the previous item to clear, so give it a long leash and never kill the whole
         // run over it - the outer loop keeps retrying regardless.
-        taskManager.Enqueue(DesynthFirst, "DesynthFirst", new TaskManagerConfiguration { TimeLimitMS = 60000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.Enqueue(DesynthNext, "DesynthNext", new TaskManagerConfiguration { TimeLimitMS = 60000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.Enqueue(ConfirmDesynth, "ConfirmDesynth", new TaskManagerConfiguration { TimeLimitMS = 2000, AbortOnTimeout = false });
         taskManager.Enqueue(CloseResults, "CloseResults", new TaskManagerConfiguration { TimeLimitMS = 9000, AbortOnTimeout = false });
         taskManager.EnqueueDelay(500);
@@ -114,7 +177,7 @@ public sealed class Plugin : IDalamudPlugin
         return true;
     }
 
-    private static unsafe bool? DesynthFirst()
+    private unsafe bool? DesynthNext()
     {
         // The game rejects the request with "Unable to execute command while occupied"
         // if it's fired while any occupied-type condition is still set - Occupied39 in
@@ -130,8 +193,117 @@ public sealed class Plugin : IDalamudPlugin
         if (!TryGetAddonByName<AtkUnitBase>("SalvageItemSelector", out var addon))
             return null;
 
-        Callback.Fire(addon, false, SelectFirstItemEventCode, 0);
+        // Re-scan at fire time: the agent refreshes its list after each desynth, so an
+        // index computed earlier (while the occupied state was still clearing) could be stale.
+        var index = FindNextEligibleItem(out _, out _);
+        if (index < 0)
+            return true; // Nothing eligible anymore; the outer loop prints the summary.
+
+        Callback.Fire(addon, false, SelectItemEventCode, index);
         return true;
+    }
+
+    /// <summary>
+    /// Index of the first item in the desynthesis list that passes the configured filters,
+    /// or -1 when none does. Also counts how many list items each filter rejected.
+    /// </summary>
+    private unsafe int FindNextEligibleItem(out int skippedNoSkill, out int skippedGearset)
+    {
+        skippedNoSkill = 0;
+        skippedGearset = 0;
+
+        var agent = AgentSalvage.Instance();
+        if (agent == null)
+            return -1;
+
+        for (var i = 0; i < agent->ItemCount; i++)
+        {
+            var entry = agent->ItemList + i;
+
+            if (Config.SkipGearsetItems && IsInGearset(entry))
+            {
+                skippedGearset++;
+                continue;
+            }
+
+            if (Config.OnlySkillGain && !GrantsDesynthSkill(entry->ItemId))
+            {
+                skippedNoSkill++;
+                continue;
+            }
+
+            return i;
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Same check SimpleTweaks' Extended Desynthesis Window uses for its yellow/red vs green
+    /// coloring: skill still rises while the class's desynthesis level is below the item's
+    /// item level + 50 and below the game-wide cap (the highest desynthesizable item level).
+    /// </summary>
+    private unsafe bool GrantsDesynthSkill(uint itemId)
+    {
+        var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
+        if (item == null)
+            return false;
+
+        var desynthLevel = PlayerState.Instance()->GetDesynthesisLevel(item.Value.ClassJobRepair.RowId);
+        return desynthLevel < MaxDesynthLevel && desynthLevel < item.Value.LevelItem.RowId + 50;
+    }
+
+    private uint MaxDesynthLevel
+    {
+        get
+        {
+            if (maxDesynthLevel == 0)
+            {
+                foreach (var item in Svc.Data.GetExcelSheet<Item>())
+                {
+                    if (item.Desynth > 0 && item.LevelItem.RowId > maxDesynthLevel)
+                        maxDesynthLevel = item.LevelItem.RowId;
+                }
+            }
+
+            return maxDesynthLevel;
+        }
+    }
+
+    private static unsafe bool IsInGearset(AgentSalvage.SalvageListItem* entry)
+    {
+        // Gear sets store HQ items as item id + 1,000,000. The HQ flag lives on the
+        // inventory slot, so resolve it; if the slot can't be resolved (list briefly out
+        // of sync with the inventory), check both variants to stay on the safe side.
+        var itemId = entry->ItemId;
+        uint? gearsetItemId = null;
+
+        var container = InventoryManager.Instance()->GetInventoryContainer(entry->InventoryType);
+        var slot = container != null ? container->GetInventorySlot((int)entry->InventorySlot) : null;
+        if (slot != null && slot->ItemId == itemId)
+            gearsetItemId = slot->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) ? itemId + 1_000_000 : itemId;
+
+        var module = RaptureGearsetModule.Instance();
+        for (var i = 0; i < 101; i++)
+        {
+            var gearset = module->GetGearset(i);
+            if (gearset == null)
+                continue;
+            if (gearset->Id != i)
+                break;
+            if (!gearset->Flags.HasFlag(RaptureGearsetModule.GearsetFlag.Exists))
+                continue;
+
+            foreach (ref var gearsetItem in gearset->Items)
+            {
+                if (gearsetItemId != null
+                        ? gearsetItem.ItemId == gearsetItemId.Value
+                        : gearsetItem.ItemId == itemId || gearsetItem.ItemId == itemId + 1_000_000)
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private static unsafe bool? ConfirmDesynth()
@@ -195,6 +367,8 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        PluginInterface.UiBuilder.Draw -= DrawConfigWindow;
+        PluginInterface.UiBuilder.OpenConfigUi -= OpenConfigWindow;
         taskManager.Abort();
         UnlockYesAlready();
         Svc.Commands.RemoveHandler(CommandName);
