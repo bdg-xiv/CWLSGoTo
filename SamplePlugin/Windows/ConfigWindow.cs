@@ -58,5 +58,15 @@ public class ConfigWindow : Window, IDisposable
                 configuration.Save();
             }
         }
+
+        ImGui.Separator();
+
+        var autoOpen = configuration.AutoOpenHuntWindow;
+        if (ImGui.Checkbox("Auto-open hunt tracker on new hunt", ref autoOpen))
+        {
+            configuration.AutoOpenHuntWindow = autoOpen;
+            configuration.Save();
+        }
+        ImGui.TextDisabled("/cwlsgoto hunts toggles the hunt tracker window.");
     }
 }

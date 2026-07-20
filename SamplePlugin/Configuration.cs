@@ -22,6 +22,9 @@ public class Configuration : IPluginConfiguration
         XivChatType.Echo,
     ];
 
+    // Pop the hunt tracker window open whenever a new hunt is tracked.
+    public bool AutoOpenHuntWindow { get; set; } = true;
+
     /// <summary>Applies one-time migrations to configs saved by older versions. Returns true if changed.</summary>
     public bool Migrate()
     {

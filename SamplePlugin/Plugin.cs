@@ -46,6 +46,12 @@ public sealed class Plugin : IDalamudPlugin
 
     public readonly WindowSystem WindowSystem = new("CWLSGoTo");
     private readonly ConfigWindow configWindow;
+    private readonly HuntTrackerWindow huntTrackerWindow;
+
+    internal sealed record HuntEntry(string Label, string WorldName, World? World, Aetheryte Aetheryte, MapLinkPayload MapLink, DateTime AddedAt);
+
+    /// <summary>Hunts tracked from watched messages, newest first. Shown by <see cref="HuntTrackerWindow"/>.</summary>
+    internal List<HuntEntry> Hunts { get; } = [];
 
     private readonly ICallGateSubscriber<uint, byte, bool> teleportIpc;
     private readonly ICallGateSubscriber<uint, byte, bool> lifestreamTeleportIpc;
@@ -92,6 +98,8 @@ public sealed class Plugin : IDalamudPlugin
 
         configWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(configWindow);
+        huntTrackerWindow = new HuntTrackerWindow(this);
+        WindowSystem.AddWindow(huntTrackerWindow);
 
         // The Teleporter plugin exposes a "Teleport" IPC (aetheryteId, subIndex) -> bool
         teleportIpc = PluginInterface.GetIpcSubscriber<uint, byte, bool>("Teleport");
@@ -113,11 +121,17 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Opens the CWLS Go To channel settings."
+            HelpMessage = "Opens the CWLS Go To channel settings. \"/cwlsgoto hunts\" toggles the hunt tracker."
         });
     }
 
-    private void OnCommand(string command, string args) => ToggleConfigWindow();
+    private void OnCommand(string command, string args)
+    {
+        if (args.Trim().Equals("hunts", StringComparison.OrdinalIgnoreCase))
+            huntTrackerWindow.Toggle();
+        else
+            ToggleConfigWindow();
+    }
 
     private void ToggleConfigWindow() => configWindow.Toggle();
 
@@ -126,12 +140,16 @@ public sealed class Plugin : IDalamudPlugin
         if (!Configuration.WatchedChannels.Contains(message.LogKind))
             return;
 
+        // Death reports (e.g. Faloop's "... was killed") have nothing to travel to;
+        // instead they clear the matching tracked hunt.
+        if (message.Message.TextValue.Contains("killed", StringComparison.OrdinalIgnoreCase))
+        {
+            RemoveKilledHunts(message.Message.TextValue);
+            return;
+        }
+
         var mapLink = message.Message.Payloads.OfType<MapLinkPayload>().FirstOrDefault();
         if (mapLink == null)
-            return;
-
-        // Death reports (e.g. Faloop's "... was killed") have nothing to travel to.
-        if (message.Message.TextValue.Contains("killed", StringComparison.OrdinalIgnoreCase))
             return;
 
         var aetheryte = MapManager.GetNearestAetheryte(mapLink);
@@ -153,6 +171,8 @@ public sealed class Plugin : IDalamudPlugin
             .Select(p => p.Text));
         var targetWorld = MapManager.ParseWorldFromText(textAfterLink);
 
+        TrackHunt(payloads, linkIndex, targetWorld, aetheryte.Value, mapLink);
+
         var linkPayload = CreateGoToLink(aetheryte.Value, mapLink, targetWorld);
         message.Message = new SeStringBuilder()
             .Append(message.Message)
@@ -163,6 +183,62 @@ public sealed class Plugin : IDalamudPlugin
             .AddUiForegroundOff()
             .Add(RawPayload.LinkTerminator)
             .Build();
+    }
+
+    private void TrackHunt(List<Payload> payloads, int linkIndex, World? world, Aetheryte aetheryte, MapLinkPayload mapLink)
+    {
+        // The mob name is the text before the map link (minus game icon glyphs).
+        var label = CleanHuntLabel(string.Concat(payloads
+            .Take(linkIndex)
+            .OfType<TextPayload>()
+            .Select(p => p.Text)));
+        if (label.Length == 0)
+            label = mapLink.PlaceName;
+
+        var worldName = world?.Name.ExtractText() ?? "";
+
+        // A re-report of the same hunt replaces the old entry (fresher position).
+        Hunts.RemoveAll(h => h.Label.Equals(label, StringComparison.OrdinalIgnoreCase)
+            && h.WorldName.Equals(worldName, StringComparison.OrdinalIgnoreCase));
+        Hunts.Insert(0, new HuntEntry(label, worldName, world, aetheryte, mapLink, DateTime.UtcNow));
+        while (Hunts.Count > 30)
+            Hunts.RemoveAt(Hunts.Count - 1);
+
+        if (Configuration.AutoOpenHuntWindow)
+            huntTrackerWindow.IsOpen = true;
+    }
+
+    private void RemoveKilledHunts(string killText)
+    {
+        for (var i = Hunts.Count - 1; i >= 0; i--)
+        {
+            var hunt = Hunts[i];
+            if (hunt.Label.Length == 0 || !killText.Contains(hunt.Label, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // When the tracked hunt has a world, the kill report must name it too, so a
+            // kill on one world doesn't clear the same mob tracked on another world.
+            if (hunt.WorldName.Length > 0 && !killText.Contains(hunt.WorldName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            Svc.Log.Information($"Removing killed hunt: {hunt.Label} ({hunt.WorldName})");
+            Hunts.RemoveAt(i);
+        }
+    }
+
+    private static string CleanHuntLabel(string raw)
+    {
+        var builder = new System.Text.StringBuilder(raw.Length);
+        foreach (var c in raw)
+        {
+            // Strip SeIconChar glyphs (private use area) that Faloop prefixes messages with.
+            if (c >= 0xE000 && c <= 0xF8FF)
+                continue;
+            builder.Append(c);
+        }
+
+        var cleaned = string.Join(' ', builder.ToString().Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        return cleaned.Length > 40 ? cleaned[..40] : cleaned;
     }
 
     private DalamudLinkPayload CreateGoToLink(Aetheryte aetheryte, MapLinkPayload mapLink, World? world)
@@ -187,23 +263,30 @@ public sealed class Plugin : IDalamudPlugin
         if (link.MapLink == null)
             return;
 
+        ExecuteGoTo(link.Aetheryte, link.World, link.MapLink);
+    }
+
+    /// <summary>The full Go To flow: map flag, then teleport (with a world hop first if needed).
+    /// Used by both the chat [Go To] links and the hunt tracker window.</summary>
+    internal void ExecuteGoTo(Aetheryte aetheryte, World? world, MapLinkPayload mapLink)
+    {
         if (!Svc.PlayerState.IsLoaded)
             return;
 
         // Open the map and drop the flag right away, before teleporting.
-        Svc.GameGui.OpenMapWithMapLink(link.MapLink);
+        Svc.GameGui.OpenMapWithMapLink(mapLink);
 
-        if (link.World == null || link.World.Value.RowId == Svc.PlayerState.CurrentWorld.RowId)
+        if (world == null || world.Value.RowId == Svc.PlayerState.CurrentWorld.RowId)
         {
-            if (!TryTeleportToAetheryte(link.Aetheryte))
+            if (!TryTeleportToAetheryte(aetheryte))
                 NotifyChat("Teleport request was not accepted - are the Teleporter/Lifestream plugins enabled?");
             // The arrival watcher waits until it has seen the teleport cast/loading
             // happen, so a declined teleport just times out quietly.
-            BeginArrivalWatch(link.Aetheryte, sawTransition: false);
+            BeginArrivalWatch(aetheryte, sawTransition: false);
             return;
         }
 
-        GoToWorldThenAetheryte(link.World.Value, link.Aetheryte);
+        GoToWorldThenAetheryte(world.Value, aetheryte);
     }
 
     private void BeginArrivalWatch(Aetheryte aetheryte, bool sawTransition)
