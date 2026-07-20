@@ -36,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private const ushort GoToLinkColor = 45;
     private const string CommandName = "/cwlsgoto";
+    private const string HuntsCommandName = "/hunts";
     private const string TeleportThrottleName = "CWLSGoToTeleport";
     private const string BusyCheckThrottleName = "CWLSGoToLifestreamBusyCheck";
     private const string MountCheckThrottleName = "CWLSGoToMountCheck";
@@ -122,6 +123,10 @@ public sealed class Plugin : IDalamudPlugin
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Opens the CWLS Go To channel settings. \"/cwlsgoto hunts\" toggles the hunt tracker."
+        });
+        Svc.Commands.AddHandler(HuntsCommandName, new CommandInfo((_, _) => huntTrackerWindow.Toggle())
+        {
+            HelpMessage = "Toggles the hunt tracker window."
         });
     }
 
@@ -747,6 +752,7 @@ public sealed class Plugin : IDalamudPlugin
         configWindow.Dispose();
 
         Svc.Commands.RemoveHandler(CommandName);
+        Svc.Commands.RemoveHandler(HuntsCommandName);
 
         ECommonsMain.Dispose();
     }

@@ -67,7 +67,7 @@ public class ConfigWindow : Window, IDisposable
             configuration.AutoOpenHuntWindow = autoOpen;
             configuration.Save();
         }
-        ImGui.TextDisabled("/cwlsgoto hunts toggles the hunt tracker window.");
+        ImGui.TextDisabled("/hunts toggles the hunt tracker window.");
 
         var stopSnd = configuration.StopSndOnGoTo;
         if (ImGui.Checkbox("Stop SomethingNeedDoing scripts on Go To", ref stopSnd))
