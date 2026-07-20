@@ -185,13 +185,26 @@ public sealed class Plugin : IDalamudPlugin
             .Build();
     }
 
+    // Decorations that alert sources (Sonar, Faloop, train callouts) prepend to the
+    // mob name; stripped so the same hunt gets the same label regardless of source.
+    private static readonly string[] RankPrefixTokens = ["rank", "s", "ss", "a", "b", "[s]", "(s)", "[a]", "(a)", "[b]", "(b)", "s:", "a:", "b:", "-", ":", "*"];
+
+    private static string NormalizeHuntName(string label)
+    {
+        var words = label.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        while (words.Count > 1 && RankPrefixTokens.Contains(words[0].ToLowerInvariant()))
+            words.RemoveAt(0);
+        return string.Join(' ', words);
+    }
+
     private void TrackHunt(List<Payload> payloads, int linkIndex, World? world, Aetheryte aetheryte, MapLinkPayload mapLink)
     {
-        // The mob name is the text before the map link (minus game icon glyphs).
-        var label = CleanHuntLabel(string.Concat(payloads
+        // The mob name is the text before the map link (minus game icon glyphs and
+        // rank decorations, so Sonar and Faloop reports of one mob look identical).
+        var label = NormalizeHuntName(CleanHuntLabel(string.Concat(payloads
             .Take(linkIndex)
             .OfType<TextPayload>()
-            .Select(p => p.Text)));
+            .Select(p => p.Text))));
         if (label.Length == 0)
             label = mapLink.PlaceName;
 
@@ -200,6 +213,19 @@ public sealed class Plugin : IDalamudPlugin
         // A re-report of the same hunt replaces the old entry (fresher position).
         Hunts.RemoveAll(h => h.Label.Equals(label, StringComparison.OrdinalIgnoreCase)
             && h.WorldName.Equals(worldName, StringComparison.OrdinalIgnoreCase));
+
+        // The same hunt called by another source (e.g. Sonar and Faloop) can carry
+        // different label decorations: treat same world + same zone + one name
+        // containing the other as the same hunt and keep the first report.
+        if (Hunts.Any(h => h.WorldName.Equals(worldName, StringComparison.OrdinalIgnoreCase)
+            && h.MapLink.TerritoryType.RowId == mapLink.TerritoryType.RowId
+            && (h.Label.Contains(label, StringComparison.OrdinalIgnoreCase)
+                || label.Contains(h.Label, StringComparison.OrdinalIgnoreCase))))
+        {
+            Svc.Log.Information($"Skipping duplicate hunt report: {label} ({worldName})");
+            return;
+        }
+
         Hunts.Insert(0, new HuntEntry(label, worldName, world, aetheryte, mapLink, DateTime.UtcNow));
         while (Hunts.Count > 30)
             Hunts.RemoveAt(Hunts.Count - 1);
