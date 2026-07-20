@@ -14,6 +14,7 @@ using ECommons.UIHelpers.AtkReaderImplementations;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using FFXIVClientStructs.FFXIV.Client.UI.Misc;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using System;
@@ -32,8 +33,6 @@ public sealed class Plugin : IDalamudPlugin
 
     private const string CommandName = "/autolist";
 
-    // The "bottom right quarter" of the expanded inventory view is the fourth bag.
-    private const InventoryType SourceBag = InventoryType.Inventory4;
     private const int RetainerSellSlots = 20;
     private const int UndercutGil = 1;
     private const char HqGlyph = (char)0xE03C;
@@ -50,7 +49,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly TaskManager taskManager;
 
-    private readonly Queue<(int Slot, uint ItemId)> pendingItems = new();
+    private readonly Queue<(InventoryType Container, int Slot, uint ItemId)> pendingItems = new();
     private readonly Dictionary<string, int> cachedPrices = [];
     private bool skipCurrentItem;
     private int listedCount;
@@ -76,7 +75,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Lists every sellable item from the fourth inventory bag on the market (same as the Auto List button)."
+            HelpMessage = "Lists every sellable item from the bottom-right inventory quarter on the market (same as the Auto List button)."
         });
 
         Svc.MarketBoard.OfferingsReceived += OnOfferingsReceived;
@@ -138,7 +137,7 @@ public sealed class Plugin : IDalamudPlugin
             if (ImGui.Button("Auto List"))
                 StartListing();
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Puts every sellable item from the fourth inventory bag up for sale,\nundercutting the cheapest matching HQ/NQ listing by 1 gil.\nPlease do not interact with the game while this runs.");
+                ImGui.SetTooltip("Puts every sellable item from the bottom-right inventory quarter up for sale,\nundercutting the cheapest matching HQ/NQ listing by 1 gil.\nPlease do not interact with the game while this runs.");
         }
 
         ImGui.End();
@@ -183,14 +182,29 @@ public sealed class Plugin : IDalamudPlugin
 
         ResetRunState();
 
-        var items = InventoryManager.Instance()->GetInventoryContainer(SourceBag);
-        if (items == null)
+        // The inventory the player sees is display-sorted: the visible grid is defined
+        // by ItemOrderModule, not by the physical Inventory1-4 containers (an item shown
+        // bottom-right can physically live in any container). The "bottom right quarter"
+        // is therefore the LAST DISPLAY PAGE of the sorter, and each sorter entry maps
+        // that display position back to its physical container page + slot.
+        var sorter = ItemOrderModule.Instance()->InventorySorter;
+        if (sorter == null || sorter->ItemsPerPage <= 0)
             return;
 
+        var manager = InventoryManager.Instance();
         var sheet = Svc.Data.GetExcelSheet<Item>();
-        for (var slot = 0; slot < items->Size; slot++)
+        var totalSlots = sorter->Items.LongCount;
+        var start = totalSlots - sorter->ItemsPerPage;
+
+        for (var i = Math.Max(start, 0); i < totalSlots; i++)
         {
-            var inventorySlot = items->GetInventorySlot(slot);
+            var entry = sorter->Items[i].Value;
+            if (entry == null)
+                continue;
+
+            var container = (InventoryType)((int)sorter->InventoryType + entry->Page);
+            var containerPtr = manager->GetInventoryContainer(container);
+            var inventorySlot = containerPtr != null ? containerPtr->GetInventorySlot(entry->Slot) : null;
             if (inventorySlot == null || inventorySlot->ItemId == 0)
                 continue;
 
@@ -201,12 +215,12 @@ public sealed class Plugin : IDalamudPlugin
             if (item == null || item.Value.ItemSearchCategory.RowId == 0)
                 continue;
 
-            pendingItems.Enqueue((slot, inventorySlot->ItemId));
+            pendingItems.Enqueue((container, entry->Slot, inventorySlot->ItemId));
         }
 
         if (pendingItems.Count == 0)
         {
-            Svc.Chat.Print("[AutoLister] No sellable items in the fourth inventory bag.");
+            Svc.Chat.Print("[AutoLister] No sellable items in the bottom-right inventory quarter.");
             return;
         }
 
@@ -259,16 +273,19 @@ public sealed class Plugin : IDalamudPlugin
             return true;
         }
 
-        // Pull the next pending item that is still sitting in its bag slot.
-        var container = InventoryManager.Instance()->GetInventoryContainer(SourceBag);
+        // Pull the next pending item that is still sitting in its physical slot.
+        var manager = InventoryManager.Instance();
         var found = false;
-        int slot = -1;
+        InventoryType itemContainer = default;
+        var slot = -1;
         while (pendingItems.Count > 0)
         {
             var candidate = pendingItems.Dequeue();
-            var inventorySlot = container != null ? container->GetInventorySlot(candidate.Slot) : null;
+            var containerPtr = manager->GetInventoryContainer(candidate.Container);
+            var inventorySlot = containerPtr != null ? containerPtr->GetInventorySlot(candidate.Slot) : null;
             if (inventorySlot != null && inventorySlot->ItemId == candidate.ItemId)
             {
+                itemContainer = candidate.Container;
                 slot = candidate.Slot;
                 found = true;
                 break;
@@ -277,14 +294,14 @@ public sealed class Plugin : IDalamudPlugin
 
         if (!found)
         {
-            FinishRun("no sellable items left in the bag");
+            FinishRun("no sellable items left in the bottom-right quarter");
             return true;
         }
 
         skipCurrentItem = false;
         newPrice = null;
 
-        taskManager.Enqueue(() => OpenItemContextMenu(slot), "OpenItemContextMenu");
+        taskManager.Enqueue(() => OpenItemContextMenu(itemContainer, slot), "OpenItemContextMenu");
         taskManager.EnqueueDelay(150);
         taskManager.Enqueue(ClickPutUpForSale, "ClickPutUpForSale", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.EnqueueDelay(150);
@@ -305,7 +322,7 @@ public sealed class Plugin : IDalamudPlugin
         Svc.Chat.Print(summary);
     }
 
-    private unsafe bool? OpenItemContextMenu(int slot)
+    private unsafe bool? OpenItemContextMenu(InventoryType container, int slot)
     {
         var agent = AgentInventoryContext.Instance();
         if (agent == null)
@@ -323,7 +340,7 @@ public sealed class Plugin : IDalamudPlugin
             }
         }
 
-        agent->OpenForItemSlot(SourceBag, slot, 0, ownerId);
+        agent->OpenForItemSlot(container, slot, 0, ownerId);
         return true;
     }
 
