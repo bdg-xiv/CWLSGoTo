@@ -223,19 +223,16 @@ public sealed class Plugin : IDalamudPlugin
 
         var worldName = world?.Name.ExtractText() ?? "";
 
-        // A re-report of the same hunt replaces the old entry (fresher position).
-        Hunts.RemoveAll(h => h.Label.Equals(label, StringComparison.OrdinalIgnoreCase)
-            && h.WorldName.Equals(worldName, StringComparison.OrdinalIgnoreCase));
-
-        // The same hunt called by another source (e.g. Sonar and Faloop) can carry
-        // different label decorations: treat same world + same zone + one name
-        // containing the other as the same hunt and keep the first report.
+        // Any report of an already-tracked hunt is ignored outright - no age refresh,
+        // no position update. Different sources (Sonar/Faloop) decorate the name
+        // differently, so same world + same zone + one name containing the other
+        // counts as the same hunt; the first report wins.
         if (Hunts.Any(h => h.WorldName.Equals(worldName, StringComparison.OrdinalIgnoreCase)
             && h.MapLink.TerritoryType.RowId == mapLink.TerritoryType.RowId
             && (h.Label.Contains(label, StringComparison.OrdinalIgnoreCase)
                 || label.Contains(h.Label, StringComparison.OrdinalIgnoreCase))))
         {
-            Svc.Log.Information($"Skipping duplicate hunt report: {label} ({worldName})");
+            Svc.Log.Information($"Ignoring repeat hunt report: {label} ({worldName})");
             return;
         }
 
