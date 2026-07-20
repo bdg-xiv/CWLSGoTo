@@ -52,12 +52,19 @@ public sealed class Plugin : IDalamudPlugin
     private const int ListingsPerBatch = 10;
     private const int MarketBoardResultTimeoutMs = 5000;
 
+    // Dagobert's pacing (GetMBPricesDelayMS / MarketBoardKeepOpenMS defaults): wait
+    // before clicking Compare Prices - the results sometimes don't populate without
+    // it - and keep the results window open a moment before reading the price.
+    private const int MbOpenDelayMs = 3000;
+    private const int MbKeepOpenMs = 1000;
+
     private readonly TaskManager taskManager;
 
     private readonly Queue<(InventoryType Container, int Slot, uint ItemId)> pendingItems = new();
     private readonly Dictionary<string, int> cachedPrices = [];
     private bool skipCurrentItem;
     private bool vendorCurrentItem;
+    private long compareOpenAt;
     private InventoryType currentContainer;
     private int currentSlot;
     private uint currentItemId;
@@ -253,6 +260,7 @@ public sealed class Plugin : IDalamudPlugin
         cachedPrices.Clear();
         skipCurrentItem = false;
         vendorCurrentItem = false;
+        compareOpenAt = 0;
         listedCount = 0;
         skippedCount = 0;
         vendoredCount = 0;
@@ -315,6 +323,7 @@ public sealed class Plugin : IDalamudPlugin
         skipCurrentItem = false;
         vendorCurrentItem = false;
         newPrice = null;
+        compareOpenAt = 0;
         currentContainer = itemContainer;
         currentSlot = slot;
         currentItemId = pendingItemId;
@@ -323,7 +332,9 @@ public sealed class Plugin : IDalamudPlugin
         taskManager.EnqueueDelay(150);
         taskManager.Enqueue(ClickPutUpForSale, "ClickPutUpForSale", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.EnqueueDelay(150);
-        taskManager.Enqueue(RequestPrice, "RequestPrice", new TaskManagerConfiguration { TimeLimitMS = 4000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.Enqueue(RequestPrice, "RequestPrice", new TaskManagerConfiguration { TimeLimitMS = MbOpenDelayMs + 5000, AbortOnTimeout = false, TimeoutSilently = true });
+        // Dagobert keeps the results window open for a bit before reading the price.
+        taskManager.EnqueueDelay(MbKeepOpenMs);
         taskManager.Enqueue(SetPriceAndConfirm, "SetPriceAndConfirm", new TaskManagerConfiguration { TimeLimitMS = MarketBoardResultTimeoutMs + 3000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.EnqueueDelay(200);
         taskManager.Enqueue(Cleanup, "Cleanup", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
@@ -411,6 +422,19 @@ public sealed class Plugin : IDalamudPlugin
             newPrice = cached;
             return true;
         }
+
+        // Dagobert waits GetMBPricesDelayMS between the sell window appearing and the
+        // Compare Prices click; without that pause the results sometimes never populate.
+        var now = Environment.TickCount64;
+        if (compareOpenAt == 0)
+        {
+            Svc.Log.Debug($"{itemName}: delaying market board open by {MbOpenDelayMs}ms");
+            compareOpenAt = now + MbOpenDelayMs;
+            return false;
+        }
+
+        if (now < compareOpenAt)
+            return false;
 
         Svc.Log.Debug($"{itemName}: opening price comparison");
         Callback.Fire(&addon->AtkUnitBase, true, RetainerSellComparePricesEvent);
