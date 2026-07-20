@@ -10,6 +10,7 @@ using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
+using ECommons.UIHelpers.AddonMasterImplementations;
 using ECommons.UIHelpers.AtkReaderImplementations;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.UI;
@@ -35,6 +36,10 @@ public sealed class Plugin : IDalamudPlugin
 
     private const int RetainerSellSlots = 20;
     private const int UndercutGil = 1;
+
+    // Below this total (price x stack quantity) an item is vendored through the
+    // retainer instead of being listed on the market.
+    private const long VendorThresholdGil = 2000;
     private const char HqGlyph = (char)0xE03C;
 
     // Event codes lifted from Dagobert's auto pinch, which drives the same addons.
@@ -52,8 +57,13 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Queue<(InventoryType Container, int Slot, uint ItemId)> pendingItems = new();
     private readonly Dictionary<string, int> cachedPrices = [];
     private bool skipCurrentItem;
+    private bool vendorCurrentItem;
+    private InventoryType currentContainer;
+    private int currentSlot;
+    private uint currentItemId;
     private int listedCount;
     private int skippedCount;
+    private int vendoredCount;
 
     // Market board price request state, mirroring Dagobert's MarketBoardHandler.
     private bool newRequest;
@@ -242,8 +252,10 @@ public sealed class Plugin : IDalamudPlugin
         pendingItems.Clear();
         cachedPrices.Clear();
         skipCurrentItem = false;
+        vendorCurrentItem = false;
         listedCount = 0;
         skippedCount = 0;
+        vendoredCount = 0;
         newRequest = false;
         newPrice = null;
         lastRequestId = -1;
@@ -278,6 +290,7 @@ public sealed class Plugin : IDalamudPlugin
         var found = false;
         InventoryType itemContainer = default;
         var slot = -1;
+        var pendingItemId = 0u;
         while (pendingItems.Count > 0)
         {
             var candidate = pendingItems.Dequeue();
@@ -287,6 +300,7 @@ public sealed class Plugin : IDalamudPlugin
             {
                 itemContainer = candidate.Container;
                 slot = candidate.Slot;
+                pendingItemId = candidate.ItemId;
                 found = true;
                 break;
             }
@@ -299,7 +313,11 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         skipCurrentItem = false;
+        vendorCurrentItem = false;
         newPrice = null;
+        currentContainer = itemContainer;
+        currentSlot = slot;
+        currentItemId = pendingItemId;
 
         taskManager.Enqueue(() => OpenItemContextMenu(itemContainer, slot), "OpenItemContextMenu");
         taskManager.EnqueueDelay(150);
@@ -309,6 +327,11 @@ public sealed class Plugin : IDalamudPlugin
         taskManager.Enqueue(SetPriceAndConfirm, "SetPriceAndConfirm", new TaskManagerConfiguration { TimeLimitMS = MarketBoardResultTimeoutMs + 3000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.EnqueueDelay(200);
         taskManager.Enqueue(Cleanup, "Cleanup", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
+        // Vendor path: only acts when SetPriceAndConfirm flagged the item as too cheap to list.
+        taskManager.Enqueue(VendorViaRetainer, "VendorViaRetainer", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.EnqueueDelay(150);
+        taskManager.Enqueue(ClickHaveRetainerSell, "ClickHaveRetainerSell", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.Enqueue(WaitVendorComplete, "WaitVendorComplete", new TaskManagerConfiguration { TimeLimitMS = 4000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.EnqueueDelay(400);
         taskManager.Enqueue(ProcessNextItem, "ProcessNextItem");
         return true;
@@ -317,6 +340,8 @@ public sealed class Plugin : IDalamudPlugin
     private void FinishRun(string reason)
     {
         var summary = $"[AutoLister] Done ({reason}). Listed {listedCount} item(s).";
+        if (vendoredCount > 0)
+            summary += $" Vendored {vendoredCount}.";
         if (skippedCount > 0)
             summary += $" Skipped {skippedCount}.";
         Svc.Chat.Print(summary);
@@ -418,12 +443,93 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         cachedPrices.TryAdd(itemName, newPrice.Value);
+
+        var total = (long)newPrice.Value * GetCurrentItemQuantity();
+        if (total < VendorThresholdGil)
+        {
+            // Too cheap to be worth a market slot - cancel the listing and let the
+            // vendor tasks queued after Cleanup sell it through the retainer instead.
+            vendorCurrentItem = true;
+            Svc.Chat.Print($"[AutoLister] {itemName}: listing would only total {total:N0} gil, having the retainer sell it instead.");
+            Callback.Fire(&addon->AtkUnitBase, true, RetainerSellCancelEvent);
+            addon->AtkUnitBase.Close(true);
+            return true;
+        }
+
         addon->AskingPrice->SetValue(newPrice.Value);
         Svc.Chat.Print($"[AutoLister] {itemName}: listed at {newPrice.Value:N0} gil.");
         listedCount++;
         Callback.Fire(&addon->AtkUnitBase, true, RetainerSellConfirmEvent);
         addon->AtkUnitBase.Close(true);
         return true;
+    }
+
+    private unsafe int GetCurrentItemQuantity()
+    {
+        var container = InventoryManager.Instance()->GetInventoryContainer(currentContainer);
+        var slot = container != null ? container->GetInventorySlot(currentSlot) : null;
+        return slot != null && slot->ItemId == currentItemId ? Math.Max((int)slot->Quantity, 1) : 1;
+    }
+
+    private unsafe bool? VendorViaRetainer()
+    {
+        if (skipCurrentItem || !vendorCurrentItem)
+            return true;
+
+        return OpenItemContextMenu(currentContainer, currentSlot);
+    }
+
+    private unsafe bool? ClickHaveRetainerSell()
+    {
+        if (skipCurrentItem || !vendorCurrentItem)
+            return true;
+
+        if (!TryGetAddonByName<AtkUnitBase>("ContextMenu", out var addon) || !IsAddonReady(addon))
+            return false;
+
+        var entries = new ReaderContextMenu(addon).Entries;
+        var index = entries.FindIndex(e =>
+            e.Name.Equals("have retainer sell items", StringComparison.CurrentCultureIgnoreCase)
+            || e.Name.Equals("vendre via le servant", StringComparison.CurrentCultureIgnoreCase)
+            || e.Name.Equals("gegenstand verkaufen lassen", StringComparison.CurrentCultureIgnoreCase)
+            || e.Name.Equals("リテイナーに売却させる", StringComparison.CurrentCultureIgnoreCase));
+
+        if (index < 0)
+        {
+            Svc.Log.Debug($"No 'Have Retainer Sell Items' entry ({string.Join(", ", entries.Select(e => e.Name))}), skipping item");
+            vendorCurrentItem = false;
+            skippedCount++;
+            addon->Close(true);
+            return true;
+        }
+
+        Callback.Fire(addon, true, 0, index, 0, 0, 0);
+        return true;
+    }
+
+    /// <summary>Vendoring is done once the item has left its bag slot; a confirmation
+    /// dialog, if the game shows one, is answered with yes along the way.</summary>
+    private unsafe bool? WaitVendorComplete()
+    {
+        if (skipCurrentItem || !vendorCurrentItem)
+            return true;
+
+        if (TryGetAddonByName<AtkUnitBase>("SelectYesno", out var yesno) && IsAddonReady(yesno) && yesno->IsVisible)
+        {
+            new AddonMaster.SelectYesno(yesno).Yes();
+            return false;
+        }
+
+        var container = InventoryManager.Instance()->GetInventoryContainer(currentContainer);
+        var slot = container != null ? container->GetInventorySlot(currentSlot) : null;
+        if (slot == null || slot->ItemId != currentItemId)
+        {
+            vendoredCount++;
+            vendorCurrentItem = false;
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>Closes any windows a timed-out step left behind so the next item starts clean.
