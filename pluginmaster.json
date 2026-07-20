@@ -3,7 +3,7 @@
     "Author": "bdg",
     "Name": "CWLS Go To",
     "InternalName": "CWLSGoTo",
-    "AssemblyVersion": "0.0.0.20",
+    "AssemblyVersion": "0.0.0.21",
     "Description": "Watches Cross-world Linkshell (CWLS1/CWLS2) chat for messages containing a map link and appends a clickable [Go To] link. Clicking it teleports you to the nearest aetheryte via the Teleporter plugin, hopping to the correct world/data center first via the Lifestream plugin if the message points to a different server.",
     "ApplicableVersion": "any",
     "Tags": [
