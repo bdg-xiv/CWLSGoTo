@@ -129,8 +129,17 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        // The destination world (if any) is named in the message text, not the sender's name
-        var targetWorld = MapManager.ParseWorldFromText(message.Message.TextValue);
+        // The destination world (if any) is named in the message text, not the sender's name.
+        // Only look at the text AFTER the map link: hunt callouts and Faloop reports put the
+        // mob name before the flag and the world after it, and mob names can contain world
+        // names ("Kaiser Behemoth" must not send us to the Behemoth server).
+        var payloads = message.Message.Payloads;
+        var linkIndex = payloads.IndexOf(mapLink);
+        var textAfterLink = string.Concat(payloads
+            .Skip(linkIndex + 1)
+            .OfType<TextPayload>()
+            .Select(p => p.Text));
+        var targetWorld = MapManager.ParseWorldFromText(textAfterLink);
 
         var linkPayload = CreateGoToLink(aetheryte.Value, mapLink, targetWorld);
         message.Message = new SeStringBuilder()

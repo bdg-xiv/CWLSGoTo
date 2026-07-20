@@ -8,10 +8,14 @@ namespace SamplePlugin;
 
 internal static class MapManager
 {
-    // Matches a public world's name anywhere in the message text, regardless of case
+    // Matches a public world's name in the given text, regardless of case
     // (e.g. "in DIABOLOS", "Diabolos", "diabolos" should all match the "Diabolos" world).
+    // When several world names appear, the one appearing earliest in the text wins.
     internal static World? ParseWorldFromText(string text)
     {
+        World? earliest = null;
+        var earliestIndex = int.MaxValue;
+
         foreach (var world in Svc.Data.GetExcelSheet<World>())
         {
             if (!world.IsPublic)
@@ -21,11 +25,15 @@ internal static class MapManager
             if (string.IsNullOrEmpty(name))
                 continue;
 
-            if (Regex.IsMatch(text, $@"\b{Regex.Escape(name)}\b", RegexOptions.IgnoreCase))
-                return world;
+            var match = Regex.Match(text, $@"\b{Regex.Escape(name)}\b", RegexOptions.IgnoreCase);
+            if (match.Success && match.Index < earliestIndex)
+            {
+                earliestIndex = match.Index;
+                earliest = world;
+            }
         }
 
-        return null;
+        return earliest;
     }
 
     internal static Aetheryte? GetNearestAetheryte(MapLinkPayload mapLink)
