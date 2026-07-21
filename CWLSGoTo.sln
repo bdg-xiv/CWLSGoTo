@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AutoLister", "AutoLister\Au
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GemRate", "GemRate\GemRate.csproj", "{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FaloopScreener", "FaloopScreener\FaloopScreener.csproj", "{C4E8A1F7-3B92-4D56-8E0A-1F7D9C25B384}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -57,6 +59,10 @@ Global
 		{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}.Debug|x64.Build.0 = Debug|x64
 		{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}.Release|x64.ActiveCfg = Release|x64
 		{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}.Release|x64.Build.0 = Release|x64
+		{C4E8A1F7-3B92-4D56-8E0A-1F7D9C25B384}.Debug|x64.ActiveCfg = Debug|x64
+		{C4E8A1F7-3B92-4D56-8E0A-1F7D9C25B384}.Debug|x64.Build.0 = Debug|x64
+		{C4E8A1F7-3B92-4D56-8E0A-1F7D9C25B384}.Release|x64.ActiveCfg = Release|x64
+		{C4E8A1F7-3B92-4D56-8E0A-1F7D9C25B384}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

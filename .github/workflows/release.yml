@@ -53,6 +53,7 @@ jobs:
           @{ Project = "ModSnap"; InternalName = "ModSnap" },
           @{ Project = "AutoLister"; InternalName = "AutoLister" },
           @{ Project = "GemRate"; InternalName = "GemRate" },
+          @{ Project = "FaloopScreener"; InternalName = "FaloopScreener" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 
