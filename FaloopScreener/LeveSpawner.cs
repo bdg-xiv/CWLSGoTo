@@ -28,6 +28,7 @@ internal sealed unsafe class LeveSpawner : IDisposable
     private ushort leveId;
     private int maxAttempts;
     private int attemptsDone;
+    private bool clickedThisCycle;
     private volatile bool markSeen;
 
     public bool IsRunning => taskManager.IsBusy;
@@ -82,6 +83,7 @@ internal sealed unsafe class LeveSpawner : IDisposable
 
     private void EnqueueCycle()
     {
+        clickedThisCycle = false;
         taskManager.Enqueue(AbandonIfActive, "AbandonIfActive");
         taskManager.Enqueue(Initiate, "Initiate");
         taskManager.EnqueueDelay(1500); // give the spawn message time to arrive
@@ -122,7 +124,14 @@ internal sealed unsafe class LeveSpawner : IDisposable
         Status = $"Attempt {attemptsDone + 1}/{maxAttempts}: initiating...";
 
         if (Svc.Condition[LeveInProgress])
-            return true; // Initiated - the spawn roll has happened.
+        {
+            // The leve went active: exactly one real initiation (= one spawn roll,
+            // one allowance) happened this cycle. Counting here instead of at the
+            // button click avoids double-counting retried clicks.
+            if (clickedThisCycle)
+                attemptsDone++;
+            return true;
+        }
 
         if (TryGetAddonByName<AtkUnitBase>("GuildLeveDifficulty", out var difficulty) && IsAddonReady(difficulty))
         {
@@ -136,7 +145,7 @@ internal sealed unsafe class LeveSpawner : IDisposable
         {
             if (EzThrottler.Throttle("FSLeve.Initiate", 1000))
             {
-                attemptsDone++;
+                clickedThisCycle = true;
                 detail.Initiate();
             }
 
