@@ -60,6 +60,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ICallGateSubscriber<string, bool> lifestreamCanVisitCrossDcIpc;
     private readonly ICallGateSubscriber<string, bool, string?, bool, int?, bool?, bool?, object> lifestreamTpAndChangeWorldIpc;
     private readonly ICallGateSubscriber<bool> lifestreamIsBusyIpc;
+    private readonly ICallGateProvider<uint, string, object?> goToAetheryteIpc;
     private readonly List<(uint Id, Aetheryte Aetheryte, MapLinkPayload MapLink, World? World)> goToLinks = [];
     private uint nextGoToLinkId;
     private sealed class WorldTeleportTask
@@ -113,6 +114,11 @@ public sealed class Plugin : IDalamudPlugin
         lifestreamCanVisitCrossDcIpc = PluginInterface.GetIpcSubscriber<string, bool>("Lifestream.CanVisitCrossDC");
         lifestreamTpAndChangeWorldIpc = PluginInterface.GetIpcSubscriber<string, bool, string?, bool, int?, bool?, bool?, object>("Lifestream.TPAndChangeWorld");
         lifestreamIsBusyIpc = PluginInterface.GetIpcSubscriber<bool>("Lifestream.IsBusy");
+
+        // Lets other plugins (e.g. FaloopScreener) trigger the full Go To flow:
+        // world hop if needed, teleport, then the arrival follow-ups.
+        goToAetheryteIpc = PluginInterface.GetIpcProvider<uint, string, object?>("CWLSGoTo.GoToAetheryte");
+        goToAetheryteIpc.RegisterAction(OnGoToAetheryteIpc);
 
         // Subscribe to the handleable chat message event (matches IChatGui.OnHandleableChatMessageDelegate)
         Svc.Chat.CheckMessageHandled += OnChatMessage;
@@ -310,7 +316,35 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>The full Go To flow: map flag, then teleport (with a world hop first if needed).
     /// Used by both the chat [Go To] links and the hunt tracker window.</summary>
-    internal void ExecuteGoTo(Aetheryte aetheryte, World? world, MapLinkPayload mapLink)
+    /// <summary>IPC entry point: teleport to an aetheryte, hopping to the named world
+    /// first when it isn't the current one. An empty world name means "stay here".</summary>
+    private void OnGoToAetheryteIpc(uint aetheryteId, string worldName)
+    {
+        var aetheryte = Svc.Data.GetExcelSheet<Aetheryte>().GetRowOrDefault(aetheryteId);
+        if (aetheryte == null)
+        {
+            NotifyChat($"Go To request for unknown aetheryte {aetheryteId}.");
+            return;
+        }
+
+        World? world = null;
+        if (!string.IsNullOrWhiteSpace(worldName))
+        {
+            var match = Svc.Data.GetExcelSheet<World>()
+                .FirstOrDefault(w => w.Name.ExtractText().Equals(worldName, StringComparison.OrdinalIgnoreCase));
+            if (match.RowId == 0)
+            {
+                NotifyChat($"Go To request for unknown world \"{worldName}\".");
+                return;
+            }
+
+            world = match;
+        }
+
+        ExecuteGoTo(aetheryte.Value, world, null);
+    }
+
+    internal void ExecuteGoTo(Aetheryte aetheryte, World? world, MapLinkPayload? mapLink)
     {
         if (!Svc.PlayerState.IsLoaded)
             return;
@@ -319,7 +353,8 @@ public sealed class Plugin : IDalamudPlugin
             StopAutomationForGoTo();
 
         // Open the map and drop the flag right away, before teleporting.
-        Svc.GameGui.OpenMapWithMapLink(mapLink);
+        if (mapLink != null)
+            Svc.GameGui.OpenMapWithMapLink(mapLink);
 
         if (world == null || world.Value.RowId == Svc.PlayerState.CurrentWorld.RowId)
         {
@@ -763,6 +798,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        goToAetheryteIpc?.UnregisterAction();
         Svc.Chat.CheckMessageHandled -= OnChatMessage;
         Svc.Chat.RemoveChatLinkHandler();
         Svc.Framework.Update -= OnFrameworkUpdate;

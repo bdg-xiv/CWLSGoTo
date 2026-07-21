@@ -2,8 +2,10 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Ipc;
 using ECommons;
 using ECommons.DalamudServices;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,6 +31,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly Configuration config;
     private readonly FaloopClient client = new();
+    private readonly ICallGateSubscriber<uint, string, object?> goToIpc;
+    private readonly Dictionary<string, uint> zoneAetherytes = [];
 
     private bool windowOpen;
     private volatile List<WindowEntry> entries = [];
@@ -43,6 +47,10 @@ public sealed class Plugin : IDalamudPlugin
         ECommonsMain.Init(PluginInterface, this);
 
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+
+        // CWLS Go To exposes its full Go To flow (world hop + teleport + arrival
+        // follow-ups) over IPC; the per-row Go button rides on it.
+        goToIpc = PluginInterface.GetIpcSubscriber<uint, string, object?>("CWLSGoTo.GoToAetheryte");
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -385,7 +393,7 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.TableSetupColumn("Open", ImGuiTableColumnFlags.WidthFixed, 70);
         ImGui.TableSetupColumn("Window", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("Cap", ImGuiTableColumnFlags.WidthFixed, 90);
-        ImGui.TableSetupColumn("##actions", ImGuiTableColumnFlags.WidthFixed, 100);
+        ImGui.TableSetupColumn("##actions", ImGuiTableColumnFlags.WidthFixed, 135);
         ImGui.TableHeadersRow();
 
         var now = DateTime.UtcNow;
@@ -437,6 +445,11 @@ public sealed class Plugin : IDalamudPlugin
 
             ImGui.TableNextColumn();
             var id = $"{e.Mob.Id}@{e.WorldSlug}";
+            if (ImGui.SmallButton($"Go##{id}"))
+                GoToZone(e);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip($"Teleport to {FaloopData.Pretty(e.ZoneSlug)} on {FaloopData.Pretty(e.WorldSlug)}\n(via the CWLS Go To plugin).");
+            ImGui.SameLine();
             if (ImGui.SmallButton($"Spawn##{id}"))
                 ImGui.OpenPopup($"spawn##{id}");
             ImGui.SameLine();
@@ -568,6 +581,55 @@ public sealed class Plugin : IDalamudPlugin
             ? $"Spawn condition is met for another {Short(window.End - now)}.\n{trigger}"
             : $"Spawn condition returns in {Short(window.Start - now)}\nand then lasts {Short(window.End - window.Start)}.\n{trigger}");
     }
+
+    private void GoToZone(WindowEntry e)
+    {
+        var aetheryteId = ResolveZoneAetheryte(e.ZoneSlug);
+        if (aetheryteId == 0)
+        {
+            Svc.Chat.Print($"[FaloopScreener] No aetheryte found for {FaloopData.Pretty(e.ZoneSlug)}.");
+            return;
+        }
+
+        try
+        {
+            goToIpc.InvokeAction(aetheryteId, FaloopData.Pretty(e.WorldSlug));
+        }
+        catch (Exception ex)
+        {
+            Svc.Chat.Print("[FaloopScreener] Could not start Go To - is the CWLS Go To plugin up to date?");
+            Svc.Log.Warning($"Go To IPC failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>First aetheryte in the zone matching the Faloop zone slug, compared with
+    /// apostrophes stripped ("yak_tel" vs "Yak T'el", "kozamauka" vs "Kozama'uka").</summary>
+    private uint ResolveZoneAetheryte(string zoneSlug)
+    {
+        if (zoneAetherytes.TryGetValue(zoneSlug, out var cached))
+            return cached;
+
+        var target = NormalizeZoneName(zoneSlug.Replace('_', ' '));
+        uint found = 0;
+        foreach (var aetheryte in Svc.Data.GetExcelSheet<Aetheryte>())
+        {
+            if (!aetheryte.IsAetheryte)
+                continue;
+
+            var place = aetheryte.Territory.ValueNullable?.PlaceName.ValueNullable?.Name.ExtractText();
+            if (place != null && NormalizeZoneName(place) == target)
+            {
+                found = aetheryte.RowId;
+                break;
+            }
+        }
+
+        zoneAetherytes[zoneSlug] = found;
+        return found;
+    }
+
+    private static string NormalizeZoneName(string name)
+        => new(name.ToLowerInvariant().Where(c => c != '\'' && c != '’' && c != '-').ToArray());
 
     /// <summary>Compact duration in the style Faloop uses for the badges: 3d / 10h / 20m.</summary>
     private static string Short(TimeSpan ts)
