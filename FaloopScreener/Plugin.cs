@@ -372,7 +372,7 @@ public sealed class Plugin : IDalamudPlugin
             .Where(e => !e.Mob.Zones.All(z => config.HiddenZones.Contains(z)))
             .ToList();
 
-        if (!ImGui.BeginTable("##windows", 7,
+        if (!ImGui.BeginTable("##windows", 8,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.Borders | ImGuiTableFlags.ScrollY,
                 new Vector2(0, 300)))
             return;
@@ -380,6 +380,7 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.TableSetupScrollFreeze(0, 1);
         ImGui.TableSetupColumn("World", ImGuiTableColumnFlags.WidthFixed, 75);
         ImGui.TableSetupColumn("Hunt", ImGuiTableColumnFlags.WidthFixed, 165);
+        ImGui.TableSetupColumn("Condition", ImGuiTableColumnFlags.WidthFixed, 80);
         ImGui.TableSetupColumn("Zone", ImGuiTableColumnFlags.WidthFixed, 150);
         ImGui.TableSetupColumn("Open", ImGuiTableColumnFlags.WidthFixed, 70);
         ImGui.TableSetupColumn("Window", ImGuiTableColumnFlags.WidthStretch);
@@ -398,6 +399,10 @@ public sealed class Plugin : IDalamudPlugin
                 ImGui.TextColored(new Vector4(1f, 0.35f, 0.35f, 1f), e.Mob.Name);
             else
                 ImGui.TextUnformatted(e.Mob.Name);
+
+            ImGui.TableNextColumn();
+            DrawConditionBadge(e.Mob.Id, now);
+
             ImGui.TableNextColumn();
             ImGui.TextUnformatted(FaloopData.Pretty(e.ZoneSlug));
 
@@ -540,6 +545,42 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         ImGui.TextDisabled("Optional - the windows are public. Same account as the Faloop\nwebsite / Faloop Integration; stored in the plugin config on this PC.");
+    }
+
+    /// <summary>Mirrors faloop.app's condition column: green "For x" while the spawn
+    /// condition holds, muted "In x" until it next comes round.</summary>
+    private static void DrawConditionBadge(string mobId, DateTime now)
+    {
+        var window = FaloopConditions.GetWindow(mobId, now);
+        if (window == null)
+            return;
+
+        if (window.IsActive(now))
+            ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f), $"For {Short(window.End - now)}");
+        else
+            ImGui.TextDisabled($"In {Short(window.Start - now)}");
+
+        if (!ImGui.IsItemHovered())
+            return;
+
+        var trigger = FaloopData.SpawnTriggers.TryGetValue(mobId, out var t) ? t : "";
+        ImGui.SetTooltip(window.IsActive(now)
+            ? $"Spawn condition is met for another {Short(window.End - now)}.\n{trigger}"
+            : $"Spawn condition returns in {Short(window.Start - now)}\nand then lasts {Short(window.End - window.Start)}.\n{trigger}");
+    }
+
+    /// <summary>Compact duration in the style Faloop uses for the badges: 3d / 10h / 20m.</summary>
+    private static string Short(TimeSpan ts)
+    {
+        if (ts < TimeSpan.Zero)
+            ts = TimeSpan.Zero;
+        if (ts.TotalDays >= 1)
+            return $"{(int)ts.TotalDays}d";
+        if (ts.TotalHours >= 1)
+            return $"{(int)ts.TotalHours}h";
+        if (ts.TotalMinutes >= 1)
+            return $"{(int)ts.TotalMinutes}m";
+        return $"{(int)ts.TotalSeconds}s";
     }
 
     private static string Hm(TimeSpan ts)
