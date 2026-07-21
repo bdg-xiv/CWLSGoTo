@@ -29,6 +29,13 @@ public class Configuration : IPluginConfiguration
     // Go To starts, from either a chat link or the hunt tracker window.
     public bool StopSndOnGoTo { get; set; } = true;
 
+    public const string DefaultRelayTemplate = "{name} - {world} <flag>";
+
+    // Message sent by the hunt tracker's relay buttons. Placeholders: {name},
+    // {world}, {zone}, {coords}; <flag> is expanded by the game to the map flag,
+    // which the relay sets to the hunt's position before sending.
+    public string RelayMessageTemplate { get; set; } = DefaultRelayTemplate;
+
     /// <summary>Applies one-time migrations to configs saved by older versions. Returns true if changed.</summary>
     public bool Migrate()
     {

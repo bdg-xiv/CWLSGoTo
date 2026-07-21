@@ -71,6 +71,21 @@ public class HuntTrackerWindow : Window
             if (ImGui.SmallButton("Map"))
                 Svc.GameGui.OpenMapWithMapLink(hunt.MapLink);
             ImGui.SameLine();
+            if (ImGui.SmallButton("CW1"))
+                plugin.RelayHunt(hunt, "/cwl1");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Relay this hunt to Cross-world Linkshell 1.");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("CW2"))
+                plugin.RelayHunt(hunt, "/cwl2");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Relay this hunt to Cross-world Linkshell 2.");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Echo"))
+                plugin.RelayHunt(hunt, "/echo");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Test the relay message in /echo - only you see it.");
+            ImGui.SameLine();
             if (ImGui.SmallButton("x"))
                 removeIndex = i;
 

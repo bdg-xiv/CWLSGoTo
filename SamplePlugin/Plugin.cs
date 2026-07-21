@@ -16,6 +16,7 @@ using ECommons.GameHelpers;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Lumina.Excel.Sheets;
 using Newtonsoft.Json.Linq;
 using SamplePlugin.Windows;
@@ -342,6 +343,41 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         ExecuteGoTo(aetheryte.Value, world, null);
+    }
+
+    /// <summary>Sends the configured relay message for a hunt through the given chat
+    /// command (/cwl1, /cwl2, /echo). The map flag is set to the hunt's position first,
+    /// so a &lt;flag&gt; in the template resolves to the hunt's location.</summary>
+    internal unsafe void RelayHunt(HuntEntry hunt, string chatCommand)
+    {
+        try
+        {
+            var agent = AgentMap.Instance();
+            if (agent != null)
+            {
+                agent->FlagMarkerCount = 0;
+                agent->SetFlagMapMarker(hunt.MapLink.TerritoryType.RowId, hunt.MapLink.Map.RowId,
+                    hunt.MapLink.RawX / 1000f, hunt.MapLink.RawY / 1000f);
+            }
+
+            var text = Configuration.RelayMessageTemplate
+                .Replace("{name}", hunt.Label, StringComparison.OrdinalIgnoreCase)
+                .Replace("{world}", hunt.WorldName, StringComparison.OrdinalIgnoreCase)
+                .Replace("{zone}", hunt.MapLink.PlaceName ?? "", StringComparison.OrdinalIgnoreCase)
+                .Replace("{coords}", $"({hunt.MapLink.XCoord:0.0}, {hunt.MapLink.YCoord:0.0})", StringComparison.OrdinalIgnoreCase)
+                .Trim();
+            if (text.Length == 0)
+            {
+                NotifyChat("The relay message template is empty - set one in the settings.");
+                return;
+            }
+
+            Chat.ExecuteCommand($"{chatCommand} {text}");
+        }
+        catch (Exception ex)
+        {
+            NotifyChat($"Relay failed: {ex.Message}");
+        }
     }
 
     internal void ExecuteGoTo(Aetheryte aetheryte, World? world, MapLinkPayload? mapLink)

@@ -69,6 +69,25 @@ public class ConfigWindow : Window, IDisposable
         }
         ImGui.TextDisabled("/hunts toggles the hunt tracker window.");
 
+        ImGui.Separator();
+        ImGui.TextUnformatted("Hunt relay message");
+        var template = configuration.RelayMessageTemplate;
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.InputText("##relaytemplate", ref template, 200))
+        {
+            configuration.RelayMessageTemplate = template;
+            configuration.Save();
+        }
+
+        ImGui.TextDisabled("Placeholders: {name} {world} {zone} {coords} and <flag>.\nThe map flag is set to the hunt's position before sending,\nso <flag> becomes a clickable location link.");
+        if (ImGui.SmallButton("Reset to default"))
+        {
+            configuration.RelayMessageTemplate = Configuration.DefaultRelayTemplate;
+            configuration.Save();
+        }
+
+        ImGui.Separator();
+
         var stopSnd = configuration.StopSndOnGoTo;
         if (ImGui.Checkbox("Stop automation on Go To", ref stopSnd))
         {
