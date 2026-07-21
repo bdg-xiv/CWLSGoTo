@@ -95,23 +95,19 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(config.FaloopUsername) || string.IsNullOrWhiteSpace(config.FaloopPassword))
-            {
-                statusText = "Set your Faloop account under Settings below - windows are only served to logged-in accounts.";
-                return;
-            }
-
-            if (!client.IsLoggedIn)
+            // Windows are served to anonymous sessions too; a login only adds the
+            // account-gated extras, so credentials are optional.
+            var loginNote = "";
+            if (!client.IsLoggedIn
+                && !string.IsNullOrWhiteSpace(config.FaloopUsername)
+                && !string.IsNullOrWhiteSpace(config.FaloopPassword))
             {
                 statusText = "Logging in to Faloop...";
                 if (!await client.LoginAsync(config.FaloopUsername, config.FaloopPassword).ConfigureAwait(false))
-                {
-                    statusText = "Faloop login failed - check the username/password in Settings.";
-                    return;
-                }
+                    loginNote = " (login failed - showing public data; check Settings)";
             }
 
-            using var doc = await client.GetAppAsync().ConfigureAwait(false);
+            using var doc = await client.GetDataCenterAsync("crystal").ConfigureAwait(false);
             if (doc == null)
             {
                 statusText = "Could not fetch the tracker state from Faloop.";
@@ -133,10 +129,21 @@ public sealed class Plugin : IDalamudPlugin
                     Svc.Log.Information($"[FaloopScreener debug] {chunk}");
             }
 
-            entries = ParseStatus(status);
-            statusText = entries.Count == 0
-                ? "Connected, but no window data was found - your Faloop account may lack tracker access, or the payload shape changed (run \"/windows debug\" and check /xllog)."
-                : $"Updated {DateTime.Now:HH:mm:ss} - {entries.Count} tracked windows.";
+            // The maintenance/restart timeline lives in the app bootstrap payload.
+            var restarts = new Dictionary<string, DateTime>();
+            DateTime? globalRestart = null;
+            using (var appDoc = await client.GetAppAsync().ConfigureAwait(false))
+            {
+                if (appDoc != null
+                    && appDoc.RootElement.TryGetProperty("data", out var appData)
+                    && appData.TryGetProperty("status", out var appStatus))
+                {
+                    ReadRestarts(appStatus, restarts, ref globalRestart);
+                }
+            }
+
+            entries = ParseStatus(status, restarts, globalRestart);
+            statusText = $"Updated {DateTime.Now:HH:mm:ss} - {entries.Count} tracked windows{loginNote}.";
         }
         catch (Exception ex)
         {
@@ -155,62 +162,51 @@ public sealed class Plugin : IDalamudPlugin
             yield return s.Substring(i, Math.Min(size, s.Length - i));
     }
 
-    /// <summary>Builds window entries from Faloop's status payload. The exact shape of a
-    /// logged-in payload isn't documented, so this scans every dictionary in the status
-    /// for composite keys naming a known mob + world and pulls kill/spawn timestamps out
-    /// of the values wherever they are.</summary>
-    private List<WindowEntry> ParseStatus(JsonElement status)
+    private static void ReadRestarts(JsonElement appStatus, Dictionary<string, DateTime> restarts, ref DateTime? globalRestart)
+    {
+        if (!appStatus.TryGetProperty("maintenance", out var maintenance)
+            || !maintenance.TryGetProperty("restarts", out var restartsObj)
+            || !restartsObj.TryGetProperty("timeline", out var timeline)
+            || timeline.ValueKind != JsonValueKind.Array)
+            return;
+
+        foreach (var r in timeline.EnumerateArray())
+        {
+            var ts = ReadTimestamp(r.TryGetProperty("timestamp", out var t) ? t : default);
+            if (ts == null)
+                continue;
+            if (r.TryGetProperty("worldId", out var w) && w.ValueKind == JsonValueKind.String)
+            {
+                var slug = w.GetString()!;
+                if (!restarts.TryGetValue(slug, out var existing) || ts > existing)
+                    restarts[slug] = ts.Value;
+            }
+            else if (globalRestart == null || ts > globalRestart)
+            {
+                globalRestart = ts;
+            }
+        }
+    }
+
+    /// <summary>Builds window entries from the data-center status payload:
+    /// status.windows is an array of { mobId2, worldId2, startedAt (the timer's base,
+    /// i.e. the last kill), startedAtOffset? (ms), num (zone instance) } covering all
+    /// ranks; status.spawns lists currently reported spawns.</summary>
+    private List<WindowEntry> ParseStatus(JsonElement status, Dictionary<string, DateTime> restarts, DateTime? globalRestart)
     {
         var kills = new Dictionary<(string Mob, string World), DateTime>();
         var spawns = new Dictionary<(string Mob, string World), DateTime>();
 
-        foreach (var section in status.EnumerateObject())
+        if (status.TryGetProperty("windows", out var windows) && windows.ValueKind == JsonValueKind.Array)
         {
-            if (section.Value.ValueKind != JsonValueKind.Object || section.Name is "maintenance")
-                continue;
-
-            foreach (var entry in section.Value.EnumerateObject())
-            {
-                var mob = FaloopData.Mobs
-                    .Where(m => entry.Name.Contains(m.Id, StringComparison.OrdinalIgnoreCase))
-                    .OrderByDescending(m => m.Id.Length)
-                    .FirstOrDefault();
-                if (mob == null)
-                    continue;
-
-                var world = FaloopData.CrystalWorlds.FirstOrDefault(w => entry.Name.Contains(w, StringComparison.OrdinalIgnoreCase));
-                if (world == null)
-                    continue;
-
-                CollectTimestamps(entry.Value, 0, (mob.Id, world), kills, spawns);
-            }
+            foreach (var w in windows.EnumerateArray())
+                CollectArrayEntry(w, kills);
         }
 
-        // Server restarts reset the timers and shorten the windows; a restart newer than
-        // the kill replaces it as the countdown base.
-        var restarts = new Dictionary<string, DateTime>();
-        DateTime? globalRestart = null;
-        if (status.TryGetProperty("maintenance", out var maintenance)
-            && maintenance.TryGetProperty("restarts", out var restartsObj)
-            && restartsObj.TryGetProperty("timeline", out var timeline)
-            && timeline.ValueKind == JsonValueKind.Array)
+        if (status.TryGetProperty("spawns", out var spawnArr) && spawnArr.ValueKind == JsonValueKind.Array)
         {
-            foreach (var r in timeline.EnumerateArray())
-            {
-                var ts = ReadTimestamp(r.TryGetProperty("timestamp", out var t) ? t : default);
-                if (ts == null)
-                    continue;
-                if (r.TryGetProperty("worldId", out var w) && w.ValueKind == JsonValueKind.String)
-                {
-                    var slug = w.GetString()!;
-                    if (!restarts.TryGetValue(slug, out var existing) || ts > existing)
-                        restarts[slug] = ts.Value;
-                }
-                else if (globalRestart == null || ts > globalRestart)
-                {
-                    globalRestart = ts;
-                }
-            }
+            foreach (var s in spawnArr.EnumerateArray())
+                CollectArrayEntry(s, spawns);
         }
 
         var now = DateTime.UtcNow;
@@ -231,6 +227,7 @@ public sealed class Plugin : IDalamudPlugin
             if (!hasKill)
                 continue;
 
+            // A server restart newer than the kill resets the timer and shortens the window.
             var baseTime = killedAt;
             var (min, cap) = (mob.Min, mob.Cap);
             var restart = restarts.TryGetValue(key.World, out var wr) ? wr : (DateTime?)null;
@@ -262,37 +259,31 @@ public sealed class Plugin : IDalamudPlugin
             .ToList();
     }
 
-    private static void CollectTimestamps(JsonElement element, int depth,
-        (string, string) key,
-        Dictionary<(string, string), DateTime> kills,
-        Dictionary<(string, string), DateTime> spawns)
+    /// <summary>Reads one status array entry ({ mobId2, worldId2, startedAt, ... }) into
+    /// the map, keeping only known S/SS marks on the configured data center's worlds.</summary>
+    private static void CollectArrayEntry(JsonElement element, Dictionary<(string, string), DateTime> into)
     {
-        if (depth > 4 || element.ValueKind != JsonValueKind.Object)
+        if (element.ValueKind != JsonValueKind.Object
+            || !element.TryGetProperty("mobId2", out var mobEl) || mobEl.ValueKind != JsonValueKind.String
+            || !element.TryGetProperty("worldId2", out var worldEl) || worldEl.ValueKind != JsonValueKind.String)
             return;
 
-        foreach (var prop in element.EnumerateObject())
-        {
-            if (prop.Value.ValueKind == JsonValueKind.Object)
-            {
-                CollectTimestamps(prop.Value, depth + 1, key, kills, spawns);
-                continue;
-            }
+        var mobId = mobEl.GetString()!;
+        var world = worldEl.GetString()!;
+        if (!FaloopData.MobsById.ContainsKey(mobId) || !FaloopData.CrystalWorlds.Contains(world))
+            return;
 
-            var ts = ReadTimestamp(prop.Value);
-            if (ts == null)
-                continue;
+        var ts = ReadTimestamp(element.TryGetProperty("startedAt", out var started) ? started : default)
+                 ?? ReadTimestamp(element.TryGetProperty("timestamp", out var t) ? t : default);
+        if (ts == null)
+            return;
 
-            if (prop.Name is "killedAt" or "diedAt" or "deathAt" or "timestamp")
-            {
-                if (!kills.TryGetValue(key, out var existing) || ts > existing)
-                    kills[key] = ts.Value;
-            }
-            else if (prop.Name is "spawnedAt" or "startedAt")
-            {
-                if (!spawns.TryGetValue(key, out var existing) || ts > existing)
-                    spawns[key] = ts.Value;
-            }
-        }
+        if (element.TryGetProperty("startedAtOffset", out var offset) && offset.ValueKind == JsonValueKind.Number)
+            ts = ts.Value.AddMilliseconds(offset.GetDouble());
+
+        var key = (mobId, world);
+        if (!into.TryGetValue(key, out var existing) || ts > existing)
+            into[key] = ts.Value;
     }
 
     private static DateTime? ReadTimestamp(JsonElement value)
@@ -539,11 +530,12 @@ public sealed class Plugin : IDalamudPlugin
         if (ImGui.Button("Save & Login"))
         {
             config.Save();
+            client.ResetAuth();
             lastFetchAt = DateTime.MinValue;
             StartFetch();
         }
 
-        ImGui.TextDisabled("Same account as the Faloop website / Faloop Integration.\nStored in the plugin config on this PC.");
+        ImGui.TextDisabled("Optional - the windows are public. Same account as the Faloop\nwebsite / Faloop Integration; stored in the plugin config on this PC.");
     }
 
     private static string Hm(TimeSpan ts)

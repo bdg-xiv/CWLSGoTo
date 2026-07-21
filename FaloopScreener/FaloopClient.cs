@@ -75,10 +75,26 @@ internal sealed class FaloopClient : IDisposable
         return true;
     }
 
-    /// <summary>Fetches the tracker bootstrap state. Returns the parsed document, or
-    /// null when not authenticated / on failure. Retries once through a token refresh
-    /// on 401 (the JWTs only live ~15 minutes).</summary>
-    public async Task<JsonDocument?> GetAppAsync()
+    /// <summary>Drops the current session so the next fetch authenticates from scratch
+    /// (used when the user changes credentials).</summary>
+    public void ResetAuth()
+    {
+        SessionId = null;
+        Token = null;
+        IsLoggedIn = false;
+    }
+
+    /// <summary>Fetches the app bootstrap state (maintenance/restart timeline).</summary>
+    public Task<JsonDocument?> GetAppAsync() => GetAsync($"{BaseUrl}/app?sessionId=");
+
+    /// <summary>Fetches a data center's tracker state - the spawn windows live here.
+    /// Served to anonymous sessions too; login only adds the account-gated extras.</summary>
+    public Task<JsonDocument?> GetDataCenterAsync(string dataCenter)
+        => GetAsync($"{BaseUrl}/app/data-center/{dataCenter}?sessionId=");
+
+    /// <summary>GET with the session appended, retrying once through a token refresh on
+    /// 401 (the JWTs only live ~15 minutes).</summary>
+    private async Task<JsonDocument?> GetAsync(string urlWithSessionParam)
     {
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -88,7 +104,7 @@ internal sealed class FaloopClient : IDisposable
                     return null;
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl}/app?sessionId={SessionId}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, urlWithSessionParam + SessionId);
             request.Headers.TryAddWithoutValidation("Authorization", Token);
             HttpResponseMessage response;
             try
