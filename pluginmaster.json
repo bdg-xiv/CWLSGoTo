@@ -202,6 +202,31 @@
   },
   {
     "Author": "bdg",
+    "Name": "Faloop Screener",
+    "InternalName": "FaloopScreener",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Logs into your Faloop account and shows the current S/SS-rank spawn windows in a table (/windows): world, hunt, zone, time open, window progress and cap time, computed from Faloop's live tracker state - accurate even for kills that happened while you were offline. Filter by world (Crystal data center), hide zones or specific hunts you don't care about, and click Spawn on any row to see that hunt's spawn trigger. Requires a Faloop account with tracker access; credentials are stored in the plugin config like Faloop Integration does.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "hunt",
+      "faloop",
+      "windows",
+      "tracker"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "S-rank spawn windows from Faloop, filterable, with spawn conditions.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/FaloopScreener.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/FaloopScreener.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/FaloopScreener.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.22",
