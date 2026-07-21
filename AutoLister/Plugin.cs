@@ -40,6 +40,10 @@ public sealed class Plugin : IDalamudPlugin
     // Below this total (price x stack quantity) an item is vendored through the
     // retainer instead of being listed on the market.
     private const long VendorThresholdGil = 2000;
+
+    // Market proceeds lose roughly this much to the sales tax; vendoring pays face
+    // value, so the comparison is vendor total vs. listing total after tax.
+    private const int MarketTaxPercent = 5;
     private const char HqGlyph = (char)0xE03C;
 
     // Event codes lifted from Dagobert's auto pinch, which drives the same addons.
@@ -468,13 +472,20 @@ public sealed class Plugin : IDalamudPlugin
 
         cachedPrices.TryAdd(itemName, newPrice.Value);
 
-        var total = (long)newPrice.Value * GetCurrentItemQuantity();
-        if (total < VendorThresholdGil)
+        var quantity = GetCurrentItemQuantity();
+        var total = (long)newPrice.Value * quantity;
+        var vendorTotal = GetVendorPrice(currentItemId, itemIsHq) * quantity;
+        var marketNet = total * (100 - MarketTaxPercent) / 100;
+
+        if (total < VendorThresholdGil || vendorTotal > marketNet)
         {
-            // Too cheap to be worth a market slot - cancel the listing and let the
-            // vendor tasks queued after Cleanup sell it through the retainer instead.
+            // Not worth a market slot - either too cheap outright, or the vendor pays
+            // more than the listing would net after tax. Cancel the listing and let
+            // the vendor tasks queued after Cleanup sell it through the retainer.
             vendorCurrentItem = true;
-            Svc.Chat.Print($"[AutoLister] {itemName}: listing would only total {total:N0} gil, having the retainer sell it instead.");
+            Svc.Chat.Print(vendorTotal > marketNet
+                ? $"[AutoLister] {itemName}: vendor pays {vendorTotal:N0} gil vs ~{marketNet:N0} from the market after tax, having the retainer sell it instead."
+                : $"[AutoLister] {itemName}: listing would only total {total:N0} gil, having the retainer sell it instead.");
             Callback.Fire(&addon->AtkUnitBase, true, RetainerSellCancelEvent);
             addon->AtkUnitBase.Close(true);
             return true;
@@ -486,6 +497,18 @@ public sealed class Plugin : IDalamudPlugin
         Callback.Fire(&addon->AtkUnitBase, true, RetainerSellConfirmEvent);
         addon->AtkUnitBase.Close(true);
         return true;
+    }
+
+    /// <summary>Per-unit price a vendor pays for the item; 0 when it can't be vendored.
+    /// Vendors pay 10% extra for HQ.</summary>
+    private static long GetVendorPrice(uint itemId, bool isHq)
+    {
+        var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
+        if (item == null)
+            return 0;
+
+        var price = (long)item.Value.PriceLow;
+        return isHq ? price * 11 / 10 : price;
     }
 
     private unsafe int GetCurrentItemQuantity()

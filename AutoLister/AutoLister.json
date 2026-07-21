@@ -2,7 +2,7 @@
   "Author": "bdg",
   "Name": "Auto Lister",
   "Punchline": "One-click bulk market listing: prices every sellable inventory item like Dagobert and puts it up for sale.",
-  "Description": "Adds an 'Auto List' button next to Dagobert's 'Auto Pinch' on the retainer sell list. Clicking it goes through every marketable item shown in the bottom-right quarter of the inventory (the last display page, as sorted on screen), puts each up for sale, opens the price comparison, undercuts the cheapest matching HQ/NQ listing by 1 gil and confirms - until the quarter has no more sellable items or the retainer's 20 sell slots are full. Items whose listing would total under 2,000 gil (price x quantity) are sold through the retainer instead of taking up a market slot. The price-checking logic mirrors Dagobert's auto pinch.",
+  "Description": "Adds an 'Auto List' button next to Dagobert's 'Auto Pinch' on the retainer sell list. Clicking it goes through every marketable item shown in the bottom-right quarter of the inventory (the last display page, as sorted on screen), puts each up for sale, opens the price comparison, undercuts the cheapest matching HQ/NQ listing by 1 gil and confirms - until the quarter has no more sellable items or the retainer's 20 sell slots are full. Items whose listing would total under 2,000 gil (price x quantity), or whose vendor price beats the market proceeds after the 5% sales tax, are sold through the retainer instead of taking up a market slot. The price-checking logic mirrors Dagobert's auto pinch.",
   "ApplicableVersion": "any",
   "Tags": [
     "market",
