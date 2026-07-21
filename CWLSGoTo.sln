@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
 VisualStudioVersion = 18.7.11925.98 stable
@@ -20,6 +20,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GemRate", "GemRate\GemRate.csproj", "{9A2B7C31-D845-4E19-B6F0-72C8E5D4A913}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FaloopScreener", "FaloopScreener\FaloopScreener.csproj", "{C4E8A1F7-3B92-4D56-8E0A-1F7D9C25B384}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HookNamer", "HookNamer\HookNamer.csproj", "{5B3C5524-EAED-4508-BFA8-26E2A649B2BC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -63,6 +65,10 @@ Global
 		{C4E8A1F7-3B92-4D56-8E0A-1F7D9C25B384}.Debug|x64.Build.0 = Debug|x64
 		{C4E8A1F7-3B92-4D56-8E0A-1F7D9C25B384}.Release|x64.ActiveCfg = Release|x64
 		{C4E8A1F7-3B92-4D56-8E0A-1F7D9C25B384}.Release|x64.Build.0 = Release|x64
+		{5B3C5524-EAED-4508-BFA8-26E2A649B2BC}.Debug|x64.ActiveCfg = Debug|x64
+		{5B3C5524-EAED-4508-BFA8-26E2A649B2BC}.Debug|x64.Build.0 = Debug|x64
+		{5B3C5524-EAED-4508-BFA8-26E2A649B2BC}.Release|x64.ActiveCfg = Release|x64
+		{5B3C5524-EAED-4508-BFA8-26E2A649B2BC}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
