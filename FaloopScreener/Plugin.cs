@@ -440,6 +440,9 @@ public sealed class Plugin : IDalamudPlugin
                 config.Save();
             }
 
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip($"Hides {e.Mob.Name} on every world.\nUndo under \"Hidden hunts & zones\".");
+
             if (ImGui.BeginPopup($"spawn##{id}"))
             {
                 ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"{e.Mob.Name} - spawn trigger");
