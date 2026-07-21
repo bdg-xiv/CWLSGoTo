@@ -204,7 +204,7 @@
     "Author": "bdg",
     "Name": "Faloop Screener",
     "InternalName": "FaloopScreener",
-    "AssemblyVersion": "0.0.0.4",
+    "AssemblyVersion": "0.0.0.5",
     "Description": "Logs into your Faloop account and shows the current S/SS-rank spawn windows in a table (/windows): world, hunt, zone, time open, window progress and cap time, computed from Faloop's live tracker state - accurate even for kills that happened while you were offline. Filter by world (Crystal data center), hide zones or specific hunts you don't care about, and click Spawn on any row to see that hunt's spawn trigger. Requires a Faloop account with tracker access; credentials are stored in the plugin config like Faloop Integration does.",
     "ApplicableVersion": "any",
     "Tags": [
@@ -224,6 +224,31 @@
     "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/FaloopScreener.zip",
     "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/FaloopScreener.zip",
     "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/FaloopScreener.zip"
+  },
+  {
+    "Author": "bdg",
+    "Name": "Hook Namer",
+    "InternalName": "HookNamer",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "GatherBuddy Reborn can reuse your own AutoHook presets instead of generating its own, but only if a preset is named exactly the target fish's item ID (it compares the whole name, so \"4948 Glimmerscale\" will not match - it has to be \"4948\"). Community presets never follow that convention. Hook Namer reads your AutoHook presets, works out which fish each one targets, and creates an ID-named duplicate through AutoHook's import API - your originals are left untouched. Presets that target several fish, or none, are listed so you can pick the target yourself. Open with /hooknamer.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "fishing",
+      "autohook",
+      "gatherbuddy",
+      "presets"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Makes your AutoHook presets usable by GatherBuddy Reborn.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/HookNamer.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/HookNamer.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/HookNamer.zip"
   },
   {
     "Author": "bdg",
