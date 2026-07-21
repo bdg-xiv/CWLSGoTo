@@ -75,6 +75,8 @@ public sealed class Plugin : IDalamudPlugin
     private int listedCount;
     private int skippedCount;
     private int vendoredCount;
+    private readonly List<(string Name, int Price)> listedReport = [];
+    private readonly List<string> manualPricingReport = [];
 
     // Market board price request state, mirroring Dagobert's MarketBoardHandler.
     private bool newRequest;
@@ -256,6 +258,7 @@ public sealed class Plugin : IDalamudPlugin
         skipCurrentItem = false;
         newRequest = false;
         Svc.Chat.Print("[AutoLister] Cancelled.");
+        PrintReport();
     }
 
     private void ResetRunState()
@@ -268,6 +271,8 @@ public sealed class Plugin : IDalamudPlugin
         listedCount = 0;
         skippedCount = 0;
         vendoredCount = 0;
+        listedReport.Clear();
+        manualPricingReport.Clear();
         newRequest = false;
         newPrice = null;
         lastRequestId = -1;
@@ -281,6 +286,7 @@ public sealed class Plugin : IDalamudPlugin
         if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out _))
         {
             Svc.Chat.Print("[AutoLister] Sell list closed, stopping.");
+            PrintReport();
             return null; // Aborts the queue.
         }
 
@@ -288,6 +294,7 @@ public sealed class Plugin : IDalamudPlugin
         if (retainer == null)
         {
             Svc.Chat.Print("[AutoLister] No active retainer, stopping.");
+            PrintReport();
             return null;
         }
 
@@ -360,6 +367,28 @@ public sealed class Plugin : IDalamudPlugin
         if (skippedCount > 0)
             summary += $" Skipped {skippedCount}.";
         Svc.Chat.Print(summary);
+        PrintReport();
+    }
+
+    /// <summary>Chat report of everything listed (name left, price right) with items that
+    /// need manual pricing at the end. Chat uses a proportional font, so exact column
+    /// alignment isn't possible; dot leaders sized off the longest name come closest.</summary>
+    private void PrintReport()
+    {
+        if (listedReport.Count == 0 && manualPricingReport.Count == 0)
+            return;
+
+        var maxLen = listedReport.Select(e => e.Name.Length)
+            .Concat(manualPricingReport.Select(n => n.Length))
+            .Max();
+
+        Svc.Chat.Print("[AutoLister] --- Listing report ---");
+        foreach (var (name, price) in listedReport)
+            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} {price,10:N0}g");
+        foreach (var name in manualPricingReport)
+            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} pending manual listing");
+
+        static string Leaders(string name, int maxLen) => new('.', maxLen - name.Length + 3);
     }
 
     private unsafe bool? OpenItemContextMenu(InventoryType container, int slot)
@@ -465,6 +494,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             Svc.Chat.Print($"[AutoLister] {itemName}: no market listings found, skipping.");
             skippedCount++;
+            manualPricingReport.Add(itemName);
             Callback.Fire(&addon->AtkUnitBase, true, RetainerSellCancelEvent);
             addon->AtkUnitBase.Close(true);
             return true;
@@ -494,6 +524,7 @@ public sealed class Plugin : IDalamudPlugin
         addon->AskingPrice->SetValue(newPrice.Value);
         Svc.Chat.Print($"[AutoLister] {itemName}: listed at {newPrice.Value:N0} gil.");
         listedCount++;
+        listedReport.Add((itemName, newPrice.Value));
         Callback.Fire(&addon->AtkUnitBase, true, RetainerSellConfirmEvent);
         addon->AtkUnitBase.Close(true);
         return true;
