@@ -366,6 +366,7 @@ public sealed class Plugin : IDalamudPlugin
     private void DrawTable()
     {
         var visible = entries
+            .Where(e => e.Mob.Rank == "S")
             .Where(e => config.EnabledWorlds.Contains(e.WorldSlug))
             .Where(e => !config.HiddenMobs.Contains(e.Mob.Id))
             .Where(e => !e.Mob.Zones.All(z => config.HiddenZones.Contains(z)))
