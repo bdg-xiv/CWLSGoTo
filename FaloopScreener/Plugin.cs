@@ -31,8 +31,10 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly Configuration config;
     private readonly FaloopClient client = new();
+    private readonly LeveSpawner leveSpawner;
     private readonly ICallGateSubscriber<uint, string, object?> goToIpc;
     private readonly Dictionary<string, uint> zoneAetherytes = [];
+    private ushort selectedLeveId;
 
     private bool windowOpen;
     private volatile List<WindowEntry> entries = [];
@@ -52,6 +54,9 @@ public sealed class Plugin : IDalamudPlugin
         // follow-ups) over IPC; the per-row Go button rides on it.
         goToIpc = PluginInterface.GetIpcSubscriber<uint, string, object?>("CWLSGoTo.GoToAetheryte");
 
+        // TaskManager-based, so it must be created after ECommonsMain.Init.
+        leveSpawner = new LeveSpawner();
+
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
             HelpMessage = "Opens the Faloop spawn windows table. \"/windows debug\" logs the raw tracker payload."
@@ -68,6 +73,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= ToggleWindow;
         PluginInterface.UiBuilder.Draw -= DrawWindow;
         Svc.Commands.RemoveHandler(CommandName);
+        leveSpawner.Dispose();
         client.Dispose();
         ECommonsMain.Dispose();
     }
@@ -343,6 +349,7 @@ public sealed class Plugin : IDalamudPlugin
 
             DrawWorldFilter();
             DrawTable();
+            DrawLeveSpawnerSection();
             DrawFilterSection();
             DrawSettingsSection();
         }
@@ -479,6 +486,74 @@ public sealed class Plugin : IDalamudPlugin
 
         if (visible.Count == 0)
             ImGui.TextDisabled("No windows to show (check filters, or wait for the first refresh).");
+    }
+
+    /// <summary>The leve spawn method (Wulgaru / Lampalagua): pick an accepted leve and
+    /// let the spawner initiate/abandon it until the powerful-mark message appears.</summary>
+    private unsafe void DrawLeveSpawnerSection()
+    {
+        if (!ImGui.CollapsingHeader("Leve spawner (Wulgaru / Lampalagua)"))
+            return;
+
+        var leves = new List<(ushort Id, string Name)>();
+        foreach (var leve in FFXIVClientStructs.FFXIV.Client.Game.QuestManager.Instance()->LeveQuests)
+        {
+            if (leve.LeveId == 0)
+                continue;
+            var name = Svc.Data.GetExcelSheet<Leve>().GetRowOrDefault(leve.LeveId)?.Name.ExtractText() ?? $"Leve {leve.LeveId}";
+            leves.Add((leve.LeveId, name));
+        }
+
+        if (leves.Count == 0)
+        {
+            ImGui.TextDisabled("No accepted leves. Take the leve from its levemete first\n(one acceptance is enough - it stays reusable when abandoned).");
+            return;
+        }
+
+        if (leves.All(l => l.Id != selectedLeveId))
+            selectedLeveId = leves[0].Id;
+
+        ImGui.SetNextItemWidth(260);
+        var selectedName = leves.First(l => l.Id == selectedLeveId).Name;
+        if (ImGui.BeginCombo("##levepick", selectedName))
+        {
+            foreach (var (id, name) in leves)
+            {
+                if (ImGui.Selectable(name, id == selectedLeveId))
+                    selectedLeveId = id;
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.SameLine();
+        var attempts = config.LeveAttempts;
+        ImGui.SetNextItemWidth(90);
+        if (ImGui.InputInt("attempts", ref attempts))
+        {
+            config.LeveAttempts = Math.Clamp(attempts, 1, 99);
+            config.Save();
+        }
+
+        ImGui.TextUnformatted($"Leve allowances left: {LeveSpawner.RemainingAllowances()}");
+        ImGui.SameLine();
+        ImGui.TextDisabled("(each attempt costs one)");
+
+        if (leveSpawner.IsRunning)
+        {
+            ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f), leveSpawner.Status);
+            if (ImGui.Button("Stop"))
+                leveSpawner.Stop();
+        }
+        else
+        {
+            if (leveSpawner.Status.Length > 0)
+                ImGui.TextUnformatted(leveSpawner.Status);
+            if (ImGui.Button("Start spawning"))
+                leveSpawner.Start(selectedLeveId, config.LeveAttempts);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Initiates the selected leve, watches for the powerful-mark message,\nabandons and retries until it appears or the attempt limit is hit.\nWorks anywhere in the leve's zone. Stops automatically on success.");
+        }
     }
 
     private void DrawFilterSection()

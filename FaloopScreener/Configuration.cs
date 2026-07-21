@@ -22,6 +22,9 @@ public class Configuration : IPluginConfiguration
     public HashSet<string> HiddenMobs { get; set; } = [];
     public HashSet<string> HiddenZones { get; set; } = [];
 
+    // Attempt cap per leve-spawner run (each initiation costs one allowance).
+    public int LeveAttempts { get; set; } = 5;
+
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);
