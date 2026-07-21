@@ -3,7 +3,7 @@
     "Author": "bdg",
     "Name": "CWLS Go To",
     "InternalName": "CWLSGoTo",
-    "AssemblyVersion": "0.0.0.23",
+    "AssemblyVersion": "0.0.0.24",
     "Description": "Watches Cross-world Linkshell (CWLS1/CWLS2) chat for messages containing a map link and appends a clickable [Go To] link. Clicking it teleports you to the nearest aetheryte via the Teleporter plugin, hopping to the correct world/data center first via the Lifestream plugin if the message points to a different server.",
     "ApplicableVersion": "any",
     "Tags": [
@@ -204,7 +204,7 @@
     "Author": "bdg",
     "Name": "Faloop Screener",
     "InternalName": "FaloopScreener",
-    "AssemblyVersion": "0.0.0.5",
+    "AssemblyVersion": "0.0.0.6",
     "Description": "Logs into your Faloop account and shows the current S/SS-rank spawn windows in a table (/windows): world, hunt, zone, time open, window progress and cap time, computed from Faloop's live tracker state - accurate even for kills that happened while you were offline. Filter by world (Crystal data center), hide zones or specific hunts you don't care about, and click Spawn on any row to see that hunt's spawn trigger. Requires a Faloop account with tracker access; credentials are stored in the plugin config like Faloop Integration does.",
     "ApplicableVersion": "any",
     "Tags": [
