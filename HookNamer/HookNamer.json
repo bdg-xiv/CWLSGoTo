@@ -2,7 +2,7 @@
   "Author": "bdg",
   "Name": "Hook Namer",
   "Punchline": "Makes your AutoHook presets usable by GatherBuddy Reborn.",
-  "Description": "GatherBuddy Reborn can reuse your own AutoHook presets instead of generating its own, but only if a preset is named exactly the target fish's item ID (it compares the whole name, so \"4948 Glimmerscale\" will not match - it has to be \"4948\"). Community presets never follow that convention. Hook Namer reads your AutoHook presets, works out which fish each one targets, and creates an ID-named duplicate through AutoHook's import API - your originals are left untouched. Presets that target several fish, or none, are listed so you can pick the target yourself. Open with /hooknamer.",
+  "Description": "GatherBuddy Reborn can reuse your own AutoHook presets instead of generating its own, but only if a preset is named exactly the target fish's item ID (it compares the whole name, so \"4948 Glimmerscale\" will not match - it has to be \"4948\"). Community presets never follow that convention. Hook Namer reads your AutoHook presets, works out which fish each one targets, and creates an ID-named duplicate through AutoHook's import API, filed into a 'HookNamer' folder in AutoHook's preset list to keep things tidy - your originals are left untouched. Presets that target several fish, or none, are listed so you can pick the target yourself. Open with /hooknamer.",
   "ApplicableVersion": "any",
   "Tags": [
     "fishing",

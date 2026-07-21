@@ -1,9 +1,11 @@
 using ECommons.DalamudServices;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -22,6 +24,9 @@ internal static class AutoHookPresets
 {
     /// <summary>AutoHook's import strings are "AH4_" + base64(gzip(json)).</summary>
     private const string ExportPrefix = "AH4_";
+
+    /// <summary>AutoHook preset folder the id-named copies are filed into.</summary>
+    private const string FolderName = "HookNamer";
 
     internal sealed record PresetInfo(string Name, int[] FishIds, int[] BaitIds, JsonNode Node)
     {
@@ -119,6 +124,7 @@ internal static class AutoHookPresets
 
             var payload = ExportPrefix + Compress(clone.ToJsonString(new JsonSerializerOptions { WriteIndented = false }));
             Svc.PluginInterface.GetIpcSubscriber<string, object>("AutoHook.ImportAndSelectPreset").InvokeAction(payload);
+            TryMoveToFolder(fishId.ToString());
             return true;
         }
         catch (Exception ex)
@@ -127,6 +133,85 @@ internal static class AutoHookPresets
             Svc.Log.Error(ex, "Failed to hand a renamed preset to AutoHook");
             return false;
         }
+    }
+
+    /// <summary>Files the freshly imported preset into a "HookNamer" folder inside
+    /// AutoHook's preset list, creating the folder on first use. AutoHook's IPC can't
+    /// do this (ImportAndSelectFolder always creates a brand-new folder), so this
+    /// reaches into the loaded AutoHook instance via reflection - same pattern the
+    /// repo already uses for Penumbra and Hunt Train Assistant. Best effort: if
+    /// AutoHook's internals changed, the preset just stays at the top level.</summary>
+    private static void TryMoveToFolder(string presetName)
+    {
+        try
+        {
+            var assembly = AppDomain.CurrentDomain.GetAssemblies()
+                .LastOrDefault(a => a.GetName().Name == "AutoHook");
+            var serviceType = assembly?.GetType("AutoHook.Service");
+            var config = serviceType?.GetProperty("Configuration", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            if (config == null)
+            {
+                Svc.Log.Warning("HookNamer: AutoHook internals not found, the preset stays at the top level");
+                return;
+            }
+
+            // AutoHook guards config writes with this lock; take it like its own IPC does.
+            var sync = config.GetType().GetField("SerializationSync", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null)
+                       ?? new object();
+            lock (sync)
+            {
+                var hookPresets = GetMember(config, "HookPresets");
+                var folders = GetMember(hookPresets, "Folders") as IList;
+                if (hookPresets == null || folders == null || GetMember(hookPresets, "CustomPresets") is not IEnumerable presetsList)
+                    return;
+
+                // The import appended our copy; the last preset with the id-name is it.
+                object? imported = null;
+                foreach (var preset in presetsList)
+                {
+                    if (Equals(GetMember(preset, "PresetName"), presetName))
+                        imported = preset;
+                }
+
+                if (imported == null || GetMember(imported, "UniqueId") is not Guid presetId)
+                    return;
+
+                object? folder = null;
+                foreach (var f in folders)
+                {
+                    if (Equals(GetMember(f, "FolderName"), FolderName))
+                    {
+                        folder = f;
+                        break;
+                    }
+                }
+
+                if (folder == null)
+                {
+                    var folderType = assembly!.GetType("AutoHook.Classes.PresetFolder");
+                    if (folderType == null)
+                        return;
+                    folder = Activator.CreateInstance(folderType, FolderName);
+                    folders.Add(folder);
+                }
+
+                folder!.GetType().GetMethod("AddPreset")?.Invoke(folder, [presetId]);
+            }
+
+            serviceType!.GetMethod("Save", BindingFlags.Public | BindingFlags.Static)?.Invoke(null, null);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"HookNamer: could not file the preset into the \"{FolderName}\" folder: {ex.Message}");
+        }
+    }
+
+    private static object? GetMember(object? obj, string name)
+    {
+        if (obj == null)
+            return null;
+        var type = obj.GetType();
+        return type.GetField(name)?.GetValue(obj) ?? type.GetProperty(name)?.GetValue(obj);
     }
 
     public static bool AutoHookAvailable()
