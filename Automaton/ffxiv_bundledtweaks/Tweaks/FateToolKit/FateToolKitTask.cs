@@ -76,6 +76,9 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
                     case GrindState.BetweenFates:
                         await MoveToFate();
                         break;
+                    case GrindState.ClearingAggro:
+                        await ClearAggro();
+                        break;
                     case GrindState.WaitingForFates:
                         await HandleNoFates();
                         break;
@@ -147,6 +150,12 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
                 return GrindState.Engaging;
             }
 
+            // patched: a mob picked us up between fates while we're stationary (the
+            // loop only reaches this point when no move task is running). Kill it
+            // before routing anywhere - mounting or pathing would just drag it along.
+            if (Svc.Condition[ConditionFlag.InCombat])
+                return GrindState.ClearingAggro;
+
             if (ShouldWaitForFollowUp())
                 return GrindState.WaitingForFollowUp;
 
@@ -170,6 +179,7 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
         SwapZones,
         Engaging,
         Unconscious,
+        ClearingAggro, // patched: stationary outside a fate with a mob on us
     }
 
     private enum MoveStopReason {
@@ -180,6 +190,7 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
         NpcLoaded,
         StuckRetry,
         StuckTeleport,
+        EngageCombat, // patched: unmounted inside a fate and in combat - fight here
     }
 
     private sealed class MoveTracker(Vector3 initialPosition, long initialTick) {
@@ -358,6 +369,13 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
 
             stopReason = MoveStopReason.None;
 
+            // patched: standing inside a fate, unmounted, with combat on us - stop
+            // pathing to the picked destination point and fight from right here.
+            if (!Player.Mounted && Svc.Condition[ConditionFlag.InCombat] && PublicEvent.CurrentFate is not null) {
+                stopReason = MoveStopReason.EngageCombat;
+                return true;
+            }
+
             if (IsCurrentFateInvalid()) {
                 stopReason = MoveStopReason.FateInvalid;
                 return true;
@@ -421,6 +439,16 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
         else if (stopReason != MoveStopReason.StuckTeleport) {
             LastStuckFateId = null;
             ConsecutiveStuckRetries = 0;
+        }
+
+        // patched: stopped mid-move to fight where we stand. Adopt the fate we're
+        // inside so HandleIntegrations activates the combat preset for it, and let
+        // the loop fall into the Engaging state.
+        if (stopReason == MoveStopReason.EngageCombat) {
+            if (PublicEvent.CurrentFate is { } engaged)
+                NextFate = engaged;
+            Status = "Engaging (combat stopped the move)";
+            return;
         }
 
         if (stopReason == MoveStopReason.HigherPriority)
@@ -515,6 +543,42 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
         }
         else
             Error($"Something weird happened with the npc activation [{fate}]");
+    }
+
+    // patched: something aggroed us between fates while stationary - dismount if
+    // needed, target the attacker and let the combat preset kill it, then the loop
+    // resumes normal routing once combat drops.
+    private async Task ClearAggro() {
+        using var scope = BeginScope(nameof(ClearAggro));
+        Status = "Engaging attacker";
+
+        if (Player.Mounted) {
+            await Dismount();
+            if (Player.Mounted) {
+                Warning("Dismount did not complete, retrying");
+                await NextFrame(30);
+                return;
+            }
+        }
+
+        if (Svc.Targets.Target is null or { IsDead: true } && Player.Object is { } playerObject) {
+            var attacker = Svc.Objects.OfType<IBattleNpc>()
+                .Where(b => b.IsTargetable && !b.IsDead && b.TargetObjectId == playerObject.GameObjectId)
+                .OrderBy(b => Player.DistanceTo(b.Position))
+                .FirstOrDefault();
+            if (attacker is not null)
+                Svc.Targets.Target = attacker;
+        }
+
+        // Integrations skip activation outside a fate, so bring the preset up ourselves.
+        if (Service.BossMod.GetActive() != _presetName) {
+            if (Service.BossMod.Get(_presetName) is null)
+                Service.BossMod.Create(_preset, true);
+            else
+                Service.BossMod.SetActive(_presetName);
+        }
+
+        await NextFrame(30);
     }
 
     private async Task HandleNoFates() {
