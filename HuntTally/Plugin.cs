@@ -281,7 +281,15 @@ public sealed class Plugin : IDalamudPlugin
             else if (statusText.Length > 0)
                 ImGui.TextDisabled(statusText);
 
-            ImGui.SameLine(ImGui.GetContentRegionAvail().X - 60);
+            ImGui.SameLine(ImGui.GetContentRegionAvail().X - 220);
+            var hideCompleted = config.HideCompleted;
+            if (ImGui.Checkbox("Hide completed", ref hideCompleted))
+            {
+                config.HideCompleted = hideCompleted;
+                config.Save();
+            }
+
+            ImGui.SameLine();
             if (fetching)
                 ImGui.BeginDisabled();
             if (ImGui.SmallButton("Refresh"))
@@ -294,7 +302,9 @@ public sealed class Plugin : IDalamudPlugin
             var cache = CurrentCache();
             foreach (var expansion in ExpansionOrder)
             {
-                var group = Tracked.Where(a => a.Expansion == expansion).ToList();
+                var group = Tracked.Where(a => a.Expansion == expansion
+                        && (!config.HideCompleted || !IsAchievementComplete(a.Id)))
+                    .ToList();
                 if (group.Count == 0)
                     continue;
 

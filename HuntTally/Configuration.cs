@@ -21,6 +21,9 @@ public class Configuration : IPluginConfiguration
     // the server and is only fetched on refresh, so cache what we saw.
     public Dictionary<ulong, Dictionary<uint, CachedProgress>> ProgressByCharacter { get; set; } = [];
 
+    // Hide achievements that are already complete.
+    public bool HideCompleted { get; set; } = false;
+
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);
