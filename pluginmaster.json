@@ -252,6 +252,30 @@
   },
   {
     "Author": "bdg",
+    "Name": "Hunt Tally",
+    "InternalName": "HuntTally",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Reads the game's hunt achievement list, fetches your live progress from the server (the same request the achievement window makes) and shows it grouped by expansion: every S-rank and A-rank kill-count achievement with a progress bar and how many kills remain, plus the big overall elite-mark totals. Progress is cached per character so the window opens instantly; refresh on demand. Open with /hunttally.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "hunt",
+      "achievements",
+      "tracker"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "How many S and A ranks you still need for each hunt achievement, per expansion.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/HuntTally.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/HuntTally.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/HuntTally.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.23",
