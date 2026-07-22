@@ -84,7 +84,7 @@ public sealed class Plugin : IDalamudPlugin
     private int listedCount;
     private int skippedCount;
     private int vendoredCount;
-    private readonly List<(string Name, int Price)> listedReport = [];
+    private readonly List<(string Name, int Price, string Change)> listedReport = [];
     private readonly List<string> manualPricingReport = [];
 
     // Pinch & Cull state: walk the retainer's existing listings, reprice the healthy
@@ -97,13 +97,14 @@ public sealed class Plugin : IDalamudPlugin
     private bool crashKeepItem;
     private bool currentHadBagCopy;
     private string currentItemName = "";
+    private string crashDetail = "";
     private int currentListingIndex;
     private int currentQuantity;
     private int marketCountBeforeReturn;
     private int repricedCount;
     private readonly List<string> culledReport = [];
     private readonly List<string> returnedReport = [];
-    private readonly List<string> crashedReport = [];
+    private readonly List<(string Name, string Detail)> crashedReport = [];
     private static Dictionary<string, uint>? itemIdsByName;
 
     // Market board price request state, mirroring Dagobert's MarketBoardHandler.
@@ -690,6 +691,7 @@ public sealed class Plugin : IDalamudPlugin
         compareOpenAt = 0;
         currentItemId = 0;
         currentItemName = "";
+        crashDetail = "";
         currentQuantity = 1;
         currentHadBagCopy = false;
 
@@ -793,8 +795,9 @@ public sealed class Plugin : IDalamudPlugin
             cullCurrentItem = true;
             crashKeepItem = true;
             marketCountBeforeReturn = CurrentMarketItemCount();
+            crashDetail = $"price crashed ({dropPercent}% decrease) - kept in bags";
             Svc.Chat.Print($"[AutoLister] {itemName}: PRICE CRASH - listed at {oldPrice:N0}, market now {newPrice.Value:N0} "
-                + $"(-{dropPercent}%). Pulling it back to your bags instead of repricing.");
+                + $"({dropPercent}% decrease). Pulling it back to your bags instead of repricing.");
             Callback.Fire(&addon->AtkUnitBase, true, RetainerSellCancelEvent);
             addon->AtkUnitBase.Close(true);
             return true;
@@ -818,9 +821,10 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         addon->AskingPrice->SetValue(newPrice.Value);
-        Svc.Chat.Print($"[AutoLister] {itemName}: repriced to {newPrice.Value:N0} gil.");
+        var change = DescribeChange(oldPrice, newPrice.Value);
+        Svc.Chat.Print($"[AutoLister] {itemName}: repriced to {newPrice.Value:N0} gil ({change}).");
         repricedCount++;
-        listedReport.Add((itemName, newPrice.Value));
+        listedReport.Add((itemName, newPrice.Value, $"({change})"));
         Callback.Fire(&addon->AtkUnitBase, true, RetainerSellConfirmEvent);
         addon->AtkUnitBase.Close(true);
         return true;
@@ -852,7 +856,7 @@ public sealed class Plugin : IDalamudPlugin
             if (crashKeepItem)
             {
                 crashKeepItem = false;
-                crashedReport.Add(name);
+                crashedReport.Add((name, crashDetail));
                 return true; // Kept in the bags on purpose - already announced.
             }
 
@@ -905,6 +909,18 @@ public sealed class Plugin : IDalamudPlugin
             && EzThrottler.Throttle("ALPinch.ReopenMenu", 1500))
             Callback.Fire(sellList, true, 0, currentListingIndex, 1);
         return false;
+    }
+
+    /// <summary>"3% decrease" / "12% increase"; tiny moves show as "&lt;1%".</summary>
+    private static string DescribeChange(long oldPrice, long newPrice)
+    {
+        var delta = newPrice - oldPrice;
+        if (oldPrice <= 0 || delta == 0)
+            return "no change";
+
+        var percent = Math.Abs(delta) * 100.0 / oldPrice;
+        var percentText = percent < 1 ? "<1" : $"{percent:0}";
+        return $"{percentText}% {(delta < 0 ? "decrease" : "increase")}";
     }
 
     private static unsafe int CurrentMarketItemCount()
@@ -1003,14 +1019,14 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(manualPricingReport.Select(n => n.Length))
             .Concat(culledReport.Select(n => n.Length))
             .Concat(returnedReport.Select(n => n.Length))
-            .Concat(crashedReport.Select(n => n.Length))
+            .Concat(crashedReport.Select(e => e.Name.Length))
             .Max();
 
         Svc.Chat.Print("[AutoLister] --- Listing report ---");
-        foreach (var (name, price) in listedReport)
-            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} {price,10:N0}g");
-        foreach (var name in crashedReport)
-            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} price crashed - kept in bags");
+        foreach (var (name, price, change) in listedReport)
+            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} {price,10:N0}g{(change.Length > 0 ? " " + change : "")}");
+        foreach (var (name, detail) in crashedReport)
+            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} {detail}");
         foreach (var name in culledReport)
             Svc.Chat.Print($"{name} {Leaders(name, maxLen)} delisted & vendored");
         foreach (var name in returnedReport)
@@ -1154,7 +1170,7 @@ public sealed class Plugin : IDalamudPlugin
         addon->AskingPrice->SetValue(newPrice.Value);
         Svc.Chat.Print($"[AutoLister] {itemName}: listed at {newPrice.Value:N0} gil.");
         listedCount++;
-        listedReport.Add((itemName, newPrice.Value));
+        listedReport.Add((itemName, newPrice.Value, ""));
         Callback.Fire(&addon->AtkUnitBase, true, RetainerSellConfirmEvent);
         addon->AtkUnitBase.Close(true);
         return true;
