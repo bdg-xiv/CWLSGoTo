@@ -1,10 +1,12 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.DalamudServices;
+using ECommons.GameHelpers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
@@ -38,10 +40,49 @@ public sealed class Plugin : IDalamudPlugin
         // achievements instead of kills; their descriptions are the ones that mention
         // the word "achievement".
         public bool RequiresOtherAchievements { get; } = Description.Contains("achievement", StringComparison.OrdinalIgnoreCase);
+
+        // Set for "slay each unique mark" achievements (the "Mark of the ..." series).
+        public List<UniqueMark>? UniqueMarks { get; set; }
     }
+
+    private sealed record UniqueMark(uint NotoriousId, uint BNpcNameId, string Name, string Zone);
+
+    // The "Mark of the ..." achievements ask for every elite mark of one rank in a zone
+    // group. Their criteria ids in the Achievement sheet are server-side only, but the
+    // member marks are derivable: NotoriousMonsterTerritory has one row per zone (in
+    // release order) listing that zone's marks, so each achievement is a fixed set of
+    // those rows filtered by rank (B=1, A=2, S=3).
+    private static readonly (uint AchievementId, byte Rank, uint[] Zones)[] UniqueKillAchievements =
+    [
+        (966, 1, [1, 2, 3, 4, 5, 17]), (971, 2, [1, 2, 3, 4, 5, 17]), (976, 3, [1, 2, 3, 4, 5, 17]), // La Noscea
+        (965, 1, [6, 7, 8, 9, 10]), (970, 2, [6, 7, 8, 9, 10]), (975, 3, [6, 7, 8, 9, 10]),          // Thanalan
+        (964, 1, [11, 12, 13, 14]), (969, 2, [11, 12, 13, 14]), (974, 3, [11, 12, 13, 14]),          // Black Shroud
+        (967, 1, [15, 16]), (972, 2, [15, 16]), (977, 3, [15, 16]),                                  // Coerthas/Mor Dhona
+        (1260, 1, [18, 22, 23]), (1262, 2, [18, 22, 23]), (1264, 3, [18, 22, 23]),                   // Cloud and Ice
+        (1259, 1, [19, 20, 21]), (1261, 2, [19, 20, 21]), (1263, 3, [19, 20, 21]),                   // Dravania
+        (1910, 1, [24, 27, 28]), (1911, 2, [24, 27, 28]), (1912, 3, [24, 27, 28]),                   // Gyr Abania
+        (1913, 1, [25, 26, 29]), (1914, 2, [25, 26, 29]), (1915, 3, [25, 26, 29]),                   // Othard
+    ];
+
+    private static readonly Dictionary<uint, string> ZoneNames = new()
+    {
+        [1] = "Middle La Noscea", [2] = "Lower La Noscea", [3] = "Eastern La Noscea",
+        [4] = "Western La Noscea", [5] = "Upper La Noscea", [17] = "Outer La Noscea",
+        [6] = "Western Thanalan", [7] = "Central Thanalan", [8] = "Eastern Thanalan",
+        [9] = "Southern Thanalan", [10] = "Northern Thanalan",
+        [11] = "Central Shroud", [12] = "East Shroud", [13] = "South Shroud", [14] = "North Shroud",
+        [15] = "Coerthas Central Highlands", [16] = "Mor Dhona",
+        [18] = "Coerthas Western Highlands", [22] = "The Sea of Clouds", [23] = "Azys Lla",
+        [19] = "The Dravanian Forelands", [20] = "The Dravanian Hinterlands", [21] = "The Churning Mists",
+        [24] = "The Fringes", [27] = "The Peaks", [28] = "The Lochs",
+        [25] = "The Ruby Sea", [26] = "Yanxia", [29] = "The Azim Steppe",
+    };
 
     private readonly Configuration config;
     private List<HuntAchievement>? tracked;
+    private readonly Dictionary<uint, uint> markWatch = [];   // BNpcName id -> NotoriousMonster id
+    private readonly Dictionary<uint, string> markNames = []; // NotoriousMonster id -> display name
+    private long lastMarkScanAt;
 
     private bool windowOpen;
     private readonly Queue<uint> requestQueue = new();
@@ -114,7 +155,49 @@ public sealed class Plugin : IDalamudPlugin
                     ClassifyRank(description), ClassifyExpansion(description), achievement.Order));
             }
 
+            ResolveUniqueMarks(tracked);
             return tracked;
+        }
+    }
+
+    private void ResolveUniqueMarks(List<HuntAchievement> achievements)
+    {
+        var byId = achievements.ToDictionary(a => a.Id);
+        var zoneSheet = Svc.Data.GetExcelSheet<NotoriousMonsterTerritory>();
+        markWatch.Clear();
+        markNames.Clear();
+
+        foreach (var (achievementId, rank, zones) in UniqueKillAchievements)
+        {
+            if (!byId.TryGetValue(achievementId, out var achievement))
+                continue;
+
+            var marks = new List<UniqueMark>();
+            foreach (var zoneRow in zones)
+            {
+                var row = zoneSheet.GetRowOrDefault(zoneRow);
+                if (row == null)
+                    continue;
+
+                var zone = ZoneNames.GetValueOrDefault(zoneRow, "?");
+                foreach (var markRef in row.Value.NotoriousMonsters)
+                {
+                    var monster = markRef.ValueNullable;
+                    if (markRef.RowId == 0 || monster == null || monster.Value.Rank != rank)
+                        continue;
+
+                    var name = monster.Value.BNpcName.ValueNullable?.Singular.ExtractText() ?? "";
+                    if (name.Length == 0)
+                        continue;
+
+                    name = char.ToUpperInvariant(name[0]) + name[1..];
+                    marks.Add(new UniqueMark(markRef.RowId, monster.Value.BNpcName.RowId, name, zone));
+                    markWatch[monster.Value.BNpcName.RowId] = markRef.RowId;
+                    markNames[markRef.RowId] = name;
+                }
+            }
+
+            achievement.UniqueMarks = marks;
         }
     }
 
@@ -163,6 +246,56 @@ public sealed class Plugin : IDalamudPlugin
         return cache;
     }
 
+    private HashSet<uint> CurrentSlain()
+    {
+        var character = Svc.PlayerState.ContentId;
+        if (character == 0)
+            return [];
+
+        if (!config.SlainMarksByCharacter.TryGetValue(character, out var slain))
+        {
+            slain = [];
+            config.SlainMarksByCharacter[character] = slain;
+        }
+
+        return slain;
+    }
+
+    // The server never says which unique marks are done, only how many, so record a
+    // mark as slain when its corpse is seen near the player (hunt credit is shared,
+    // so being on top of a dying mark practically always counts).
+    private void ScanForMarkDeaths()
+    {
+        var now = Environment.TickCount64;
+        if (now - lastMarkScanAt < 1000)
+            return;
+        lastMarkScanAt = now;
+
+        if (!Svc.ClientState.IsLoggedIn || Player.Object is not { } playerObject)
+            return;
+
+        _ = Tracked; // builds the mark watch list on first use
+        if (markWatch.Count == 0)
+            return;
+
+        var playerPosition = playerObject.Position;
+        foreach (var obj in Svc.Objects)
+        {
+            if (obj is not IBattleNpc npc || !npc.IsDead)
+                continue;
+            if (!markWatch.TryGetValue(npc.NameId, out var notoriousId))
+                continue;
+            if (Vector3.DistanceSquared(playerPosition, npc.Position) > 60f * 60f)
+                continue;
+
+            if (CurrentSlain().Add(notoriousId))
+            {
+                config.Save();
+                Svc.Chat.Print($"[HuntTally] Recorded unique elite mark kill: {markNames[notoriousId]}.");
+            }
+        }
+    }
+
     private void StartRefresh()
     {
         if (requestQueue.Count > 0 || !Svc.ClientState.IsLoggedIn)
@@ -178,6 +311,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private unsafe void OnFrameworkUpdate(IFramework framework)
     {
+        ScanForMarkDeaths();
+
         if (requestQueue.Count == 0 && pendingId == 0)
             return;
 
@@ -353,6 +488,7 @@ public sealed class Plugin : IDalamudPlugin
         var done = IsAchievementComplete(achievement.Id);
         var hasData = cache.TryGetValue(achievement.Id, out var progress);
 
+        ImGui.BeginGroup();
         var label = achievement.Rank.Length > 0 ? $"[{achievement.Rank[..^1]}] " : "";
         if (done)
             ImGui.TextDisabled($"{label}{achievement.Name} - complete");
@@ -371,9 +507,63 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.SameLine(280);
             ImGui.TextDisabled("no data yet - hit Refresh");
         }
+        ImGui.EndGroup();
 
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(achievement.Description);
+        var marks = achievement.UniqueMarks;
+        var popupId = $"##huntmarks{achievement.Id}";
+        if (marks != null && !done && ImGui.IsItemClicked(ImGuiMouseButton.Right))
+            ImGui.OpenPopup(popupId);
+
+        if (ImGui.IsItemHovered() && !ImGui.IsPopupOpen(popupId))
+        {
+            ImGui.BeginTooltip();
+            ImGui.TextUnformatted(achievement.Description);
+            if (marks != null)
+            {
+                var slain = CurrentSlain();
+                ImGui.Separator();
+                foreach (var mark in marks)
+                {
+                    if (done || slain.Contains(mark.NotoriousId))
+                        ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f), $"slain - {mark.Name} ({mark.Zone})");
+                    else
+                        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"needed - {mark.Name} ({mark.Zone})");
+                }
+
+                if (!done)
+                {
+                    ImGui.Separator();
+                    var recorded = marks.Count(m => slain.Contains(m.NotoriousId));
+                    if (hasData && progress!.Max > 0 && recorded != progress.Current)
+                        ImGui.TextColored(new Vector4(1f, 0.5f, 0.3f, 1f),
+                            $"Plugin has {recorded} recorded but the server counts {progress.Current}.");
+                    ImGui.TextDisabled("The game only reports the total, so kills are recorded here\nwhen a mark dies near you. Right-click to fix older kills.");
+                }
+            }
+
+            ImGui.EndTooltip();
+        }
+
+        if (marks != null && !done && ImGui.BeginPopup(popupId))
+        {
+            var slain = CurrentSlain();
+            ImGui.TextDisabled($"{achievement.Name} - tick the marks you have already slain");
+            ImGui.Separator();
+            foreach (var mark in marks)
+            {
+                var isSlain = slain.Contains(mark.NotoriousId);
+                if (ImGui.Checkbox($"{mark.Name} ({mark.Zone})###mk{achievement.Id}-{mark.NotoriousId}", ref isSlain))
+                {
+                    if (isSlain)
+                        slain.Add(mark.NotoriousId);
+                    else
+                        slain.Remove(mark.NotoriousId);
+                    config.Save();
+                }
+            }
+
+            ImGui.EndPopup();
+        }
     }
 
     #endregion
