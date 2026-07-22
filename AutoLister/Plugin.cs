@@ -86,14 +86,16 @@ public sealed class Plugin : IDalamudPlugin
     private RunMode runMode = RunMode.List;
     private bool allRetainersMode;
     private readonly Queue<uint> retainerQueue = new();
-    private readonly Queue<(int Slot, uint ItemId, int Quantity)> pendingListings = new();
+    private readonly Queue<int> pendingListingIndexes = new();
     private bool cullCurrentItem;
     private bool currentHadBagCopy;
-    private int currentListingSlot;
+    private int currentListingIndex;
     private int currentQuantity;
+    private int marketCountBeforeReturn;
     private int repricedCount;
     private readonly List<string> culledReport = [];
     private readonly List<string> returnedReport = [];
+    private static Dictionary<string, uint>? itemIdsByName;
 
     // Market board price request state, mirroring Dagobert's MarketBoardHandler.
     private bool newRequest;
@@ -326,7 +328,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         taskManager.Abort();
         pendingItems.Clear();
-        pendingListings.Clear();
+        pendingListingIndexes.Clear();
         retainerQueue.Clear();
         skipCurrentItem = false;
         newRequest = false;
@@ -362,7 +364,7 @@ public sealed class Plugin : IDalamudPlugin
         runMode = RunMode.List;
         allRetainersMode = false;
         retainerQueue.Clear();
-        pendingListings.Clear();
+        pendingListingIndexes.Clear();
         cullCurrentItem = false;
         repricedCount = 0;
         culledReport.Clear();
@@ -517,32 +519,33 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         BuildListingQueue();
-        if (pendingListings.Count == 0)
+        if (pendingListingIndexes.Count == 0)
         {
             Svc.Chat.Print("[AutoLister] This retainer has no listings.");
             return;
         }
 
-        Svc.Chat.Print($"[AutoLister] Pinch & Cull over {pendingListings.Count} listing(s)...");
+        Svc.Chat.Print($"[AutoLister] Pinch & Cull over {pendingListingIndexes.Count} listing(s)...");
         taskManager.Enqueue(ProcessNextListing, "ProcessNextListing");
     }
 
-    /// <summary>Snapshots the active retainer's market container. Queued highest slot
-    /// first: culls remove entries and shift higher slots down, so working backwards
-    /// keeps the remaining slot numbers valid.</summary>
+    /// <summary>Queues the sell list's UI row indexes, read from the addon's list
+    /// component the way Dagobert does - the retainer market container's slot numbers
+    /// do NOT correspond to the visible rows. Highest row first: culls remove rows,
+    /// so working backwards keeps the remaining indexes valid.</summary>
     private unsafe void BuildListingQueue()
     {
-        pendingListings.Clear();
-        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
-        if (container == null)
+        pendingListingIndexes.Clear();
+        if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var addon) || !IsAddonReady(addon))
             return;
 
-        for (var slot = (int)container->Size - 1; slot >= 0; slot--)
-        {
-            var item = container->GetInventorySlot(slot);
-            if (item != null && item->ItemId != 0)
-                pendingListings.Enqueue((slot, item->ItemId, Math.Max((int)item->Quantity, 1)));
-        }
+        var listNode = (AtkComponentNode*)addon->UldManager.NodeList[10];
+        var list = listNode != null ? (AtkComponentList*)listNode->Component : null;
+        if (list == null)
+            return;
+
+        for (var i = list->ListLength - 1; i >= 0; i--)
+            pendingListingIndexes.Enqueue(i);
     }
 
     private unsafe bool? NextRetainer()
@@ -647,24 +650,7 @@ public sealed class Plugin : IDalamudPlugin
             return null;
         }
 
-        // Pull the next listing that still matches the snapshot.
-        var found = false;
-        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
-        while (pendingListings.Count > 0)
-        {
-            var candidate = pendingListings.Dequeue();
-            var item = container != null ? container->GetInventorySlot(candidate.Slot) : null;
-            if (item != null && item->ItemId == candidate.ItemId)
-            {
-                currentListingSlot = candidate.Slot;
-                currentItemId = candidate.ItemId;
-                currentQuantity = candidate.Quantity;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
+        if (pendingListingIndexes.Count == 0)
         {
             if (allRetainersMode)
             {
@@ -682,15 +668,18 @@ public sealed class Plugin : IDalamudPlugin
             return true;
         }
 
+        currentListingIndex = pendingListingIndexes.Dequeue();
         skipCurrentItem = false;
         cullCurrentItem = false;
         vendorCurrentItem = false;
         newPrice = null;
         compareOpenAt = 0;
-        currentHadBagCopy = BagsContain(currentItemId);
+        currentItemId = 0;
+        currentQuantity = 1;
+        currentHadBagCopy = false;
 
-        var slot = currentListingSlot;
-        taskManager.Enqueue(() => OpenListingContextMenu(slot), "OpenListingContextMenu");
+        var index = currentListingIndex;
+        taskManager.Enqueue(() => OpenListingContextMenu(index), "OpenListingContextMenu");
         taskManager.EnqueueDelay(150);
         taskManager.Enqueue(ClickAdjustPrice, "ClickAdjustPrice", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.EnqueueDelay(150);
@@ -710,12 +699,12 @@ public sealed class Plugin : IDalamudPlugin
         return true;
     }
 
-    private unsafe bool? OpenListingContextMenu(int slot)
+    private unsafe bool? OpenListingContextMenu(int index)
     {
         if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var addon) || !IsAddonReady(addon))
             return false;
 
-        Callback.Fire(addon, true, 0, slot, 1);
+        Callback.Fire(addon, true, 0, index, 1);
         return true;
     }
 
@@ -773,13 +762,21 @@ public sealed class Plugin : IDalamudPlugin
 
         cachedPrices.TryAdd(itemName, newPrice.Value);
 
+        // The listing's identity comes from the price window itself: quantity from
+        // its numeric input, the item id by resolving the displayed name.
+        currentQuantity = Math.Max(addon->Quantity->Value, 1);
+        currentItemId = ResolveItemIdByName(itemName);
+        currentHadBagCopy = currentItemId != 0 && BagsContain(currentItemId);
+
         var total = (long)newPrice.Value * currentQuantity;
         var vendorTotal = GetVendorPrice(currentItemId, itemIsHq) * currentQuantity;
         var marketNet = total * (100 - MarketTaxPercent) / 100;
 
-        if (total < VendorThresholdGil || vendorTotal > marketNet)
+        // An unresolvable item can't be safely vendored, so it only ever gets repriced.
+        if (currentItemId != 0 && (total < VendorThresholdGil || vendorTotal > marketNet))
         {
             cullCurrentItem = true;
+            marketCountBeforeReturn = CurrentMarketItemCount();
             Svc.Chat.Print(vendorTotal > marketNet
                 ? $"[AutoLister] {itemName}: vendor pays {vendorTotal:N0} gil vs ~{marketNet:N0} from the market after tax - delisting to vendor."
                 : $"[AutoLister] {itemName}: repricing would only total {total:N0} gil - delisting to vendor.");
@@ -813,9 +810,7 @@ public sealed class Plugin : IDalamudPlugin
             return false;
         }
 
-        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
-        var slotItem = container != null ? container->GetInventorySlot(currentListingSlot) : null;
-        var stillListed = slotItem != null && slotItem->ItemId == currentItemId;
+        var stillListed = CurrentMarketItemCount() >= marketCountBeforeReturn;
 
         if (!stillListed)
         {
@@ -869,8 +864,33 @@ public sealed class Plugin : IDalamudPlugin
 
         if (TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var sellList) && IsAddonReady(sellList)
             && EzThrottler.Throttle("ALPinch.ReopenMenu", 1500))
-            Callback.Fire(sellList, true, 0, currentListingSlot, 1);
+            Callback.Fire(sellList, true, 0, currentListingIndex, 1);
         return false;
+    }
+
+    private static unsafe int CurrentMarketItemCount()
+    {
+        var retainer = RetainerManager.Instance()->GetActiveRetainer();
+        return retainer != null ? retainer->MarketItemCount : 0;
+    }
+
+    /// <summary>Resolves an item id from the sell window's displayed name (HQ glyph and
+    /// other special characters stripped). Returns 0 when nothing matches.</summary>
+    private static uint ResolveItemIdByName(string name)
+    {
+        if (itemIdsByName == null)
+        {
+            itemIdsByName = [];
+            foreach (var item in Svc.Data.GetExcelSheet<Item>())
+            {
+                var itemName = item.Name.ExtractText();
+                if (itemName.Length > 0)
+                    itemIdsByName.TryAdd(itemName.ToLowerInvariant(), item.RowId);
+            }
+        }
+
+        var key = new string(name.Where(c => c < 0xE000 || c > 0xF8FF).ToArray()).Trim().ToLowerInvariant();
+        return itemIdsByName.TryGetValue(key, out var id) ? id : 0;
     }
 
     private static unsafe bool BagsContain(uint itemId)
