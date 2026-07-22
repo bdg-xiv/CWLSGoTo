@@ -81,11 +81,6 @@ public class HuntTrackerWindow : Window
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Relay this hunt to Cross-world Linkshell 2.");
             ImGui.SameLine();
-            if (ImGui.SmallButton("Echo"))
-                plugin.RelayHunt(hunt, "/echo");
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Test the relay message in /echo - only you see it.");
-            ImGui.SameLine();
             if (ImGui.SmallButton("x"))
                 removeIndex = i;
 
