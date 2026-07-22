@@ -222,6 +222,10 @@ public sealed class Plugin : IDalamudPlugin
                 return expansion;
         }
 
+        // The Shadowbringers counters name the place, not the expansion.
+        if (description.Contains("Norvrandt", StringComparison.OrdinalIgnoreCase))
+            return "Shadowbringers";
+
         // Rank achievements without an expansion callout are the ARR ones; anything
         // else (plain elite-mark kill totals) goes into the overall bucket.
         return ClassifyRank(description).Length > 0 ? "A Realm Reborn" : "Overall totals";
@@ -474,17 +478,18 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.End();
     }
 
-    /// <summary>Rank letter as written in counter descriptions ("Defeat 5,000 S-rank
-    /// elite marks"); unlike ClassifyRank this also matches the hyphenated form.</summary>
+    /// <summary>Rank letter as the counter descriptions actually write it: "Slay 300
+    /// rank S elite marks", "elite marks of rank S or higher". SS first, since
+    /// "rank SS" contains "rank S".</summary>
     private static string RankLetter(string description)
     {
-        if (description.Contains("SS-rank", StringComparison.OrdinalIgnoreCase) || description.Contains("SS rank", StringComparison.OrdinalIgnoreCase))
+        if (description.Contains("rank SS", StringComparison.OrdinalIgnoreCase))
             return "SS";
-        if (description.Contains("S-rank", StringComparison.OrdinalIgnoreCase) || description.Contains("S rank", StringComparison.OrdinalIgnoreCase))
+        if (description.Contains("rank S", StringComparison.OrdinalIgnoreCase))
             return "S";
-        if (description.Contains("A-rank", StringComparison.OrdinalIgnoreCase) || description.Contains("A rank", StringComparison.OrdinalIgnoreCase))
+        if (description.Contains("rank A", StringComparison.OrdinalIgnoreCase))
             return "A";
-        if (description.Contains("B-rank", StringComparison.OrdinalIgnoreCase) || description.Contains("B rank", StringComparison.OrdinalIgnoreCase))
+        if (description.Contains("rank B", StringComparison.OrdinalIgnoreCase))
             return "B";
         return "";
     }
