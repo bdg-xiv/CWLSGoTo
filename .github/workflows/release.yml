@@ -55,6 +55,7 @@ jobs:
           @{ Project = "GemRate"; InternalName = "GemRate" },
           @{ Project = "FaloopScreener"; InternalName = "FaloopScreener" },
           @{ Project = "HookNamer"; InternalName = "HookNamer" },
+          @{ Project = "HuntTally"; InternalName = "HuntTally" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 

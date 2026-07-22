@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FaloopScreener", "FaloopScr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HookNamer", "HookNamer\HookNamer.csproj", "{5B3C5524-EAED-4508-BFA8-26E2A649B2BC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntTally", "HuntTally\HuntTally.csproj", "{7D91E4B2-6A38-4C05-9F1E-52B8D3A7C946}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -69,6 +71,10 @@ Global
 		{5B3C5524-EAED-4508-BFA8-26E2A649B2BC}.Debug|x64.Build.0 = Debug|x64
 		{5B3C5524-EAED-4508-BFA8-26E2A649B2BC}.Release|x64.ActiveCfg = Release|x64
 		{5B3C5524-EAED-4508-BFA8-26E2A649B2BC}.Release|x64.Build.0 = Release|x64
+		{7D91E4B2-6A38-4C05-9F1E-52B8D3A7C946}.Debug|x64.ActiveCfg = Debug|x64
+		{7D91E4B2-6A38-4C05-9F1E-52B8D3A7C946}.Debug|x64.Build.0 = Debug|x64
+		{7D91E4B2-6A38-4C05-9F1E-52B8D3A7C946}.Release|x64.ActiveCfg = Release|x64
+		{7D91E4B2-6A38-4C05-9F1E-52B8D3A7C946}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
