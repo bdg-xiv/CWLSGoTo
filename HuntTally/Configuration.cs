@@ -24,6 +24,9 @@ public class Configuration : IPluginConfiguration
     // Hide achievements that are already complete.
     public bool HideCompleted { get; set; } = false;
 
+    // Hide meta achievements whose requirement is completing other achievements.
+    public bool HideMetaAchievements { get; set; } = false;
+
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);

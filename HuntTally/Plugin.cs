@@ -32,7 +32,13 @@ public sealed class Plugin : IDalamudPlugin
     private static readonly string[] ExpansionOrder =
         ["A Realm Reborn", "Heavensward", "Stormblood", "Shadowbringers", "Endwalker", "Dawntrail", "Overall totals"];
 
-    private sealed record HuntAchievement(uint Id, string Name, string Description, string Rank, string Expansion, ushort Order);
+    private sealed record HuntAchievement(uint Id, string Name, string Description, string Rank, string Expansion, ushort Order)
+    {
+        // Meta achievements ("Complete all ... elite mark achievements") ask for other
+        // achievements instead of kills; their descriptions are the ones that mention
+        // the word "achievement".
+        public bool RequiresOtherAchievements { get; } = Description.Contains("achievement", StringComparison.OrdinalIgnoreCase);
+    }
 
     private readonly Configuration config;
     private List<HuntAchievement>? tracked;
@@ -281,7 +287,14 @@ public sealed class Plugin : IDalamudPlugin
             else if (statusText.Length > 0)
                 ImGui.TextDisabled(statusText);
 
-            ImGui.SameLine(ImGui.GetContentRegionAvail().X - 220);
+            ImGui.SameLine(ImGui.GetContentRegionAvail().X - 60);
+            if (fetching)
+                ImGui.BeginDisabled();
+            if (ImGui.SmallButton("Refresh"))
+                StartRefresh();
+            if (fetching)
+                ImGui.EndDisabled();
+
             var hideCompleted = config.HideCompleted;
             if (ImGui.Checkbox("Hide completed", ref hideCompleted))
             {
@@ -290,12 +303,15 @@ public sealed class Plugin : IDalamudPlugin
             }
 
             ImGui.SameLine();
-            if (fetching)
-                ImGui.BeginDisabled();
-            if (ImGui.SmallButton("Refresh"))
-                StartRefresh();
-            if (fetching)
-                ImGui.EndDisabled();
+            var hideMeta = config.HideMetaAchievements;
+            if (ImGui.Checkbox("Hide meta achievements", ref hideMeta))
+            {
+                config.HideMetaAchievements = hideMeta;
+                config.Save();
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Hides achievements whose requirement is completing\nother achievements rather than killing marks.");
 
             ImGui.Separator();
 
@@ -303,7 +319,8 @@ public sealed class Plugin : IDalamudPlugin
             foreach (var expansion in ExpansionOrder)
             {
                 var group = Tracked.Where(a => a.Expansion == expansion
-                        && (!config.HideCompleted || !IsAchievementComplete(a.Id)))
+                        && (!config.HideCompleted || !IsAchievementComplete(a.Id))
+                        && (!config.HideMetaAchievements || !a.RequiresOtherAchievements))
                     .ToList();
                 if (group.Count == 0)
                     continue;
