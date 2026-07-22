@@ -474,6 +474,54 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.End();
     }
 
+    /// <summary>Rank letter as written in counter descriptions ("Defeat 5,000 S-rank
+    /// elite marks"); unlike ClassifyRank this also matches the hyphenated form.</summary>
+    private static string RankLetter(string description)
+    {
+        if (description.Contains("SS-rank", StringComparison.OrdinalIgnoreCase) || description.Contains("SS rank", StringComparison.OrdinalIgnoreCase))
+            return "SS";
+        if (description.Contains("S-rank", StringComparison.OrdinalIgnoreCase) || description.Contains("S rank", StringComparison.OrdinalIgnoreCase))
+            return "S";
+        if (description.Contains("A-rank", StringComparison.OrdinalIgnoreCase) || description.Contains("A rank", StringComparison.OrdinalIgnoreCase))
+            return "A";
+        if (description.Contains("B-rank", StringComparison.OrdinalIgnoreCase) || description.Contains("B rank", StringComparison.OrdinalIgnoreCase))
+            return "B";
+        return "";
+    }
+
+    /// <summary>For an overall kill counter, how many kills each expansion still owes
+    /// if its own counted achievements get finished. Tiers within an expansion share a
+    /// counter, so an expansion's remainder is the largest gap, not the sum.</summary>
+    private List<(string Expansion, long Remaining)>? ExpansionRemainders(HuntAchievement achievement, Dictionary<uint, CachedProgress> cache)
+    {
+        if (achievement.Expansion != "Overall totals" || achievement.UniqueMarks != null || achievement.RequiresOtherAchievements)
+            return null;
+
+        var rank = RankLetter(achievement.Description);
+        if (rank.Length == 0)
+            return null;
+
+        var result = new List<(string Expansion, long Remaining)>();
+        foreach (var group in Tracked
+                     .Where(a => a.Expansion != "Overall totals" && a.UniqueMarks == null && !a.RequiresOtherAchievements
+                         && RankLetter(a.Description) == rank && !IsAchievementComplete(a.Id))
+                     .GroupBy(a => a.Expansion))
+        {
+            long remaining = 0;
+            foreach (var entry in group)
+            {
+                if (cache.TryGetValue(entry.Id, out var progress) && progress.Max > 0)
+                    remaining = Math.Max(remaining, progress.Max - progress.Current);
+            }
+
+            if (remaining > 0)
+                result.Add((group.Key, remaining));
+        }
+
+        result.Sort((x, y) => Array.IndexOf(ExpansionOrder, x.Expansion).CompareTo(Array.IndexOf(ExpansionOrder, y.Expansion)));
+        return result;
+    }
+
     private static int RankOrder(string rank) => rank switch
     {
         "S ranks" => 0,
@@ -487,6 +535,8 @@ public sealed class Plugin : IDalamudPlugin
     {
         var done = IsAchievementComplete(achievement.Id);
         var hasData = cache.TryGetValue(achievement.Id, out var progress);
+        var remainders = done ? null : ExpansionRemainders(achievement, cache);
+        var projectedExtra = remainders?.Sum(r => r.Remaining) ?? 0;
 
         ImGui.BeginGroup();
         var label = achievement.Rank.Length > 0 ? $"[{achievement.Rank[..^1]}] " : "";
@@ -497,7 +547,26 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.TextUnformatted($"{label}{achievement.Name}");
             ImGui.SameLine(280);
             var fraction = Math.Clamp(progress.Current / (float)progress.Max, 0f, 1f);
-            ImGui.ProgressBar(fraction, new Vector2(180, 0), $"{progress.Current:N0} / {progress.Max:N0}");
+            var barSize = new Vector2(180, 0);
+            if (projectedExtra > 0)
+            {
+                // Ghost fill behind the real one: where the counter lands once the
+                // per-expansion achievements are ground out.
+                var projected = Math.Clamp((progress.Current + projectedExtra) / (float)progress.Max, 0f, 1f);
+                var cursor = ImGui.GetCursorPos();
+                ImGui.PushStyleColor(ImGuiCol.PlotHistogram, new Vector4(0.35f, 0.55f, 0.35f, 0.55f));
+                ImGui.ProgressBar(projected, barSize, "");
+                ImGui.PopStyleColor();
+                ImGui.SetCursorPos(cursor);
+                ImGui.PushStyleColor(ImGuiCol.FrameBg, Vector4.Zero);
+                ImGui.ProgressBar(fraction, barSize, $"{progress.Current:N0} / {progress.Max:N0}");
+                ImGui.PopStyleColor();
+            }
+            else
+            {
+                ImGui.ProgressBar(fraction, barSize, $"{progress.Current:N0} / {progress.Max:N0}");
+            }
+
             ImGui.SameLine();
             ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"need {progress.Max - progress.Current:N0}");
         }
@@ -518,6 +587,21 @@ public sealed class Plugin : IDalamudPlugin
         {
             ImGui.BeginTooltip();
             ImGui.TextUnformatted(achievement.Description);
+            if (remainders is { Count: > 0 } && hasData && progress!.Max > 0)
+            {
+                var projected = progress.Current + projectedExtra;
+                ImGui.Separator();
+                ImGui.TextUnformatted($"After finishing the per-expansion achievements: {Math.Min(projected, progress.Max):N0} / {progress.Max:N0}");
+                foreach (var (expansion, remaining) in remainders)
+                    ImGui.TextDisabled($"  {expansion}: +{remaining:N0}");
+                if (projected >= progress.Max)
+                    ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f),
+                        $"Those grinds alone finish this, with {projected - progress.Max:N0} kills to spare.");
+                else
+                    ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f),
+                        $"Still {progress.Max - projected:N0} kills short after those - any expansion counts.");
+            }
+
             if (marks != null)
             {
                 var slain = CurrentSlain();
