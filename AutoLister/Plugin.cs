@@ -45,6 +45,12 @@ public sealed class Plugin : IDalamudPlugin
     // Market proceeds lose roughly this much to the sales tax; vendoring pays face
     // value, so the comparison is vendor total vs. listing total after tax.
     private const int MarketTaxPercent = 5;
+
+    // Price-crash guard for Pinch & Cull: when a listing priced above the floor would
+    // have to drop by at least this much to undercut, the market has probably been
+    // crashed - pull the item back to the bags and wait it out instead of chasing down.
+    private const int PriceCrashFloorGil = 50_000;
+    private const int PriceCrashDropPercent = 30;
     private const char HqGlyph = (char)0xE03C;
 
     // Event codes lifted from Dagobert's auto pinch, which drives the same addons.
@@ -88,13 +94,16 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Queue<uint> retainerQueue = new();
     private readonly Queue<int> pendingListingIndexes = new();
     private bool cullCurrentItem;
+    private bool crashKeepItem;
     private bool currentHadBagCopy;
+    private string currentItemName = "";
     private int currentListingIndex;
     private int currentQuantity;
     private int marketCountBeforeReturn;
     private int repricedCount;
     private readonly List<string> culledReport = [];
     private readonly List<string> returnedReport = [];
+    private readonly List<string> crashedReport = [];
     private static Dictionary<string, uint>? itemIdsByName;
 
     // Market board price request state, mirroring Dagobert's MarketBoardHandler.
@@ -366,9 +375,11 @@ public sealed class Plugin : IDalamudPlugin
         retainerQueue.Clear();
         pendingListingIndexes.Clear();
         cullCurrentItem = false;
+        crashKeepItem = false;
         repricedCount = 0;
         culledReport.Clear();
         returnedReport.Clear();
+        crashedReport.Clear();
         newRequest = false;
         newPrice = null;
         lastRequestId = -1;
@@ -462,6 +473,8 @@ public sealed class Plugin : IDalamudPlugin
             : $"[AutoLister] Done ({reason}). Listed {listedCount} item(s).";
         if (vendoredCount > 0)
             summary += $" Vendored {vendoredCount}.";
+        if (crashedReport.Count > 0)
+            summary += $" Pulled {crashedReport.Count} (price crash).";
         if (returnedReport.Count > 0)
             summary += $" Returned {returnedReport.Count} to bags.";
         if (skippedCount > 0)
@@ -671,10 +684,12 @@ public sealed class Plugin : IDalamudPlugin
         currentListingIndex = pendingListingIndexes.Dequeue();
         skipCurrentItem = false;
         cullCurrentItem = false;
+        crashKeepItem = false;
         vendorCurrentItem = false;
         newPrice = null;
         compareOpenAt = 0;
         currentItemId = 0;
+        currentItemName = "";
         currentQuantity = 1;
         currentHadBagCopy = false;
 
@@ -766,7 +781,24 @@ public sealed class Plugin : IDalamudPlugin
         // its numeric input, the item id by resolving the displayed name.
         currentQuantity = Math.Max(addon->Quantity->Value, 1);
         currentItemId = ResolveItemIdByName(itemName);
+        currentItemName = itemName;
         currentHadBagCopy = currentItemId != 0 && BagsContain(currentItemId);
+
+        // Price-crash guard: a big listing that would have to drop hard to undercut
+        // gets pulled and kept instead of chasing the crash down (or vendoring it).
+        var oldPrice = (long)addon->AskingPrice->Value;
+        if (oldPrice > PriceCrashFloorGil && newPrice.Value * 100 <= oldPrice * (100 - PriceCrashDropPercent))
+        {
+            var dropPercent = 100 - newPrice.Value * 100 / oldPrice;
+            cullCurrentItem = true;
+            crashKeepItem = true;
+            marketCountBeforeReturn = CurrentMarketItemCount();
+            Svc.Chat.Print($"[AutoLister] {itemName}: PRICE CRASH - listed at {oldPrice:N0}, market now {newPrice.Value:N0} "
+                + $"(-{dropPercent}%). Pulling it back to your bags instead of repricing.");
+            Callback.Fire(&addon->AtkUnitBase, true, RetainerSellCancelEvent);
+            addon->AtkUnitBase.Close(true);
+            return true;
+        }
 
         var total = (long)newPrice.Value * currentQuantity;
         var vendorTotal = GetVendorPrice(currentItemId, itemIsHq) * currentQuantity;
@@ -815,7 +847,14 @@ public sealed class Plugin : IDalamudPlugin
         if (!stillListed)
         {
             cullCurrentItem = false;
-            var name = ItemNameOf(currentItemId);
+            var name = currentItemName.Length > 0 ? currentItemName : ItemNameOf(currentItemId);
+
+            if (crashKeepItem)
+            {
+                crashKeepItem = false;
+                crashedReport.Add(name);
+                return true; // Kept in the bags on purpose - already announced.
+            }
 
             if (currentHadBagCopy)
             {
@@ -956,18 +995,22 @@ public sealed class Plugin : IDalamudPlugin
     /// alignment isn't possible; dot leaders sized off the longest name come closest.</summary>
     private void PrintReport()
     {
-        if (listedReport.Count == 0 && manualPricingReport.Count == 0 && culledReport.Count == 0 && returnedReport.Count == 0)
+        if (listedReport.Count == 0 && manualPricingReport.Count == 0 && culledReport.Count == 0
+            && returnedReport.Count == 0 && crashedReport.Count == 0)
             return;
 
         var maxLen = listedReport.Select(e => e.Name.Length)
             .Concat(manualPricingReport.Select(n => n.Length))
             .Concat(culledReport.Select(n => n.Length))
             .Concat(returnedReport.Select(n => n.Length))
+            .Concat(crashedReport.Select(n => n.Length))
             .Max();
 
         Svc.Chat.Print("[AutoLister] --- Listing report ---");
         foreach (var (name, price) in listedReport)
             Svc.Chat.Print($"{name} {Leaders(name, maxLen)} {price,10:N0}g");
+        foreach (var name in crashedReport)
+            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} price crashed - kept in bags");
         foreach (var name in culledReport)
             Svc.Chat.Print($"{name} {Leaders(name, maxLen)} delisted & vendored");
         foreach (var name in returnedReport)
