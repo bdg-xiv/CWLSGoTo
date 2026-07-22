@@ -10,6 +10,7 @@ using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.Automation.NeoTaskManager;
 using ECommons.DalamudServices;
+using ECommons.Throttlers;
 using ECommons.UIHelpers.AddonMasterImplementations;
 using ECommons.UIHelpers.AtkReaderImplementations;
 using FFXIVClientStructs.FFXIV.Client.Game;
@@ -64,6 +65,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly TaskManager taskManager;
 
+    private enum RunMode { List, Pinch }
+
     private readonly Queue<(InventoryType Container, int Slot, uint ItemId)> pendingItems = new();
     private readonly Dictionary<string, int> cachedPrices = [];
     private bool skipCurrentItem;
@@ -77,6 +80,20 @@ public sealed class Plugin : IDalamudPlugin
     private int vendoredCount;
     private readonly List<(string Name, int Price)> listedReport = [];
     private readonly List<string> manualPricingReport = [];
+
+    // Pinch & Cull state: walk the retainer's existing listings, reprice the healthy
+    // ones and delist+vendor the ones under the thresholds.
+    private RunMode runMode = RunMode.List;
+    private bool allRetainersMode;
+    private readonly Queue<uint> retainerQueue = new();
+    private readonly Queue<(int Slot, uint ItemId, int Quantity)> pendingListings = new();
+    private bool cullCurrentItem;
+    private bool currentHadBagCopy;
+    private int currentListingSlot;
+    private int currentQuantity;
+    private int repricedCount;
+    private readonly List<string> culledReport = [];
+    private readonly List<string> returnedReport = [];
 
     // Market board price request state, mirroring Dagobert's MarketBoardHandler.
     private bool newRequest;
@@ -127,6 +144,12 @@ public sealed class Plugin : IDalamudPlugin
 
     private unsafe void DrawOverlay()
     {
+        DrawSellListOverlay();
+        DrawRetainerListOverlay();
+    }
+
+    private unsafe void DrawSellListOverlay()
+    {
         if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var addon) || !IsAddonReady(addon) || !addon->IsVisible)
             return;
 
@@ -138,11 +161,12 @@ public sealed class Plugin : IDalamudPlugin
         var pos = GetNodePosition(node);
         var scale = GetNodeScale(node);
 
-        var label = taskManager.IsBusy ? "Cancel" : "Auto List";
-        var buttonWidth = (ImGui.CalcTextSize(label).X + ImGui.GetStyle().FramePadding.X * 2 + 12f) * scale.X;
+        var totalWidth = taskManager.IsBusy
+            ? EstimateButtonWidth("Cancel", scale.X)
+            : EstimateButtonWidth("Auto List", scale.X) + EstimateButtonWidth("Pinch & Cull", scale.X);
 
         ImGuiHelpers.ForceNextWindowMainViewport();
-        ImGuiHelpers.SetNextWindowPosRelativeMainViewport(new Vector2(pos.X - buttonWidth - 4f * scale.X, pos.Y));
+        ImGuiHelpers.SetNextWindowPosRelativeMainViewport(new Vector2(pos.X - totalWidth - 4f * scale.X, pos.Y));
         ImGui.PushStyleColor(ImGuiCol.WindowBg, 0u);
         ImGui.Begin("###AutoListerButton",
             ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoSavedSettings
@@ -153,7 +177,7 @@ public sealed class Plugin : IDalamudPlugin
             if (ImGui.Button("Cancel"))
                 CancelListing();
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Cancels the auto listing process");
+                ImGui.SetTooltip("Cancels the current run");
         }
         else
         {
@@ -161,11 +185,58 @@ public sealed class Plugin : IDalamudPlugin
                 StartListing();
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Puts every sellable item from the bottom-right inventory quarter up for sale,\nundercutting the cheapest matching HQ/NQ listing by 1 gil.\nPlease do not interact with the game while this runs.");
+            ImGui.SameLine();
+            if (ImGui.Button("Pinch & Cull"))
+                StartPinch(allRetainersRun: false);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Reprices this retainer's listings like Auto Pinch, but items whose new\nprice totals under 2,000 gil (or that the vendor pays more for) are\ndelisted and sold to the vendor instead.\nPlease do not interact with the game while this runs.");
         }
 
         ImGui.End();
         ImGui.PopStyleColor();
     }
+
+    private unsafe void DrawRetainerListOverlay()
+    {
+        if (!TryGetAddonByName<AtkUnitBase>("RetainerList", out var addon) || !IsAddonReady(addon) || !addon->IsVisible)
+            return;
+
+        // Same anchor node Dagobert uses for its retainer-list Auto Pinch button.
+        var node = addon->UldManager.NodeList[27];
+        if (node == null)
+            return;
+
+        var pos = GetNodePosition(node);
+        var scale = GetNodeScale(node);
+        var label = taskManager.IsBusy ? "Cancel" : "Pinch & Cull All";
+        var width = EstimateButtonWidth(label, scale.X);
+
+        ImGuiHelpers.ForceNextWindowMainViewport();
+        ImGuiHelpers.SetNextWindowPosRelativeMainViewport(new Vector2(pos.X - width - 4f * scale.X, pos.Y));
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, 0u);
+        ImGui.Begin("###AutoListerRetainerListButton",
+            ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.AlwaysAutoResize | ImGuiWindowFlags.NoSavedSettings
+            | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav);
+
+        if (taskManager.IsBusy)
+        {
+            if (ImGui.Button("Cancel"))
+                CancelListing();
+        }
+        else
+        {
+            if (ImGui.Button("Pinch & Cull All"))
+                StartPinch(allRetainersRun: true);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Opens every retainer with market listings in turn and runs Pinch & Cull\non each: repricing healthy listings, delisting + vendoring the ones under\nthe thresholds. Please do not interact with the game while this runs.");
+        }
+
+        ImGui.End();
+        ImGui.PopStyleColor();
+    }
+
+    private static float EstimateButtonWidth(string label, float scale)
+        => (ImGui.CalcTextSize(label).X + ImGui.GetStyle().FramePadding.X * 2 + 12f) * scale;
 
     private static unsafe Vector2 GetNodePosition(AtkResNode* node)
     {
@@ -255,10 +326,25 @@ public sealed class Plugin : IDalamudPlugin
     {
         taskManager.Abort();
         pendingItems.Clear();
+        pendingListings.Clear();
+        retainerQueue.Clear();
         skipCurrentItem = false;
         newRequest = false;
+        SuppressAutoRetainer(false);
         Svc.Chat.Print("[AutoLister] Cancelled.");
         PrintReport();
+    }
+
+    private static void SuppressAutoRetainer(bool value)
+    {
+        try
+        {
+            Svc.PluginInterface.GetIpcSubscriber<bool, object>("AutoRetainer.SetSuppressed").InvokeAction(value);
+        }
+        catch
+        {
+            // AutoRetainer not installed - nothing to suppress.
+        }
     }
 
     private void ResetRunState()
@@ -273,6 +359,14 @@ public sealed class Plugin : IDalamudPlugin
         vendoredCount = 0;
         listedReport.Clear();
         manualPricingReport.Clear();
+        runMode = RunMode.List;
+        allRetainersMode = false;
+        retainerQueue.Clear();
+        pendingListings.Clear();
+        cullCurrentItem = false;
+        repricedCount = 0;
+        culledReport.Clear();
+        returnedReport.Clear();
         newRequest = false;
         newPrice = null;
         lastRequestId = -1;
@@ -361,30 +455,503 @@ public sealed class Plugin : IDalamudPlugin
 
     private void FinishRun(string reason)
     {
-        var summary = $"[AutoLister] Done ({reason}). Listed {listedCount} item(s).";
+        var summary = runMode == RunMode.Pinch
+            ? $"[AutoLister] Done ({reason}). Repriced {repricedCount} listing(s)."
+            : $"[AutoLister] Done ({reason}). Listed {listedCount} item(s).";
         if (vendoredCount > 0)
             summary += $" Vendored {vendoredCount}.";
+        if (returnedReport.Count > 0)
+            summary += $" Returned {returnedReport.Count} to bags.";
         if (skippedCount > 0)
             summary += $" Skipped {skippedCount}.";
         Svc.Chat.Print(summary);
         PrintReport();
     }
 
+    #region Pinch & Cull
+
+    /// <summary>Dagobert-style repricing of the current listings, with the listing
+    /// flow's economics on top: healthy listings get the undercut price confirmed,
+    /// listings under the thresholds are returned to the bags and vendored.</summary>
+    private unsafe void StartPinch(bool allRetainersRun)
+    {
+        if (taskManager.IsBusy)
+            return;
+
+        ResetRunState();
+        runMode = RunMode.Pinch;
+
+        if (allRetainersRun)
+        {
+            if (!TryGetAddonByName<AtkUnitBase>("RetainerList", out _))
+            {
+                Svc.Chat.Print("[AutoLister] Open the summoning bell's retainer list first.");
+                return;
+            }
+
+            var manager = RetainerManager.Instance();
+            for (var i = 0u; i < manager->GetRetainerCount(); i++)
+            {
+                var retainer = manager->GetRetainerBySortedIndex(i);
+                if (retainer != null && retainer->MarketItemCount > 0)
+                    retainerQueue.Enqueue(i);
+            }
+
+            if (retainerQueue.Count == 0)
+            {
+                Svc.Chat.Print("[AutoLister] No retainer has market listings.");
+                return;
+            }
+
+            allRetainersMode = true;
+            SuppressAutoRetainer(true);
+            Svc.Chat.Print($"[AutoLister] Pinch & Cull across {retainerQueue.Count} retainer(s)...");
+            taskManager.Enqueue(NextRetainer, "NextRetainer");
+            return;
+        }
+
+        if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out _))
+        {
+            Svc.Chat.Print("[AutoLister] Open a retainer's sell list (Markets window) first.");
+            return;
+        }
+
+        BuildListingQueue();
+        if (pendingListings.Count == 0)
+        {
+            Svc.Chat.Print("[AutoLister] This retainer has no listings.");
+            return;
+        }
+
+        Svc.Chat.Print($"[AutoLister] Pinch & Cull over {pendingListings.Count} listing(s)...");
+        taskManager.Enqueue(ProcessNextListing, "ProcessNextListing");
+    }
+
+    /// <summary>Snapshots the active retainer's market container. Queued highest slot
+    /// first: culls remove entries and shift higher slots down, so working backwards
+    /// keeps the remaining slot numbers valid.</summary>
+    private unsafe void BuildListingQueue()
+    {
+        pendingListings.Clear();
+        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
+        if (container == null)
+            return;
+
+        for (var slot = (int)container->Size - 1; slot >= 0; slot--)
+        {
+            var item = container->GetInventorySlot(slot);
+            if (item != null && item->ItemId != 0)
+                pendingListings.Enqueue((slot, item->ItemId, Math.Max((int)item->Quantity, 1)));
+        }
+    }
+
+    private unsafe bool? NextRetainer()
+    {
+        if (retainerQueue.Count == 0)
+        {
+            allRetainersMode = false;
+            SuppressAutoRetainer(false);
+            FinishRun("all retainers processed");
+            return true;
+        }
+
+        var index = retainerQueue.Dequeue();
+        taskManager.Enqueue(() => OpenRetainer(index), "OpenRetainer", new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.Enqueue(SelectSellItems, "SelectSellItems", new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.Enqueue(WaitSellListThenBuild, "WaitSellListThenBuild", new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.Enqueue(ProcessNextListing, "ProcessNextListing");
+        return true;
+    }
+
+    private unsafe bool? OpenRetainer(uint index)
+    {
+        if (ClickTalkIfOpen())
+            return false;
+
+        if (TryGetAddonMaster<AddonMaster.SelectString>("SelectString", out var menu) && menu.IsAddonReady)
+            return true; // Retainer menu already open.
+
+        if (!TryGetAddonByName<AtkUnitBase>("RetainerList", out var addon) || !IsAddonReady(addon))
+            return false;
+
+        if (EzThrottler.Throttle("ALPinch.OpenRetainer", 3000))
+            Callback.Fire(addon, true, 2, (int)index);
+        return false;
+    }
+
+    private bool? SelectSellItems()
+    {
+        if (ClickTalkIfOpen())
+            return false;
+
+        if (!TryGetAddonMaster<AddonMaster.SelectString>("SelectString", out var menu) || !menu.IsAddonReady)
+            return false;
+
+        if (!EzThrottler.Throttle("ALPinch.SellItems", 2000))
+            return false;
+
+        // "Sell items in your inventory on the market" - match by text, with
+        // Dagobert's hardcoded index 2 as the fallback.
+        var entries = menu.Entries;
+        var index = -1;
+        for (var i = 0; i < entries.Length; i++)
+        {
+            if (entries[i].Text.Contains("sell", StringComparison.OrdinalIgnoreCase)
+                && entries[i].Text.Contains("market", StringComparison.OrdinalIgnoreCase))
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0 && entries.Length > 2)
+            index = 2;
+        if (index < 0)
+            return false;
+
+        entries[index].Select();
+        return true;
+    }
+
+    private unsafe bool? WaitSellListThenBuild()
+    {
+        if (ClickTalkIfOpen())
+            return false;
+
+        if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var addon) || !IsAddonReady(addon))
+            return false;
+
+        BuildListingQueue();
+        return true;
+    }
+
+    private static bool ClickTalkIfOpen()
+    {
+        if (TryGetAddonMaster<AddonMaster.Talk>("Talk", out var talk) && talk.IsAddonReady)
+        {
+            if (EzThrottler.Throttle("ALPinch.Talk", 300))
+                talk.Click();
+            return true;
+        }
+
+        return false;
+    }
+
+    private unsafe bool? ProcessNextListing()
+    {
+        if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out _))
+        {
+            Svc.Chat.Print("[AutoLister] Sell list closed, stopping.");
+            SuppressAutoRetainer(false);
+            PrintReport();
+            return null;
+        }
+
+        // Pull the next listing that still matches the snapshot.
+        var found = false;
+        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
+        while (pendingListings.Count > 0)
+        {
+            var candidate = pendingListings.Dequeue();
+            var item = container != null ? container->GetInventorySlot(candidate.Slot) : null;
+            if (item != null && item->ItemId == candidate.ItemId)
+            {
+                currentListingSlot = candidate.Slot;
+                currentItemId = candidate.ItemId;
+                currentQuantity = candidate.Quantity;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            if (allRetainersMode)
+            {
+                taskManager.Enqueue(CloseSellList, "CloseSellList", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = false, TimeoutSilently = true });
+                taskManager.EnqueueDelay(300);
+                taskManager.Enqueue(CloseRetainerMenu, "CloseRetainerMenu", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = false, TimeoutSilently = true });
+                taskManager.EnqueueDelay(500);
+                taskManager.Enqueue(NextRetainer, "NextRetainer");
+            }
+            else
+            {
+                FinishRun("all listings processed");
+            }
+
+            return true;
+        }
+
+        skipCurrentItem = false;
+        cullCurrentItem = false;
+        vendorCurrentItem = false;
+        newPrice = null;
+        compareOpenAt = 0;
+        currentHadBagCopy = BagsContain(currentItemId);
+
+        var slot = currentListingSlot;
+        taskManager.Enqueue(() => OpenListingContextMenu(slot), "OpenListingContextMenu");
+        taskManager.EnqueueDelay(150);
+        taskManager.Enqueue(ClickAdjustPrice, "ClickAdjustPrice", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.EnqueueDelay(150);
+        taskManager.Enqueue(RequestPrice, "RequestPrice", new TaskManagerConfiguration { TimeLimitMS = MbOpenDelayMs + 5000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.EnqueueDelay(MbKeepOpenMs);
+        taskManager.Enqueue(DecideReprice, "DecideReprice", new TaskManagerConfiguration { TimeLimitMS = MarketBoardResultTimeoutMs + 3000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.EnqueueDelay(200);
+        taskManager.Enqueue(Cleanup, "Cleanup", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.Enqueue(ReturnIfCulled, "ReturnIfCulled", new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.EnqueueDelay(200);
+        taskManager.Enqueue(VendorViaRetainer, "VendorViaRetainer", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.EnqueueDelay(150);
+        taskManager.Enqueue(ClickHaveRetainerSell, "ClickHaveRetainerSell", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.Enqueue(WaitVendorComplete, "WaitVendorComplete", new TaskManagerConfiguration { TimeLimitMS = 4000, AbortOnTimeout = false, TimeoutSilently = true });
+        taskManager.EnqueueDelay(300);
+        taskManager.Enqueue(ProcessNextListing, "ProcessNextListing");
+        return true;
+    }
+
+    private unsafe bool? OpenListingContextMenu(int slot)
+    {
+        if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var addon) || !IsAddonReady(addon))
+            return false;
+
+        Callback.Fire(addon, true, 0, slot, 1);
+        return true;
+    }
+
+    private unsafe bool? ClickAdjustPrice()
+    {
+        if (!TryGetAddonByName<AtkUnitBase>("ContextMenu", out var addon) || !IsAddonReady(addon))
+            return false;
+
+        var entries = new ReaderContextMenu(addon).Entries;
+        var index = entries.FindIndex(e =>
+            e.Name.Equals("adjust price", StringComparison.CurrentCultureIgnoreCase)
+            || e.Name.Equals("preis ändern", StringComparison.CurrentCultureIgnoreCase)
+            || e.Name.Equals("価格を変更する", StringComparison.CurrentCultureIgnoreCase)
+            || e.Name.Equals("changer le prix", StringComparison.CurrentCultureIgnoreCase));
+
+        if (index < 0)
+        {
+            // Mannequin item or unexpected menu - leave it alone.
+            Svc.Log.Debug($"No 'Adjust Price' entry ({string.Join(", ", entries.Select(e => e.Name))}), skipping listing");
+            skipCurrentItem = true;
+            skippedCount++;
+            addon->Close(true);
+            return true;
+        }
+
+        Callback.Fire(addon, true, 0, index, 0, 0, 0);
+        return true;
+    }
+
+    /// <summary>The pinch counterpart of SetPriceAndConfirm: reprice when the listing
+    /// stays above the thresholds, otherwise cancel and flag the item for the cull.</summary>
+    private unsafe bool? DecideReprice()
+    {
+        if (skipCurrentItem)
+            return true;
+
+        if (newPrice == null)
+            return false;
+
+        if (TryGetAddonByName<AtkUnitBase>("ItemSearchResult", out var searchResult))
+            searchResult->Close(true);
+
+        if (!TryGetAddonByName<AddonRetainerSell>("RetainerSell", out var addon) || !IsAddonReady(&addon->AtkUnitBase))
+            return false;
+
+        var itemName = GetRetainerSellItemName(addon);
+        if (newPrice.Value <= 0)
+        {
+            Svc.Chat.Print($"[AutoLister] {itemName}: no market listings found, keeping the current price.");
+            skippedCount++;
+            Callback.Fire(&addon->AtkUnitBase, true, RetainerSellCancelEvent);
+            addon->AtkUnitBase.Close(true);
+            return true;
+        }
+
+        cachedPrices.TryAdd(itemName, newPrice.Value);
+
+        var total = (long)newPrice.Value * currentQuantity;
+        var vendorTotal = GetVendorPrice(currentItemId, itemIsHq) * currentQuantity;
+        var marketNet = total * (100 - MarketTaxPercent) / 100;
+
+        if (total < VendorThresholdGil || vendorTotal > marketNet)
+        {
+            cullCurrentItem = true;
+            Svc.Chat.Print(vendorTotal > marketNet
+                ? $"[AutoLister] {itemName}: vendor pays {vendorTotal:N0} gil vs ~{marketNet:N0} from the market after tax - delisting to vendor."
+                : $"[AutoLister] {itemName}: repricing would only total {total:N0} gil - delisting to vendor.");
+            Callback.Fire(&addon->AtkUnitBase, true, RetainerSellCancelEvent);
+            addon->AtkUnitBase.Close(true);
+            return true;
+        }
+
+        addon->AskingPrice->SetValue(newPrice.Value);
+        Svc.Chat.Print($"[AutoLister] {itemName}: repriced to {newPrice.Value:N0} gil.");
+        repricedCount++;
+        listedReport.Add((itemName, newPrice.Value));
+        Callback.Fire(&addon->AtkUnitBase, true, RetainerSellConfirmEvent);
+        addon->AtkUnitBase.Close(true);
+        return true;
+    }
+
+    /// <summary>Returns a culled listing to the bags, then aims the existing vendor
+    /// tasks at wherever it landed. If the bags already held a copy of the item, the
+    /// vendor step is skipped - a returned stack can merge into the existing one (or
+    /// the wrong copy of a gear piece could get vendored), so that's left manual.</summary>
+    private unsafe bool? ReturnIfCulled()
+    {
+        if (skipCurrentItem || !cullCurrentItem)
+            return true;
+
+        if (TryGetAddonMaster<AddonMaster.SelectYesno>("SelectYesno", out var yesno) && yesno.IsAddonReady)
+        {
+            if (EzThrottler.Throttle("ALPinch.Yes", 500))
+                yesno.Yes();
+            return false;
+        }
+
+        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
+        var slotItem = container != null ? container->GetInventorySlot(currentListingSlot) : null;
+        var stillListed = slotItem != null && slotItem->ItemId == currentItemId;
+
+        if (!stillListed)
+        {
+            cullCurrentItem = false;
+            var name = ItemNameOf(currentItemId);
+
+            if (currentHadBagCopy)
+            {
+                returnedReport.Add(name);
+                Svc.Chat.Print($"[AutoLister] {name}: returned to your bags (you already carried some - vendor it manually).");
+                return true;
+            }
+
+            if (FindInBags(currentItemId, out var bagContainer, out var bagSlot))
+            {
+                currentContainer = bagContainer;
+                currentSlot = bagSlot;
+                vendorCurrentItem = true;
+                culledReport.Add(name);
+                return true;
+            }
+
+            returnedReport.Add(name);
+            Svc.Chat.Print($"[AutoLister] {name}: returned, but couldn't find it in your bags - vendor it manually.");
+            return true;
+        }
+
+        // Still listed - drive the context menu's return entry.
+        if (TryGetAddonByName<AtkUnitBase>("ContextMenu", out var menu) && IsAddonReady(menu))
+        {
+            var entries = new ReaderContextMenu(menu).Entries;
+            var index = entries.FindIndex(e =>
+                e.Name.Contains("return", StringComparison.CurrentCultureIgnoreCase)
+                || e.Name.Contains("zurück", StringComparison.CurrentCultureIgnoreCase)
+                || e.Name.Contains("récupér", StringComparison.CurrentCultureIgnoreCase)
+                || e.Name.Contains("返却", StringComparison.CurrentCultureIgnoreCase));
+            if (index < 0)
+            {
+                Svc.Log.Debug($"No return entry ({string.Join(", ", entries.Select(e => e.Name))})");
+                skipCurrentItem = true;
+                skippedCount++;
+                cullCurrentItem = false;
+                menu->Close(true);
+                return true;
+            }
+
+            if (EzThrottler.Throttle("ALPinch.Return", 1000))
+                Callback.Fire(menu, true, 0, index, 0, 0, 0);
+            return false;
+        }
+
+        if (TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var sellList) && IsAddonReady(sellList)
+            && EzThrottler.Throttle("ALPinch.ReopenMenu", 1500))
+            Callback.Fire(sellList, true, 0, currentListingSlot, 1);
+        return false;
+    }
+
+    private static unsafe bool BagsContain(uint itemId)
+        => FindInBags(itemId, out _, out _);
+
+    private static unsafe bool FindInBags(uint itemId, out InventoryType container, out int slot)
+    {
+        var manager = InventoryManager.Instance();
+        foreach (var bag in (InventoryType[])[InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4])
+        {
+            var bagContainer = manager->GetInventoryContainer(bag);
+            if (bagContainer == null)
+                continue;
+
+            for (var i = 0; i < bagContainer->Size; i++)
+            {
+                var item = bagContainer->GetInventorySlot(i);
+                if (item != null && item->ItemId == itemId)
+                {
+                    container = bag;
+                    slot = i;
+                    return true;
+                }
+            }
+        }
+
+        container = default;
+        slot = -1;
+        return false;
+    }
+
+    private static string ItemNameOf(uint itemId)
+        => Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId)?.Name.ExtractText() ?? $"Item {itemId}";
+
+    private static unsafe bool? CloseSellList()
+    {
+        if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var addon))
+            return true;
+        addon->Close(true);
+        return true;
+    }
+
+    private static bool? CloseRetainerMenu()
+    {
+        if (ClickTalkIfOpen())
+            return false;
+
+        if (!TryGetAddonMaster<AddonMaster.SelectString>("SelectString", out var menu) || !menu.IsAddonReady)
+            return true;
+
+        unsafe
+        {
+            ((AtkUnitBase*)menu.Base)->Close(true);
+        }
+
+        return true;
+    }
+
+    #endregion
+
     /// <summary>Chat report of everything listed (name left, price right) with items that
     /// need manual pricing at the end. Chat uses a proportional font, so exact column
     /// alignment isn't possible; dot leaders sized off the longest name come closest.</summary>
     private void PrintReport()
     {
-        if (listedReport.Count == 0 && manualPricingReport.Count == 0)
+        if (listedReport.Count == 0 && manualPricingReport.Count == 0 && culledReport.Count == 0 && returnedReport.Count == 0)
             return;
 
         var maxLen = listedReport.Select(e => e.Name.Length)
             .Concat(manualPricingReport.Select(n => n.Length))
+            .Concat(culledReport.Select(n => n.Length))
+            .Concat(returnedReport.Select(n => n.Length))
             .Max();
 
         Svc.Chat.Print("[AutoLister] --- Listing report ---");
         foreach (var (name, price) in listedReport)
             Svc.Chat.Print($"{name} {Leaders(name, maxLen)} {price,10:N0}g");
+        foreach (var name in culledReport)
+            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} delisted & vendored");
+        foreach (var name in returnedReport)
+            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} returned to bags - vendor manually");
         foreach (var name in manualPricingReport)
             Svc.Chat.Print($"{name} {Leaders(name, maxLen)} pending manual listing");
 
