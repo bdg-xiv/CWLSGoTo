@@ -92,6 +92,13 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
+        if (args.Trim().Equals("ringdebug", StringComparison.OrdinalIgnoreCase))
+        {
+            sonarRing.DumpNextFrame = true;
+            Svc.Chat.Print("[FaloopScreener] Open the map - the sonar ring transform will be logged once (/xllog).");
+            return;
+        }
+
         windowOpen = !windowOpen;
     }
 

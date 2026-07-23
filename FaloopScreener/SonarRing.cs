@@ -16,7 +16,11 @@ namespace FaloopScreener;
 /// which Sonar, which relays what the local client sees, can detect a mark.</summary>
 internal sealed unsafe class SonarRing(Configuration config)
 {
-    private readonly Dictionary<uint, float> mapSizeFactors = [];
+    private readonly Dictionary<uint, (float Factor, Vector2 Offset)> mapInfoCache = [];
+
+    /// <summary>Set via "/windows ringdebug": logs one frame of the map transform
+    /// inputs so a misplaced ring can be diagnosed from /xllog.</summary>
+    public bool DumpNextFrame;
 
     public void Draw()
     {
@@ -35,30 +39,50 @@ internal sealed unsafe class SonarRing(Configuration config)
         if (!TryGetAddonByName<AddonAreaMap>("AreaMap", out var addon) || !addon->AtkUnitBase.IsVisible)
             return;
 
-        ref var areaMap = ref addon->AreaMap;
-        var pin = areaMap.PlayerPin;
-        if (pin == null || (pin->AtkResNode.NodeFlags & NodeFlags.Visible) == 0)
-            return; // the pin hides while browsing another zone's map
-
-        var component = areaMap.ComponentMap;
         var agent = AgentMap.Instance();
-        if (component == null || agent == null)
+        if (agent == null || agent->SelectedMapId != agent->CurrentMapId
+            || ECommons.GameHelpers.Player.Object is not { } player)
             return;
 
-        // The game keeps the player pin positioned on the map every frame; ring
-        // around it, scaled by texture px/yalm (SizeFactor/100) x zoom x ui scale.
-        var rootScale = addon->AtkUnitBase.Scale;
-        ref var pinNode = ref pin->AtkResNode;
-        var center = new Vector2(pinNode.ScreenX, pinNode.ScreenY)
-                     + new Vector2(pinNode.Width, pinNode.Height) * pinNode.ScaleX * rootScale / 2f;
-        var radius = config.SonarRingRadius * SizeFactor(agent->SelectedMapId) * areaMap.MapScale * rootScale;
+        ref var areaMap = ref addon->AreaMap;
+        var component = areaMap.ComponentMap;
+        if (component == null)
+            return;
+
+        // The map view transform, as replicated from KamiToolKit's AreaMap overlay:
+        // the 2048x2048 texture holds the world at
+        //   texture = world * factor + sheetOffset * (factor - 1) + 1024,
+        // the view pans by MapOffset (drag) + SelectedOffset and zooms by MapScale,
+        // with the content anchored at viewSize/2 + (18, 46) inside the component.
+        var (factor, sheetOffset) = MapInfo(agent->SelectedMapId);
+        var textureP = new Vector2(player.Position.X, player.Position.Z) * factor
+                       + sheetOffset * (factor - 1f) + new Vector2(1024f);
 
         ref var viewNode = ref component->OwnerNode->AtkResNode;
+        var rootScale = addon->AtkUnitBase.Scale;
         var viewMin = new Vector2(viewNode.ScreenX, viewNode.ScreenY);
-        var viewMax = viewMin + new Vector2(viewNode.Width, viewNode.Height) * rootScale;
+        var viewSize = new Vector2(viewNode.Width, viewNode.Height);
+
+        var pan = new Vector2(areaMap.MapOffsetX, areaMap.MapOffsetY)
+                  + new Vector2(agent->SelectedOffsetX, agent->SelectedOffsetY)
+                  + new Vector2(1024f);
+        var center = viewMin + (viewSize / 2f + new Vector2(18f, 46f) + (textureP - pan) * areaMap.MapScale) * rootScale;
+        var radius = config.SonarRingRadius * factor * areaMap.MapScale * rootScale;
+
+        if (DumpNextFrame)
+        {
+            DumpNextFrame = false;
+            var pin = areaMap.PlayerPin;
+            Svc.Log.Information($"[SonarRing] player=({player.Position.X:F1},{player.Position.Z:F1}) factor={factor} sheetOffset={sheetOffset} "
+                + $"mapScale={areaMap.MapScale} rootScale={rootScale} mapOffset=({areaMap.MapOffsetX},{areaMap.MapOffsetY}) "
+                + $"selOffset=({agent->SelectedOffsetX},{agent->SelectedOffsetY}) viewMin={viewMin} viewSize={viewSize} "
+                + $"textureP={textureP} center={center} radius={radius} "
+                + $"playerMarker=({areaMap.PlayerMarkerX},{areaMap.PlayerMarkerY}) "
+                + (pin != null ? $"pinScreen=({pin->AtkResNode.ScreenX},{pin->AtkResNode.ScreenY}) pinSize=({pin->AtkResNode.Width},{pin->AtkResNode.Height})" : "pin=null"));
+        }
 
         var drawList = ImGui.GetBackgroundDrawList();
-        drawList.PushClipRect(viewMin, viewMax, true);
+        drawList.PushClipRect(viewMin, viewMin + viewSize * rootScale, true);
         drawList.AddCircle(center, radius, color, 0, config.SonarRingThickness);
         drawList.PopClipRect();
     }
@@ -88,7 +112,7 @@ internal sealed unsafe class SonarRing(Configuration config)
         var size = new Vector2(218f * naviScale);
         var min = new Vector2(addon->X, addon->Y);
         var center = min + size / 2f;
-        var radius = config.SonarRingRadius * SizeFactor(agent->CurrentMapId) * naviScale * zoom;
+        var radius = config.SonarRingRadius * MapInfo(agent->CurrentMapId).Factor * naviScale * zoom;
 
         var drawList = ImGui.GetBackgroundDrawList();
         drawList.PushClipRect(min, min + size, true);
@@ -96,12 +120,14 @@ internal sealed unsafe class SonarRing(Configuration config)
         drawList.PopClipRect();
     }
 
-    private float SizeFactor(uint mapId)
+    private (float Factor, Vector2 Offset) MapInfo(uint mapId)
     {
-        if (mapSizeFactors.TryGetValue(mapId, out var cached))
+        if (mapInfoCache.TryGetValue(mapId, out var cached))
             return cached;
 
-        float factor = Svc.Data.GetExcelSheet<Map>().GetRowOrDefault(mapId)?.SizeFactor ?? 100;
-        return mapSizeFactors[mapId] = (factor == 0 ? 100 : factor) / 100f;
+        var row = Svc.Data.GetExcelSheet<Map>().GetRowOrDefault(mapId);
+        float factor = row?.SizeFactor > 0 ? row.Value.SizeFactor : 100;
+        var offset = new Vector2(row?.OffsetX ?? 0, row?.OffsetY ?? 0);
+        return mapInfoCache[mapId] = (factor / 100f, offset);
     }
 }
