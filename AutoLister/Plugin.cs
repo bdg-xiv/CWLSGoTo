@@ -89,8 +89,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly List<string> manualPricingReport = [];
 
     // Stack-merge state: when the current retainer already sells the (stackable)
-    // item, its listing is returned to the bags first so one combined stack goes
-    // back up and only one sell slot is used.
+    // item, that listing is pulled back with "Return Items to Inventory" (straight
+    // to the player's bags, where the stacks combine) and the merged stack goes up
+    // as one listing.
     private bool mergePending;
     private bool mergeCompleted;
     private int mergeMarketCountBefore;
@@ -104,16 +105,6 @@ public sealed class Plugin : IDalamudPlugin
     private List<(uint ItemId, bool Hq)> currentFollowUpItems = [];
     private bool followUpPhase;
 
-    // Returned market listings land in the RETAINER's inventory, not the player's
-    // bags; items that must end up in the bags (crash pulls, merge returns) get an
-    // explicit retrieve step against the retainer page slot they landed in.
-    private bool retrievePending;
-    private bool crashRetrieve;
-    private InventoryType retrieveContainer;
-    private int retrieveSlot = -1;
-    private uint retrieveItemId;
-    private string retrieveName = "";
-    private long retrieveBagQtyBefore;
     private bool currentItemHq;
 
     // Pinch & Cull state: walk the retainer's existing listings, reprice the healthy
@@ -124,6 +115,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Queue<int> pendingListingIndexes = new();
     private bool cullCurrentItem;
     private bool crashKeepItem;
+    private bool currentHadBagCopy;
+    private long returnLandedAt;
     private string currentItemName = "";
     private string crashDetail = "";
     private int currentListingIndex;
@@ -448,14 +441,13 @@ public sealed class Plugin : IDalamudPlugin
             return null;
         }
 
-        // A merge retrieval that never finished leaves the returned stack in the
-        // retainer's inventory; surface it rather than pretending it merged.
-        if (retrievePending)
+        // A merge pull that never completed leaves the flag set; surface it - the
+        // old listing is still up and only the bag stack would have been listed.
+        if (mergePending)
         {
-            retrievePending = false;
-            crashRetrieve = false;
-            crashedReport.Add((retrieveName, "returned stack still in the RETAINER's inventory - merge manually"));
-            Svc.Chat.Print($"[AutoLister] {retrieveName}: could not retrieve the returned stack - it is in the retainer's inventory.");
+            mergePending = false;
+            crashedReport.Add((mergeItemName, "could not pull its old listing - not merged"));
+            Svc.Chat.Print($"[AutoLister] {mergeItemName}: could not pull the existing listing back - not merged.");
         }
 
         var slotsFull = retainer->MarketItemCount >= RetainerSellSlots;
@@ -488,8 +480,15 @@ public sealed class Plugin : IDalamudPlugin
             if (slotsFull && !mergeableHere)
                 continue; // full retainer: only merges into existing listings still fit
 
-            // In the follow-up phase the set-aside logic stays off - the whole point
-            // of being at this retainer is to merge or, failing that, list normally.
+            // A follow-up visit exists only to merge; if the expected listing is gone
+            // (sold, stale snapshot), leave the item in the bags rather than opening
+            // a fresh listing on a retainer it was never meant for.
+            if (followUpPhase && !mergeableHere)
+            {
+                Svc.Chat.Print($"[AutoLister] {ItemNameOf(candidate.ItemId)}: no live listing to merge with here - leaving it in your bags.");
+                continue;
+            }
+
             if (!followUpPhase && !mergeableHere && stackable
                 && TryFindOtherRetainerListing(candidate.ItemId, hq, out var otherRetainerId, out var otherRetainer))
             {
@@ -519,8 +518,6 @@ public sealed class Plugin : IDalamudPlugin
         vendorCurrentItem = false;
         mergeCompleted = false;
         mergePending = false;
-        retrievePending = false;
-        crashRetrieve = false;
         newPrice = null;
         compareOpenAt = 0;
         currentContainer = itemContainer;
@@ -539,13 +536,9 @@ public sealed class Plugin : IDalamudPlugin
             taskManager.EnqueueDelay(150);
             taskManager.Enqueue(ClickReturnForMerge, "ClickReturnForMerge", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
             taskManager.Enqueue(WaitMergeReturned, "WaitMergeReturned", new TaskManagerConfiguration { TimeLimitMS = 8000, AbortOnTimeout = false, TimeoutSilently = true });
-            taskManager.EnqueueDelay(400);
-            // The returned listing sits in the retainer's inventory - retrieve it so
-            // the stacks combine in the bags before the merged listing goes up.
-            taskManager.Enqueue(PrepareMergeRetrieve, "PrepareMergeRetrieve");
-            taskManager.Enqueue(LocateRetrieveSource, "LocateRetrieveSource", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = false, TimeoutSilently = true });
-            taskManager.Enqueue(ExecuteRetrieve, "ExecuteRetrieve", new TaskManagerConfiguration { TimeLimitMS = 8000, AbortOnTimeout = false, TimeoutSilently = true });
-            taskManager.EnqueueDelay(300);
+            // "Return Items to Inventory" drops the stack straight into the bags,
+            // where it combines with the pending stack; give it a beat to land.
+            taskManager.EnqueueDelay(600);
         }
 
         taskManager.Enqueue(() => OpenItemContextMenu(itemContainer, slot), "OpenItemContextMenu");
@@ -630,6 +623,7 @@ public sealed class Plugin : IDalamudPlugin
             taskManager.Enqueue(CloseSellList, "CloseSellList", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = false, TimeoutSilently = true });
             taskManager.EnqueueDelay(300);
             taskManager.Enqueue(CloseRetainerMenu, "CloseRetainerMenu", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = false, TimeoutSilently = true });
+            taskManager.Enqueue(WaitRetainerClosed, "WaitRetainerClosed", new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = false, TimeoutSilently = true });
             taskManager.EnqueueDelay(500);
             taskManager.Enqueue(() => OpenRetainer(sortedIndex), "OpenRetainer", new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = false, TimeoutSilently = true });
             taskManager.Enqueue(SelectSellItems, "SelectSellItems", new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = false, TimeoutSilently = true });
@@ -861,23 +855,9 @@ public sealed class Plugin : IDalamudPlugin
         {
             cullCurrentItem = false;
             crashKeepItem = false;
-            retrievePending = false;
-            crashRetrieve = false;
             var unreturned = currentItemName.Length > 0 ? StripSpecial(currentItemName) : ItemNameOf(currentItemId);
             crashedReport.Add((unreturned, "could NOT be pulled - still listed at its old price"));
             Svc.Chat.Print($"[AutoLister] {unreturned}: could not be pulled back - it is still listed at its old price.");
-        }
-
-        // A retrieval that never finished leaves the item in the retainer's inventory.
-        if (retrievePending)
-        {
-            retrievePending = false;
-            if (crashRetrieve)
-            {
-                crashRetrieve = false;
-                crashedReport.Add((retrieveName, $"{crashDetail} - still in the RETAINER's inventory"));
-                Svc.Chat.Print($"[AutoLister] {retrieveName}: could not be retrieved - it is in the retainer's inventory.");
-            }
         }
 
         if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out _))
@@ -895,6 +875,7 @@ public sealed class Plugin : IDalamudPlugin
                 taskManager.Enqueue(CloseSellList, "CloseSellList", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = false, TimeoutSilently = true });
                 taskManager.EnqueueDelay(300);
                 taskManager.Enqueue(CloseRetainerMenu, "CloseRetainerMenu", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = false, TimeoutSilently = true });
+                taskManager.Enqueue(WaitRetainerClosed, "WaitRetainerClosed", new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = false, TimeoutSilently = true });
                 taskManager.EnqueueDelay(500);
                 taskManager.Enqueue(NextRetainer, "NextRetainer");
             }
@@ -917,6 +898,8 @@ public sealed class Plugin : IDalamudPlugin
         currentItemName = "";
         crashDetail = "";
         currentQuantity = 1;
+        currentHadBagCopy = false;
+        returnLandedAt = 0;
 
         var index = currentListingIndex;
         taskManager.Enqueue(() => OpenListingContextMenu(index), "OpenListingContextMenu");
@@ -929,11 +912,7 @@ public sealed class Plugin : IDalamudPlugin
         taskManager.EnqueueDelay(200);
         taskManager.Enqueue(Cleanup, "Cleanup", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.Enqueue(ReturnIfCulled, "ReturnIfCulled", new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = false, TimeoutSilently = true });
-        taskManager.EnqueueDelay(200);
-        // Crash pulls: the return landed in the retainer's inventory - move it to the bags.
-        taskManager.Enqueue(LocateRetrieveSource, "LocateRetrieveSource", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = false, TimeoutSilently = true });
-        taskManager.Enqueue(ExecuteRetrieve, "ExecuteRetrieve", new TaskManagerConfiguration { TimeLimitMS = 8000, AbortOnTimeout = false, TimeoutSilently = true });
-        taskManager.EnqueueDelay(200);
+        taskManager.EnqueueDelay(400);
         taskManager.Enqueue(VendorViaRetainer, "VendorViaRetainer", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
         taskManager.EnqueueDelay(150);
         taskManager.Enqueue(ClickHaveRetainerSell, "ClickHaveRetainerSell", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
@@ -1012,6 +991,7 @@ public sealed class Plugin : IDalamudPlugin
         currentItemId = ResolveItemIdByName(itemName);
         currentItemName = itemName;
         currentItemHq = itemIsHq;
+        currentHadBagCopy = currentItemId != 0 && BagsContain(currentItemId);
 
         // Price-crash guard: a big listing that would have to drop hard to undercut
         // gets pulled and kept instead of chasing the crash down (or vendoring it).
@@ -1087,38 +1067,35 @@ public sealed class Plugin : IDalamudPlugin
 
         if (!stillListed)
         {
+            // The market count drops before the item lands in the bags; give the
+            // inventory a moment so the bag lookups below see it.
+            if (returnLandedAt == 0)
+            {
+                returnLandedAt = Environment.TickCount64;
+                return false;
+            }
+
+            if (Environment.TickCount64 - returnLandedAt < 600)
+                return false;
+
             cullCurrentItem = false;
             var name = currentItemName.Length > 0 ? StripSpecial(currentItemName) : ItemNameOf(currentItemId);
 
             if (crashKeepItem)
             {
                 crashKeepItem = false;
-                if (currentItemId != 0)
-                {
-                    // The retrieval tasks queued after this step locate it in the
-                    // retainer's inventory (the containers can lag behind the market
-                    // count) and move it to the bags.
-                    retrievePending = true;
-                    crashRetrieve = true;
-                    retrieveSlot = -1;
-                    retrieveItemId = currentItemId;
-                    retrieveName = name;
-                    retrieveBagQtyBefore = TotalBagQuantity(currentItemId, currentItemHq);
-                    return true;
-                }
-
-                crashedReport.Add((name, $"{crashDetail} - check the retainer for it"));
+                var location = currentItemId != 0 && BagsContain(currentItemId) ? "pulled to your bags" : "check the retainer for it";
+                crashedReport.Add((name, $"{crashDetail} - {location}"));
+                Svc.Chat.Print($"[AutoLister] {name}: {location}.");
                 return true;
             }
 
-            // Vendor from wherever the return put it - the retainer's inventory in
-            // practice, the bags as a fallback.
-            if (currentItemId != 0 && FindInRetainerInventory(currentItemId, currentItemHq, out var retContainer, out var retSlot))
+            if (currentHadBagCopy)
             {
-                currentContainer = retContainer;
-                currentSlot = retSlot;
-                vendorCurrentItem = true;
-                culledReport.Add(name);
+                // The pulled stack merged into a stack that was already in the bags;
+                // vendoring that slot would sell the pre-existing items too.
+                returnedReport.Add(name);
+                Svc.Chat.Print($"[AutoLister] {name}: pulled to your bags (you already carried some - vendor it manually).");
                 return true;
             }
 
@@ -1132,22 +1109,18 @@ public sealed class Plugin : IDalamudPlugin
             }
 
             returnedReport.Add(name);
-            Svc.Chat.Print($"[AutoLister] {name}: returned, but couldn't find it anywhere - vendor it manually.");
+            Svc.Chat.Print($"[AutoLister] {name}: pulled back, but couldn't find it in your bags - vendor it manually.");
             return true;
         }
 
-        // Still listed - drive the context menu's return entry.
+        // Still listed - drive the context menu's return-to-inventory entry.
         if (TryGetAddonByName<AtkUnitBase>("ContextMenu", out var menu) && IsAddonReady(menu))
         {
             var entries = new ReaderContextMenu(menu).Entries;
-            var index = entries.FindIndex(e =>
-                e.Name.Contains("return", StringComparison.CurrentCultureIgnoreCase)
-                || e.Name.Contains("zurück", StringComparison.CurrentCultureIgnoreCase)
-                || e.Name.Contains("récupér", StringComparison.CurrentCultureIgnoreCase)
-                || e.Name.Contains("返却", StringComparison.CurrentCultureIgnoreCase));
+            var index = entries.FindIndex(e => IsReturnToInventoryEntry(e.Name));
             if (index < 0)
             {
-                Svc.Log.Debug($"No return entry ({string.Join(", ", entries.Select(e => e.Name))})");
+                Svc.Log.Debug($"No return-to-inventory entry ({string.Join(", ", entries.Select(e => e.Name))})");
                 skipCurrentItem = true;
                 skippedCount++;
                 cullCurrentItem = false;
@@ -1214,11 +1187,6 @@ public sealed class Plugin : IDalamudPlugin
         => FindItemIn([InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4],
             itemId, hq, out container, out slot);
 
-    private static unsafe bool FindInRetainerInventory(uint itemId, bool hq, out InventoryType container, out int slot)
-        => FindItemIn([InventoryType.RetainerPage1, InventoryType.RetainerPage2, InventoryType.RetainerPage3, InventoryType.RetainerPage4,
-                InventoryType.RetainerPage5, InventoryType.RetainerPage6, InventoryType.RetainerPage7],
-            itemId, hq, out container, out slot);
-
     private static unsafe bool FindItemIn(InventoryType[] containers, uint itemId, bool? hq, out InventoryType container, out int slot)
     {
         var manager = InventoryManager.Instance();
@@ -1250,135 +1218,18 @@ public sealed class Plugin : IDalamudPlugin
     private static string StripSpecial(string text)
         => new(text.Where(c => c < 0xE000 || c > 0xF8FF).ToArray());
 
-    /// <summary>Waits for the returned listing to materialize in the retainer's
-    /// inventory - the containers update a moment after the market count drops -
-    /// or notices it went straight to the bags (quantity grew) and finishes early.</summary>
-    private unsafe bool? LocateRetrieveSource()
-    {
-        if (!retrievePending)
-            return true;
-
-        if (FindInRetainerInventory(retrieveItemId, currentItemHq, out var container, out var slot))
-        {
-            retrieveContainer = container;
-            retrieveSlot = slot;
-            return true;
-        }
-
-        if (TotalBagQuantity(retrieveItemId, currentItemHq) > retrieveBagQtyBefore)
-        {
-            FinishRetrieve();
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>Moves the located retainer stack onto the matching bag stack (the
-    /// game merges them like a manual drag) or into a free bag slot, then waits for
-    /// the source slot to empty.</summary>
-    private unsafe bool? ExecuteRetrieve()
-    {
-        if (!retrievePending)
-            return true;
-
-        if (retrieveSlot < 0)
-            return true; // never located; the safety at the next item reports it
-
-        var manager = InventoryManager.Instance();
-        var source = manager->GetInventoryContainer(retrieveContainer);
-        var sourceSlot = source != null ? source->GetInventorySlot(retrieveSlot) : null;
-        if (sourceSlot == null || sourceSlot->ItemId != retrieveItemId)
-        {
-            FinishRetrieve();
-            return true;
-        }
-
-        if (!FindBagDestination(retrieveItemId, currentItemHq, out var dstContainer, out var dstSlot))
-        {
-            Svc.Chat.Print($"[AutoLister] {retrieveName}: no bag space to retrieve into - it stays in the retainer's inventory.");
-            return true; // retrievePending stays set for the safety report
-        }
-
-        if (EzThrottler.Throttle("ALRetrieve.Move", 1200))
-            manager->MoveItemSlot(retrieveContainer, (ushort)retrieveSlot, dstContainer, (ushort)dstSlot, true);
-        return false;
-    }
-
-    private void FinishRetrieve()
-    {
-        retrievePending = false;
-        if (crashRetrieve)
-        {
-            crashRetrieve = false;
-            crashedReport.Add((retrieveName, $"{crashDetail} - retrieved to your bags"));
-            Svc.Chat.Print($"[AutoLister] {retrieveName}: retrieved to your bags.");
-        }
-    }
-
-    private static unsafe long TotalBagQuantity(uint itemId, bool hq)
-    {
-        long total = 0;
-        var manager = InventoryManager.Instance();
-        foreach (var bag in (InventoryType[])[InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4])
-        {
-            var container = manager->GetInventoryContainer(bag);
-            if (container == null)
-                continue;
-
-            for (var i = 0; i < container->Size; i++)
-            {
-                var item = container->GetInventorySlot(i);
-                if (item != null && item->ItemId == itemId
-                    && item->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) == hq)
-                    total += item->Quantity;
-            }
-        }
-
-        return total;
-    }
-
-    /// <summary>Destination for a retrieval: a matching bag stack with room to merge
-    /// into (a full stack would swap instead), otherwise the first empty bag slot.</summary>
-    private static unsafe bool FindBagDestination(uint itemId, bool hq, out InventoryType container, out int slot)
-    {
-        var manager = InventoryManager.Instance();
-        var stackSize = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId)?.StackSize ?? 1;
-        InventoryType freeContainer = default;
-        var freeSlot = -1;
-
-        foreach (var bag in (InventoryType[])[InventoryType.Inventory1, InventoryType.Inventory2, InventoryType.Inventory3, InventoryType.Inventory4])
-        {
-            var bagContainer = manager->GetInventoryContainer(bag);
-            if (bagContainer == null)
-                continue;
-
-            for (var i = 0; i < bagContainer->Size; i++)
-            {
-                var item = bagContainer->GetInventorySlot(i);
-                if (item == null)
-                    continue;
-
-                if (item->ItemId == itemId && item->Quantity < stackSize
-                    && item->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) == hq)
-                {
-                    container = bag;
-                    slot = i;
-                    return true;
-                }
-
-                if (item->ItemId == 0 && freeSlot < 0)
-                {
-                    freeContainer = bag;
-                    freeSlot = i;
-                }
-            }
-        }
-
-        container = freeContainer;
-        slot = freeSlot;
-        return freeSlot >= 0;
-    }
+    /// <summary>Matches the "Return Items to Inventory" context entry - the one that
+    /// pulls a listing straight back to the player's bags. The menu also has "Return
+    /// to Retainer", which must never be picked (things get lost in the retainer).</summary>
+    private static bool IsReturnToInventoryEntry(string name)
+        => (name.Contains("return", StringComparison.CurrentCultureIgnoreCase)
+                || name.Contains("zurück", StringComparison.CurrentCultureIgnoreCase)
+                || name.Contains("récupér", StringComparison.CurrentCultureIgnoreCase)
+                || name.Contains("返却", StringComparison.CurrentCultureIgnoreCase))
+            && !name.Contains("retainer", StringComparison.CurrentCultureIgnoreCase)
+            && !name.Contains("gehilfe", StringComparison.CurrentCultureIgnoreCase)
+            && !name.Contains("servant", StringComparison.CurrentCultureIgnoreCase)
+            && !name.Contains("リテイナー", StringComparison.CurrentCultureIgnoreCase);
 
     private static string ItemNameOf(uint itemId)
         => Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId)?.Name.ExtractText() ?? $"Item {itemId}";
@@ -1389,6 +1240,24 @@ public sealed class Plugin : IDalamudPlugin
             return true;
         addon->Close(true);
         return true;
+    }
+
+    /// <summary>Waits until the previous retainer's session has fully ended and the
+    /// bell's retainer list is back. Without this, opening the next retainer can race
+    /// the old retainer's still-open menu and re-enter the SAME retainer.</summary>
+    private static unsafe bool? WaitRetainerClosed()
+    {
+        if (ClickTalkIfOpen())
+            return false;
+
+        if (TryGetAddonMaster<AddonMaster.SelectString>("SelectString", out var menu) && menu.IsAddonReady)
+            return false; // still inside a retainer's menu
+
+        var manager = RetainerManager.Instance();
+        if (manager != null && manager->GetActiveRetainer() != null)
+            return false;
+
+        return TryGetAddonByName<AtkUnitBase>("RetainerList", out var list) && IsAddonReady(list);
     }
 
     private static bool? CloseRetainerMenu()
@@ -1784,20 +1653,6 @@ public sealed class Plugin : IDalamudPlugin
         return false;
     }
 
-    private unsafe bool? PrepareMergeRetrieve()
-    {
-        if (!mergeCompleted)
-            return true; // the return didn't happen; nothing sits in the retainer
-
-        retrievePending = true;
-        crashRetrieve = false;
-        retrieveSlot = -1;
-        retrieveItemId = currentItemId;
-        retrieveName = ItemNameOf(currentItemId);
-        retrieveBagQtyBefore = TotalBagQuantity(currentItemId, currentItemHq);
-        return true;
-    }
-
     private unsafe bool? ClickReturnForMerge()
     {
         if (!mergePending)
@@ -1807,14 +1662,10 @@ public sealed class Plugin : IDalamudPlugin
             return false;
 
         var entries = new ReaderContextMenu(addon).Entries;
-        var index = entries.FindIndex(e =>
-            e.Name.Contains("return", StringComparison.CurrentCultureIgnoreCase)
-            || e.Name.Contains("zurück", StringComparison.CurrentCultureIgnoreCase)
-            || e.Name.Contains("récupér", StringComparison.CurrentCultureIgnoreCase)
-            || e.Name.Contains("返却", StringComparison.CurrentCultureIgnoreCase));
+        var index = entries.FindIndex(e => IsReturnToInventoryEntry(e.Name));
         if (index < 0)
         {
-            Svc.Log.Debug($"No return entry for merge ({string.Join(", ", entries.Select(e => e.Name))})");
+            Svc.Log.Debug($"No return-to-inventory entry for merge ({string.Join(", ", entries.Select(e => e.Name))})");
             mergePending = false;
             addon->Close(true);
             return true;
