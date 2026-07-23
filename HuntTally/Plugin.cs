@@ -407,12 +407,16 @@ public sealed class Plugin : IDalamudPlugin
         config.Save();
     }
 
-    // The A-rank counters behind the train estimate: the per-expansion "III" tiers
-    // and the overall Bring Your A Game series counter.
+    // The counters behind the estimates: the per-expansion "III" tiers and the
+    // overall Bring Your A/S Game series counters.
     private const uint ShbAThree = 2352;
     private const uint EwAThree = 2996;
     private const uint DtAThree = 3533;
     private const uint OverallA = 1918;
+    private const uint ShbSThree = 2355;
+    private const uint EwSThree = 2999;
+    private const uint DtSThree = 3536;
+    private const uint OverallS = 1921;
 
     private void RecordTallySnapshot()
     {
@@ -422,7 +426,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var cache = CurrentCache();
         var counters = new Dictionary<uint, uint>();
-        foreach (var id in (uint[])[ShbAThree, EwAThree, DtAThree, OverallA])
+        foreach (var id in (uint[])[ShbAThree, EwAThree, DtAThree, OverallA, ShbSThree, EwSThree, DtSThree, OverallS])
         {
             if (cache.TryGetValue(id, out var progress) && progress.Max > 0)
                 counters[id] = progress.Current;
@@ -526,6 +530,7 @@ public sealed class Plugin : IDalamudPlugin
 
             var cache = CurrentCache();
             DrawTrainEstimate(cache);
+            DrawSEstimate(cache);
             foreach (var expansion in ExpansionOrder)
             {
                 var group = Tracked.Where(a => a.Expansion == expansion
@@ -623,28 +628,54 @@ public sealed class Plugin : IDalamudPlugin
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Assumes full triple trains: both A ranks in every zone,\nso 12 kills per expansion leg and 36 in total per triple.\nThe ETA below uses your recorded pace instead.");
 
-        double? worstDays = null;
-        var paceKnown = false;
-        foreach (var t in targets)
+        DrawPaceLine(targets.Select(t => (t.Id, t.Remaining)).ToList(), OverallA, "A");
+    }
+
+    /// <summary>The S-rank counterpart: no train math (there are no S trains), just
+    /// the kill remainders and the recorded-pace ETA.</summary>
+    private void DrawSEstimate(Dictionary<uint, CachedProgress> cache)
+    {
+        var targets = new List<(uint Id, long Remaining)>();
+        var parts = new List<string>();
+        foreach (var (id, label) in (ReadOnlySpan<(uint, string)>)
+                 [(ShbSThree, "ShB"), (EwSThree, "EW"), (DtSThree, "DT"), (OverallS, "overall")])
         {
-            var pace = PacePerDay(t.Id);
+            if (IsAchievementComplete(id) || !cache.TryGetValue(id, out var progress)
+                || progress.Max == 0 || progress.Current >= progress.Max)
+                continue;
+            targets.Add((id, progress.Max - progress.Current));
+            parts.Add($"{label} {progress.Max - progress.Current:N0}");
+        }
+
+        if (targets.Count == 0)
+            return;
+
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"S ranks: {string.Join(", ", parts)} kills to go.");
+        DrawPaceLine(targets, OverallS, "S");
+    }
+
+    private void DrawPaceLine(List<(uint Id, long Remaining)> targets, uint overallId, string rank)
+    {
+        double? worstDays = null;
+        foreach (var (id, remaining) in targets)
+        {
+            var pace = PacePerDay(id);
             if (pace == null)
                 continue;
-            paceKnown = true;
-            var days = t.Remaining / pace.Value;
+            var days = remaining / pace.Value;
             if (worstDays == null || days > worstDays)
                 worstDays = days;
         }
 
-        if (!paceKnown)
+        if (worstDays == null)
         {
-            ImGui.TextDisabled("Pace: recording your daily kills - an ETA appears once refreshes exist on two different days.");
+            ImGui.TextDisabled($"Pace: recording your daily {rank}-rank kills - an ETA appears once refreshes exist on two different days.");
             return;
         }
 
-        var overallPace = PacePerDay(OverallA);
-        var paceNote = overallPace != null ? $" ({overallPace:N0} A kills/day)" : "";
-        var finish = DateTime.Now.AddDays(worstDays!.Value);
+        var overallPace = PacePerDay(overallId);
+        var paceNote = overallPace != null ? $" ({overallPace:N0} {rank} kills/day)" : "";
+        var finish = DateTime.Now.AddDays(worstDays.Value);
         ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f),
             $"At your recent pace{paceNote}: about {Math.Ceiling(worstDays.Value):N0} days left - finishing around {finish:d MMM yyyy}.");
     }
