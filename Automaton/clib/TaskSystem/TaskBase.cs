@@ -294,6 +294,18 @@ public abstract class TaskBase : AutoTask {
                     }
                 }
 
+                // patched: the teleport cast is silently dropped while mounted or flying,
+                // which used to burn every retry on casts that could never start. Land
+                // and dismount first; Dismount is bounded, so a failed landing still
+                // falls through to the retry counter instead of hanging here.
+                if (Player.Mounted) {
+                    Status = $"Dismounting before teleporting to {destinationName}";
+                    await Dismount();
+                    Status = $"Teleporting to {destinationName}";
+                    if (Player.Mounted)
+                        Warning($"Still mounted going into teleport attempt {teleportAttempts + 1}; the cast will likely not start");
+                }
+
                 // patched from upstream: never stay stuck in the teleporting state. If it
                 // keeps failing (e.g. the game reports another teleport already underway),
                 // give up and let the caller re-evaluate and try again later.
@@ -454,8 +466,14 @@ public abstract class TaskBase : AutoTask {
         if (Player is null || !Player.Mounted) return;
 
         if (Player.InFlight) {
-            if (Svc.Navmesh.NearestPointReachable(Player.Position) is { } nearestPoint)
-                await MoveTo(nearestPoint, MovementConfig.Everything);
+            // patched: hovering at (or just above) the landable point needs no landing
+            // flight - the descend/dismount loop below touches down. Flying a
+            // sub-tolerance hop makes vnav and the arrival check disagree and spam
+            // "keeps getting interrupted" re-paths until the move gives up.
+            if (Svc.Navmesh.NearestPointReachable(Player.Position) is { } nearestPoint) {
+                if (!Player.WithinRange(nearestPoint, 5f))
+                    await MoveTo(nearestPoint, MovementConfig.Everything);
+            }
             else
                 Warning($"No nearest landable point found from {Player.Position}. Dismounting may fail");
         }

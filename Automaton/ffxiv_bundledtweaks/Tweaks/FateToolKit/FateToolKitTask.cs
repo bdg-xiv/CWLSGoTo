@@ -114,14 +114,16 @@ internal sealed class FateGrind(FateToolKit tweak) : TaskBase {
     public IOrderedEnumerable<PublicEvent> AvailableFates => FateToolKit.ApplySortOrder(PublicEvent.Fates.Where(f => tweak.FateConditions(f) && f.Id != WaitForExpiryFateId), tweak.Config.SortOrder);
     private bool HasTwistOfFate => Player.Status.HasTwistOfFate();
 
-    // patched from upstream: a collect (hand-in) fate is done for us only when the
-    // fate itself completed AND our personal batch of 10 is handed in. Before 100%
-    // hand-ins repeat in batches of 10, so stopping at 10 could leave the fate
-    // unfinishable when grinding solo; after 100% the results window still accepts
-    // hand-ins, so keep going until our credit is in. If nothing more can be
-    // handed in, the fate's own expiry (CurrentFate becoming null) ends the state.
+    // patched from upstream: a collect (hand-in) fate is done for us once our
+    // personal batch of 10 is handed in AND either the fate completed or it is in
+    // its last minute without reaching 100%. Before that, hand-ins repeat in
+    // batches of 10, so stopping at 10 could leave the fate unfinishable when
+    // grinding solo; after 100% the results window still accepts hand-ins, so keep
+    // going until our credit is in. In the dying minute of an unfinished collect
+    // there is nothing left to gain, so route away instead of engaging more mobs.
     private static bool IsCollectFateDone(PublicEvent f)
-        => f is { Rule: PublicEvent.FateRule.Collect, Progress: >= 100 } && f.HandInCount >= 10;
+        => f is { Rule: PublicEvent.FateRule.Collect, HandInCount: >= 10 }
+           && (f.Progress >= 100 || f.TimeRemaining <= 60);
 
     private GrindState State {
         get {
