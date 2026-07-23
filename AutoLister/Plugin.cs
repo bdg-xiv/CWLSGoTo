@@ -38,6 +38,9 @@ public sealed class Plugin : IDalamudPlugin
     private const int RetainerSellSlots = 20;
     private const int UndercutGil = 1;
 
+    // The market board caps a single listing at 99 units regardless of bag stack size.
+    private const int MaxItemsPerListing = 99;
+
     // Below this total (price x stack quantity) an item is vendored through the
     // retainer instead of being listed on the market.
     private const long VendorThresholdGil = 2000;
@@ -100,10 +103,14 @@ public sealed class Plugin : IDalamudPlugin
     private int mergeProbeRow;
     private int mergeRowCount;
     private long mergeStepDeadline;
+    private int mergeBagQuantity;
+    private int mergeMaxPerListing;
     private const int MergeStepTimeoutMs = 4000;
     private readonly List<(string Name, string Retainer)> setAsideReport = [];
 
     private enum MergeStep { OpenProbeMenu, ClickAdjust, ReadWindow, ReopenMenu, ClickReturn, WaitReturned }
+
+    private enum MergeAvail { None, Full, Mergeable }
 
     // Cross-retainer follow-up: set-aside items grouped by the retainer that already
     // sells them; after the main run the plugin swaps retainers and merges there.
@@ -470,6 +477,8 @@ public sealed class Plugin : IDalamudPlugin
         var slot = -1;
         var pendingItemId = 0u;
         var pendingHq = false;
+        var pendingBagQty = 1;
+        var pendingMaxPerListing = MaxItemsPerListing;
         var mergeHere = false;
         while (pendingItems.Count > 0)
         {
@@ -480,22 +489,31 @@ public sealed class Plugin : IDalamudPlugin
                 continue;
 
             var hq = inventorySlot->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality);
-            var stackable = (sheet.GetRowOrDefault(candidate.ItemId)?.StackSize ?? 1) > 1;
-            var mergeableHere = stackable && ActiveRetainerSellsItem(candidate.ItemId, hq);
+            var stackSize = (int)(sheet.GetRowOrDefault(candidate.ItemId)?.StackSize ?? 1);
+            var stackable = stackSize > 1;
+            var bagQty = Math.Max((int)inventorySlot->Quantity, 1);
+            var maxPerListing = Math.Min(MaxItemsPerListing, stackSize);
+            var avail = stackable ? CheckActiveRetainerListings(candidate.ItemId, hq, bagQty, maxPerListing) : MergeAvail.None;
+            var mergeableHere = avail == MergeAvail.Mergeable;
 
             if (slotsFull && !mergeableHere)
                 continue; // full retainer: only merges into existing listings still fit
 
-            // A follow-up visit exists only to merge; if the expected listing is gone
-            // (sold, stale snapshot), leave the item in the bags rather than opening
-            // a fresh listing on a retainer it was never meant for.
-            if (followUpPhase && !mergeableHere)
+            // Existing listings with no room (a full 99 stack) can't absorb anything:
+            // the item goes up as a NEW stack instead of attempting a merge.
+            if (avail == MergeAvail.Full)
+                Svc.Chat.Print($"[AutoLister] {ItemNameOf(candidate.ItemId)}: the existing listing has no room - putting up a new stack.");
+
+            // A follow-up visit exists only to consolidate at this retainer; if the
+            // expected listing is gone entirely (sold, stale snapshot), leave the item
+            // in the bags rather than listing it on a retainer it was never meant for.
+            if (followUpPhase && avail == MergeAvail.None)
             {
                 Svc.Chat.Print($"[AutoLister] {ItemNameOf(candidate.ItemId)}: no live listing to merge with here - leaving it in your bags.");
                 continue;
             }
 
-            if (!followUpPhase && !mergeableHere && stackable
+            if (!followUpPhase && !mergeableHere && stackable && avail == MergeAvail.None
                 && TryFindOtherRetainerListing(candidate.ItemId, hq, out var otherRetainerId, out var otherRetainer))
             {
                 var setAsideName = ItemNameOf(candidate.ItemId);
@@ -509,6 +527,8 @@ public sealed class Plugin : IDalamudPlugin
             slot = candidate.Slot;
             pendingItemId = candidate.ItemId;
             pendingHq = hq;
+            pendingBagQty = bagQty;
+            pendingMaxPerListing = maxPerListing;
             mergeHere = mergeableHere;
             found = true;
             break;
@@ -544,6 +564,8 @@ public sealed class Plugin : IDalamudPlugin
             mergeRowCount = SellListRowCount();
             mergeMarketCountBefore = retainer->MarketItemCount;
             mergeItemName = ItemNameOf(pendingItemId);
+            mergeBagQuantity = pendingBagQty;
+            mergeMaxPerListing = pendingMaxPerListing;
             mergeStepDeadline = Environment.TickCount64 + MergeStepTimeoutMs;
             Svc.Chat.Print($"[AutoLister] {mergeItemName}: this retainer already sells it - pulling that listing so both stacks go up as one.");
             taskManager.Enqueue(MergeLocateAndPull, "MergeLocateAndPull", new TaskManagerConfiguration { TimeLimitMS = 90000, AbortOnTimeout = false, TimeoutSilently = true });
@@ -1614,24 +1636,30 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>Whether the summoned retainer has the item (matching HQ state) on the
-    /// market, read from the RetainerMarket container. Which UI ROW it occupies can't
-    /// be derived from the container - the sell list is category-sorted - so the
-    /// merge flow identifies the row by probing price windows instead.</summary>
-    private static unsafe bool ActiveRetainerSellsItem(uint itemId, bool hq)
+    /// market and whether any of those listings has room for the bag stack under the
+    /// per-listing cap. Read from the RetainerMarket container; which UI ROW a
+    /// listing occupies can't be derived from it (the list is category-sorted), so
+    /// the merge flow identifies rows by probing price windows instead.</summary>
+    private static unsafe MergeAvail CheckActiveRetainerListings(uint itemId, bool hq, int bagQty, int maxPerListing)
     {
         var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
         if (container == null)
-            return false;
+            return MergeAvail.None;
 
+        var found = false;
         for (var i = 0; i < container->Size; i++)
         {
             var item = container->GetInventorySlot(i);
-            if (item != null && item->ItemId == itemId
-                && item->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) == hq)
-                return true;
+            if (item == null || item->ItemId != itemId
+                || item->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) != hq)
+                continue;
+
+            found = true;
+            if (item->Quantity + bagQty <= maxPerListing)
+                return MergeAvail.Mergeable;
         }
 
-        return false;
+        return found ? MergeAvail.Full : MergeAvail.None;
     }
 
     /// <summary>Row count of the sell list's list component (same node Dagobert reads).</summary>
@@ -1744,9 +1772,14 @@ public sealed class Plugin : IDalamudPlugin
                 if (!TryGetAddonByName<AddonRetainerSell>("RetainerSell", out var priceWindow) || !IsAddonReady(&priceWindow->AtkUnitBase))
                     return false;
 
+                // Item id + HQ must match AND this specific listing must have room
+                // for the bag stack - a full 99 stack (or one that would overflow
+                // the per-listing cap) is skipped so a roomier duplicate can match.
                 var windowName = GetRetainerSellItemName(priceWindow);
+                var windowQty = Math.Max(priceWindow->Quantity->Value, 1);
                 var isMatch = ResolveItemIdByName(windowName) == currentItemId
-                              && windowName.Contains(HqGlyph) == currentItemHq;
+                              && windowName.Contains(HqGlyph) == currentItemHq
+                              && windowQty + mergeBagQuantity <= mergeMaxPerListing;
                 Callback.Fire(&priceWindow->AtkUnitBase, true, RetainerSellCancelEvent);
                 priceWindow->AtkUnitBase.Close(true);
 
