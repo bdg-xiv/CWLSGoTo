@@ -36,6 +36,12 @@ internal static class MapManager
         return earliest;
     }
 
+    // The Macarenses Angle (148) can look closest on the flat map for southern
+    // Tempest marks, but the vertical distance makes The Ondo Cups (147) faster
+    // every time - never pick it.
+    internal static readonly uint MacarensesAngle = 148;
+    internal static readonly uint OndoCups = 147;
+
     internal static Aetheryte? GetNearestAetheryte(MapLinkPayload mapLink)
     {
         var territoryId = mapLink.TerritoryType.RowId;
@@ -61,6 +67,9 @@ internal static class MapManager
         foreach (var aetheryte in Svc.Data.GetExcelSheet<Aetheryte>())
         {
             if (!aetheryte.IsAetheryte || aetheryte.Territory.RowId != territoryId)
+                continue;
+
+            if (aetheryte.RowId == MacarensesAngle)
                 continue;
 
             MapMarker? marker = null;

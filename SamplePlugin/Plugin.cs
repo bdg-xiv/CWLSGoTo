@@ -321,6 +321,11 @@ public sealed class Plugin : IDalamudPlugin
     /// first when it isn't the current one. An empty world name means "stay here".</summary>
     private void OnGoToAetheryteIpc(uint aetheryteId, string worldName)
     {
+        // The Macarenses Angle is banned as a destination (the vertical drop makes
+        // The Ondo Cups faster for every Tempest mark); remap any request for it.
+        if (aetheryteId == MapManager.MacarensesAngle)
+            aetheryteId = MapManager.OndoCups;
+
         var aetheryte = Svc.Data.GetExcelSheet<Aetheryte>().GetRowOrDefault(aetheryteId);
         if (aetheryte == null)
         {
