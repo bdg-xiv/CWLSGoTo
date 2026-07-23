@@ -96,7 +96,14 @@ public sealed class Plugin : IDalamudPlugin
     private bool mergeCompleted;
     private int mergeMarketCountBefore;
     private string mergeItemName = "";
+    private MergeStep mergeStep;
+    private int mergeProbeRow;
+    private int mergeRowCount;
+    private long mergeStepDeadline;
+    private const int MergeStepTimeoutMs = 4000;
     private readonly List<(string Name, string Retainer)> setAsideReport = [];
+
+    private enum MergeStep { OpenProbeMenu, ClickAdjust, ReadWindow, ReopenMenu, ClickReturn, WaitReturned }
 
     // Cross-retainer follow-up: set-aside items grouped by the retainer that already
     // sells them; after the main run the plugin swaps retainers and merges there.
@@ -464,7 +471,6 @@ public sealed class Plugin : IDalamudPlugin
         var pendingItemId = 0u;
         var pendingHq = false;
         var mergeHere = false;
-        var mergeRow = -1;
         while (pendingItems.Count > 0)
         {
             var candidate = pendingItems.Dequeue();
@@ -475,7 +481,7 @@ public sealed class Plugin : IDalamudPlugin
 
             var hq = inventorySlot->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality);
             var stackable = (sheet.GetRowOrDefault(candidate.ItemId)?.StackSize ?? 1) > 1;
-            var mergeableHere = stackable && TryFindActiveRetainerListingRow(candidate.ItemId, hq, out mergeRow);
+            var mergeableHere = stackable && ActiveRetainerSellsItem(candidate.ItemId, hq);
 
             if (slotsFull && !mergeableHere)
                 continue; // full retainer: only merges into existing listings still fit
@@ -525,17 +531,22 @@ public sealed class Plugin : IDalamudPlugin
         currentItemId = pendingItemId;
         currentItemHq = pendingHq;
 
-        if (mergeHere && mergeRow >= 0)
+        if (mergeHere)
         {
+            // The sell list's row order is a category sort, not the market container
+            // order, so the right row can only be identified by opening each row's
+            // price window and reading the item off it - the state machine probes
+            // rows, verifies by resolved item id + HQ flag, and only then clicks
+            // "Return Items to Inventory" (which has no confirmation of its own).
             mergePending = true;
+            mergeStep = MergeStep.OpenProbeMenu;
+            mergeProbeRow = 0;
+            mergeRowCount = SellListRowCount();
             mergeMarketCountBefore = retainer->MarketItemCount;
             mergeItemName = ItemNameOf(pendingItemId);
-            var row = mergeRow;
+            mergeStepDeadline = Environment.TickCount64 + MergeStepTimeoutMs;
             Svc.Chat.Print($"[AutoLister] {mergeItemName}: this retainer already sells it - pulling that listing so both stacks go up as one.");
-            taskManager.Enqueue(() => OpenListingContextMenu(row), "MergeOpenListingMenu");
-            taskManager.EnqueueDelay(150);
-            taskManager.Enqueue(ClickReturnForMerge, "ClickReturnForMerge", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
-            taskManager.Enqueue(WaitMergeReturned, "WaitMergeReturned", new TaskManagerConfiguration { TimeLimitMS = 8000, AbortOnTimeout = false, TimeoutSilently = true });
+            taskManager.Enqueue(MergeLocateAndPull, "MergeLocateAndPull", new TaskManagerConfiguration { TimeLimitMS = 90000, AbortOnTimeout = false, TimeoutSilently = true });
             // "Return Items to Inventory" drops the stack straight into the bags,
             // where it combines with the pending stack; give it a beat to land.
             taskManager.EnqueueDelay(600);
@@ -1602,32 +1613,36 @@ public sealed class Plugin : IDalamudPlugin
         config.Save();
     }
 
-    /// <summary>Finds the sell-list UI row of the active retainer's listing of the
-    /// item (matching HQ state). The UI shows the RetainerMarket container's occupied
-    /// slots in slot order; the return confirmation dialog re-verifies by name.</summary>
-    private static unsafe bool TryFindActiveRetainerListingRow(uint itemId, bool hq, out int rowIndex)
+    /// <summary>Whether the summoned retainer has the item (matching HQ state) on the
+    /// market, read from the RetainerMarket container. Which UI ROW it occupies can't
+    /// be derived from the container - the sell list is category-sorted - so the
+    /// merge flow identifies the row by probing price windows instead.</summary>
+    private static unsafe bool ActiveRetainerSellsItem(uint itemId, bool hq)
     {
-        rowIndex = -1;
         var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
         if (container == null)
             return false;
 
-        var row = 0;
         for (var i = 0; i < container->Size; i++)
         {
             var item = container->GetInventorySlot(i);
-            if (item == null || item->ItemId == 0)
-                continue;
-            if (item->ItemId == itemId && item->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) == hq)
-            {
-                rowIndex = row;
+            if (item != null && item->ItemId == itemId
+                && item->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) == hq)
                 return true;
-            }
-
-            row++;
         }
 
         return false;
+    }
+
+    /// <summary>Row count of the sell list's list component (same node Dagobert reads).</summary>
+    private static unsafe int SellListRowCount()
+    {
+        if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var addon) || !IsAddonReady(addon))
+            return 0;
+
+        var listNode = (AtkComponentNode*)addon->UldManager.NodeList[10];
+        var list = listNode != null ? (AtkComponentList*)listNode->Component : null;
+        return list != null ? list->ListLength : 0;
     }
 
     private unsafe bool TryFindOtherRetainerListing(uint itemId, bool hq, out ulong retainerId, out string retainerName)
@@ -1653,60 +1668,163 @@ public sealed class Plugin : IDalamudPlugin
         return false;
     }
 
-    private unsafe bool? ClickReturnForMerge()
+    /// <summary>State machine that finds the current item's listing row by probing:
+    /// open a row's context menu, open Adjust Price, read the item off the price
+    /// window (resolved id + HQ glyph), cancel; on a match, reopen that row's menu
+    /// and click Return Items to Inventory. Row order can't be derived from the
+    /// market container - the list is category-sorted - so probing is the only
+    /// identification that can't pull the wrong item.</summary>
+    private unsafe bool? MergeLocateAndPull()
     {
         if (!mergePending)
             return true;
 
-        if (!TryGetAddonByName<AtkUnitBase>("ContextMenu", out var addon) || !IsAddonReady(addon))
-            return false;
-
-        var entries = new ReaderContextMenu(addon).Entries;
-        var index = entries.FindIndex(e => IsReturnToInventoryEntry(e.Name));
-        if (index < 0)
+        var now = Environment.TickCount64;
+        if (now > mergeStepDeadline)
         {
-            Svc.Log.Debug($"No return-to-inventory entry for merge ({string.Join(", ", entries.Select(e => e.Name))})");
-            mergePending = false;
-            addon->Close(true);
-            return true;
-        }
-
-        Callback.Fire(addon, true, 0, index, 0, 0, 0);
-        return true;
-    }
-
-    /// <summary>Confirms the return of the to-be-merged listing. The confirmation
-    /// dialog names the item, which double-checks the row mapping: a mismatch means
-    /// the wrong listing was targeted, so answer no and list normally instead.</summary>
-    private unsafe bool? WaitMergeReturned()
-    {
-        if (!mergePending)
-            return true;
-
-        if (TryGetAddonMaster<AddonMaster.SelectYesno>("SelectYesno", out var yesno) && yesno.IsAddonReady)
-        {
-            var text = new string((yesno.Text ?? "").Where(c => c < 0xE000 || c > 0xF8FF).ToArray());
-            if (!text.Contains(mergeItemName, StringComparison.OrdinalIgnoreCase))
+            // The current step went nowhere (window never opened, menu ate the
+            // click); retry from the next row rather than hanging the run.
+            Svc.Log.Debug($"Merge probe step {mergeStep} timed out on row {mergeProbeRow}");
+            if (mergeStep is MergeStep.ReopenMenu or MergeStep.ClickReturn or MergeStep.WaitReturned)
             {
-                Svc.Log.Warning($"Merge return dialog mismatch (\"{text}\" vs \"{mergeItemName}\"), listing normally");
-                mergePending = false;
-                yesno.No();
+                GiveUpMerge("the pull did not complete");
                 return true;
             }
 
-            if (EzThrottler.Throttle("ALMerge.Yes", 500))
-                yesno.Yes();
-            return false;
+            mergeProbeRow++;
+            SetMergeStep(MergeStep.OpenProbeMenu);
         }
 
-        if (CurrentMarketItemCount() < mergeMarketCountBefore)
+        switch (mergeStep)
         {
-            mergePending = false;
-            mergeCompleted = true;
-            return true;
-        }
+            case MergeStep.OpenProbeMenu:
+            case MergeStep.ReopenMenu:
+                if (mergeStep == MergeStep.OpenProbeMenu && mergeProbeRow >= mergeRowCount)
+                {
+                    GiveUpMerge("couldn't find its listing row");
+                    return true;
+                }
 
-        return false;
+                if (TryGetAddonByName<AtkUnitBase>("RetainerSellList", out var sellList) && IsAddonReady(sellList)
+                    && EzThrottler.Throttle("ALMerge.OpenMenu", 800))
+                {
+                    Callback.Fire(sellList, true, 0, mergeProbeRow, 1);
+                    SetMergeStep(mergeStep == MergeStep.OpenProbeMenu ? MergeStep.ClickAdjust : MergeStep.ClickReturn);
+                }
+
+                return false;
+
+            case MergeStep.ClickAdjust:
+                if (!TryGetAddonByName<AtkUnitBase>("ContextMenu", out var probeMenu) || !IsAddonReady(probeMenu))
+                    return false;
+
+                var probeEntries = new ReaderContextMenu(probeMenu).Entries;
+                var adjustIndex = probeEntries.FindIndex(e =>
+                    e.Name.Equals("adjust price", StringComparison.CurrentCultureIgnoreCase)
+                    || e.Name.Equals("preis ändern", StringComparison.CurrentCultureIgnoreCase)
+                    || e.Name.Equals("価格を変更する", StringComparison.CurrentCultureIgnoreCase)
+                    || e.Name.Equals("changer le prix", StringComparison.CurrentCultureIgnoreCase));
+                if (adjustIndex < 0)
+                {
+                    probeMenu->Close(true);
+                    mergeProbeRow++;
+                    SetMergeStep(MergeStep.OpenProbeMenu);
+                    return false;
+                }
+
+                if (EzThrottler.Throttle("ALMerge.Adjust", 800))
+                {
+                    Callback.Fire(probeMenu, true, 0, adjustIndex, 0, 0, 0);
+                    SetMergeStep(MergeStep.ReadWindow);
+                }
+
+                return false;
+
+            case MergeStep.ReadWindow:
+                if (!TryGetAddonByName<AddonRetainerSell>("RetainerSell", out var priceWindow) || !IsAddonReady(&priceWindow->AtkUnitBase))
+                    return false;
+
+                var windowName = GetRetainerSellItemName(priceWindow);
+                var isMatch = ResolveItemIdByName(windowName) == currentItemId
+                              && windowName.Contains(HqGlyph) == currentItemHq;
+                Callback.Fire(&priceWindow->AtkUnitBase, true, RetainerSellCancelEvent);
+                priceWindow->AtkUnitBase.Close(true);
+
+                if (isMatch)
+                {
+                    SetMergeStep(MergeStep.ReopenMenu);
+                }
+                else
+                {
+                    mergeProbeRow++;
+                    SetMergeStep(MergeStep.OpenProbeMenu);
+                }
+
+                return false;
+
+            case MergeStep.ClickReturn:
+                if (!TryGetAddonByName<AtkUnitBase>("ContextMenu", out var returnMenu) || !IsAddonReady(returnMenu))
+                    return false;
+
+                var returnEntries = new ReaderContextMenu(returnMenu).Entries;
+                var returnIndex = returnEntries.FindIndex(e => IsReturnToInventoryEntry(e.Name));
+                if (returnIndex < 0)
+                {
+                    Svc.Log.Debug($"No return-to-inventory entry ({string.Join(", ", returnEntries.Select(e => e.Name))})");
+                    returnMenu->Close(true);
+                    GiveUpMerge("its context menu has no return-to-inventory entry");
+                    return true;
+                }
+
+                if (EzThrottler.Throttle("ALMerge.Return", 800))
+                {
+                    Callback.Fire(returnMenu, true, 0, returnIndex, 0, 0, 0);
+                    SetMergeStep(MergeStep.WaitReturned);
+                }
+
+                return false;
+
+            case MergeStep.WaitReturned:
+                if (TryGetAddonMaster<AddonMaster.SelectYesno>("SelectYesno", out var yesno) && yesno.IsAddonReady)
+                {
+                    var text = StripSpecial(yesno.Text ?? "");
+                    if (text.Length > 0 && !text.Contains(mergeItemName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Svc.Log.Warning($"Merge return dialog mismatch (\"{text}\" vs \"{mergeItemName}\")");
+                        yesno.No();
+                        GiveUpMerge("the confirmation named a different item");
+                        return true;
+                    }
+
+                    if (EzThrottler.Throttle("ALMerge.Yes", 500))
+                        yesno.Yes();
+                    return false;
+                }
+
+                if (CurrentMarketItemCount() < mergeMarketCountBefore)
+                {
+                    mergePending = false;
+                    mergeCompleted = true;
+                    return true;
+                }
+
+                return false;
+
+            default:
+                return true;
+        }
+    }
+
+    private void SetMergeStep(MergeStep step)
+    {
+        mergeStep = step;
+        mergeStepDeadline = Environment.TickCount64 + MergeStepTimeoutMs;
+    }
+
+    private void GiveUpMerge(string reason)
+    {
+        mergePending = false;
+        Svc.Chat.Print($"[AutoLister] {mergeItemName}: {reason} - listing the bag stack separately.");
     }
 
     private unsafe void OnRetainerSellPostSetup(AddonEvent type, AddonArgs args)
