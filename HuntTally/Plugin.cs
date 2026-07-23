@@ -637,20 +637,36 @@ public sealed class Plugin : IDalamudPlugin
     {
         var targets = new List<(uint Id, long Remaining)>();
         var parts = new List<string>();
+        long expansionSum = 0;
+        long? overallRemaining = null;
         foreach (var (id, label) in (ReadOnlySpan<(uint, string)>)
                  [(ShbSThree, "ShB"), (EwSThree, "EW"), (DtSThree, "DT"), (OverallS, "overall")])
         {
             if (IsAchievementComplete(id) || !cache.TryGetValue(id, out var progress)
                 || progress.Max == 0 || progress.Current >= progress.Max)
                 continue;
-            targets.Add((id, progress.Max - progress.Current));
-            parts.Add($"{label} {progress.Max - progress.Current:N0}");
+            var remaining = (long)progress.Max - progress.Current;
+            targets.Add((id, remaining));
+            if (id == OverallS)
+                overallRemaining = remaining;
+            else
+            {
+                expansionSum += remaining;
+                parts.Add($"{label} {remaining:N0}");
+            }
         }
 
         if (targets.Count == 0)
             return;
 
+        // The overall counter is fed by the expansion grinds too; the parenthesis is
+        // what must come from anywhere on top of finishing those.
+        if (overallRemaining is { } overall)
+            parts.Add($"overall {overall:N0} ({Math.Max(0, overall - expansionSum):N0} from anywhere)");
+
         ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"S ranks: {string.Join(", ", parts)} kills to go.");
+        if (ImGui.IsItemHovered() && overallRemaining != null)
+            ImGui.SetTooltip("Every S kill feeds the overall counter, so finishing the\nper-expansion achievements covers part of it; the number in\nparentheses is what still has to come from any expansion on top.");
         DrawPaceLine(targets, OverallS, "S");
     }
 
