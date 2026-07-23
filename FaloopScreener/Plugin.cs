@@ -32,6 +32,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly Configuration config;
     private readonly FaloopClient client = new();
     private readonly LeveSpawner leveSpawner;
+    private readonly SonarRing sonarRing;
     private readonly ICallGateSubscriber<uint, string, object?> goToIpc;
     private readonly Dictionary<string, uint> zoneAetherytes = [];
     private ushort selectedLeveId;
@@ -56,6 +57,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // TaskManager-based, so it must be created after ECommonsMain.Init.
         leveSpawner = new LeveSpawner();
+        sonarRing = new SonarRing(config);
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -330,6 +332,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawWindow()
     {
+        sonarRing.Draw();
+
         if (!windowOpen)
             return;
 
@@ -350,6 +354,7 @@ public sealed class Plugin : IDalamudPlugin
             DrawWorldFilter();
             DrawTable();
             DrawLeveSpawnerSection();
+            DrawSonarRingSection();
             DrawFilterSection();
             DrawSettingsSection();
         }
@@ -554,6 +559,53 @@ public sealed class Plugin : IDalamudPlugin
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Initiates the selected leve, watches for the powerful-mark message,\nabandons and retries until it appears or the attempt limit is hit.\nWorks anywhere in the leve's zone. Stops automatically on success.");
         }
+    }
+
+    private void DrawSonarRingSection()
+    {
+        if (!ImGui.CollapsingHeader("Sonar detection ring"))
+            return;
+
+        var onMap = config.SonarRingOnMap;
+        if (ImGui.Checkbox("Ring on the map", ref onMap))
+        {
+            config.SonarRingOnMap = onMap;
+            config.Save();
+        }
+
+        ImGui.SameLine();
+        var onMinimap = config.SonarRingOnMinimap;
+        if (ImGui.Checkbox("Ring on the minimap", ref onMinimap))
+        {
+            config.SonarRingOnMinimap = onMinimap;
+            config.Save();
+        }
+
+        var radius = config.SonarRingRadius;
+        ImGui.SetNextItemWidth(120);
+        if (ImGui.InputInt("Detection range (yalms)", ref radius))
+        {
+            config.SonarRingRadius = Math.Clamp(radius, 10, 500);
+            config.Save();
+        }
+
+        var color = config.SonarRingColor;
+        if (ImGui.ColorEdit4("Colour", ref color, ImGuiColorEditFlags.NoInputs))
+        {
+            config.SonarRingColor = color;
+            config.Save();
+        }
+
+        ImGui.SameLine();
+        var thickness = config.SonarRingThickness;
+        ImGui.SetNextItemWidth(120);
+        if (ImGui.SliderFloat("Thickness", ref thickness, 1f, 6f, "%.0f"))
+        {
+            config.SonarRingThickness = thickness;
+            config.Save();
+        }
+
+        ImGui.TextDisabled("Sonar relays what your own client sees, and overworld marks stream in at\nroughly 100 yalms - the ring is the area your character is scanning right now.");
     }
 
     private void DrawFilterSection()

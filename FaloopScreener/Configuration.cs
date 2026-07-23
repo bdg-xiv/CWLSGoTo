@@ -2,6 +2,7 @@ using Dalamud.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 
 namespace FaloopScreener;
 
@@ -24,6 +25,14 @@ public class Configuration : IPluginConfiguration
 
     // Attempt cap per leve-spawner run (each initiation costs one allowance).
     public int LeveAttempts { get; set; } = 5;
+
+    // Sonar detection ring: circle around the player on the game's map / minimap
+    // showing how far the client streams in marks (what Sonar can pick up).
+    public bool SonarRingOnMap { get; set; } = true;
+    public bool SonarRingOnMinimap { get; set; } = true;
+    public int SonarRingRadius { get; set; } = 100;
+    public Vector4 SonarRingColor { get; set; } = new(0.25f, 0.75f, 1f, 0.9f);
+    public float SonarRingThickness { get; set; } = 2f;
 
     public void Save()
     {
