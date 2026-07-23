@@ -70,6 +70,7 @@ public sealed class Plugin : IDalamudPlugin
     private const int MbKeepOpenMs = 1000;
 
     private readonly TaskManager taskManager;
+    private readonly Configuration config;
 
     private enum RunMode { List, Pinch }
 
@@ -86,6 +87,15 @@ public sealed class Plugin : IDalamudPlugin
     private int vendoredCount;
     private readonly List<(string Name, int Price, string Change)> listedReport = [];
     private readonly List<string> manualPricingReport = [];
+
+    // Stack-merge state: when the current retainer already sells the (stackable)
+    // item, its listing is returned to the bags first so one combined stack goes
+    // back up and only one sell slot is used.
+    private bool mergePending;
+    private bool mergeCompleted;
+    private int mergeMarketCountBefore;
+    private string mergeItemName = "";
+    private readonly List<(string Name, string Retainer)> setAsideReport = [];
 
     // Pinch & Cull state: walk the retainer's existing listings, reprice the healthy
     // ones and delist+vendor the ones under the thresholds.
@@ -121,6 +131,8 @@ public sealed class Plugin : IDalamudPlugin
     {
         ECommonsMain.Init(PluginInterface, this);
 
+        config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+
         // TaskManager's constructor hooks Svc.Framework.Update, so it must be created
         // after ECommonsMain.Init - a field initializer would run too early and throw.
         taskManager = new TaskManager(new TaskManagerConfiguration { TimeLimitMS = 10000, AbortOnTimeout = true });
@@ -134,6 +146,7 @@ public sealed class Plugin : IDalamudPlugin
         Svc.Framework.Update += OnFrameworkUpdate;
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "RetainerSell", OnRetainerSellPostSetup);
         Svc.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "ItemSearchResult", OnItemSearchResultPostSetup);
+        Svc.AddonLifecycle.RegisterListener(AddonEvent.PostSetup, "RetainerSellList", OnRetainerSellListPostSetup);
         PluginInterface.UiBuilder.Draw += DrawOverlay;
     }
 
@@ -142,6 +155,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= DrawOverlay;
         Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, "RetainerSell", OnRetainerSellPostSetup);
         Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, "ItemSearchResult", OnItemSearchResultPostSetup);
+        Svc.AddonLifecycle.UnregisterListener(AddonEvent.PostSetup, "RetainerSellList", OnRetainerSellListPostSetup);
         Svc.Framework.Update -= OnFrameworkUpdate;
         Svc.MarketBoard.OfferingsReceived -= OnOfferingsReceived;
         taskManager.Abort();
@@ -342,6 +356,7 @@ public sealed class Plugin : IDalamudPlugin
         retainerQueue.Clear();
         skipCurrentItem = false;
         newRequest = false;
+        mergePending = false;
         SuppressAutoRetainer(false);
         Svc.Chat.Print("[AutoLister] Cancelled.");
         PrintReport();
@@ -371,6 +386,9 @@ public sealed class Plugin : IDalamudPlugin
         vendoredCount = 0;
         listedReport.Clear();
         manualPricingReport.Clear();
+        setAsideReport.Clear();
+        mergePending = false;
+        mergeCompleted = false;
         runMode = RunMode.List;
         allRetainersMode = false;
         retainerQueue.Clear();
@@ -406,46 +424,80 @@ public sealed class Plugin : IDalamudPlugin
             return null;
         }
 
-        if (retainer->MarketItemCount >= RetainerSellSlots)
-        {
-            FinishRun("the retainer's sell slots are full");
-            return true;
-        }
+        var slotsFull = retainer->MarketItemCount >= RetainerSellSlots;
 
         // Pull the next pending item that is still sitting in its physical slot.
+        // A stackable item the current retainer already sells is handled as a merge
+        // (return the listing, list the combined stack - works even at 20/20 slots);
+        // one another retainer sells is set aside to be stacked over there instead.
         var manager = InventoryManager.Instance();
+        var sheet = Svc.Data.GetExcelSheet<Item>();
         var found = false;
         InventoryType itemContainer = default;
         var slot = -1;
         var pendingItemId = 0u;
+        var mergeHere = false;
+        var mergeRow = -1;
         while (pendingItems.Count > 0)
         {
             var candidate = pendingItems.Dequeue();
             var containerPtr = manager->GetInventoryContainer(candidate.Container);
             var inventorySlot = containerPtr != null ? containerPtr->GetInventorySlot(candidate.Slot) : null;
-            if (inventorySlot != null && inventorySlot->ItemId == candidate.ItemId)
+            if (inventorySlot == null || inventorySlot->ItemId != candidate.ItemId)
+                continue;
+
+            var hq = inventorySlot->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality);
+            var stackable = (sheet.GetRowOrDefault(candidate.ItemId)?.StackSize ?? 1) > 1;
+            var mergeableHere = stackable && TryFindActiveRetainerListingRow(candidate.ItemId, hq, out mergeRow);
+
+            if (slotsFull && !mergeableHere)
+                continue; // full retainer: only merges into existing listings still fit
+
+            if (!mergeableHere && stackable && TryFindOtherRetainerListing(candidate.ItemId, hq, out var otherRetainer))
             {
-                itemContainer = candidate.Container;
-                slot = candidate.Slot;
-                pendingItemId = candidate.ItemId;
-                found = true;
-                break;
+                var setAsideName = ItemNameOf(candidate.ItemId);
+                setAsideReport.Add((setAsideName, otherRetainer));
+                Svc.Chat.Print($"[AutoLister] {setAsideName}: already listed by {otherRetainer} - set aside to stack it there.");
+                continue;
             }
+
+            itemContainer = candidate.Container;
+            slot = candidate.Slot;
+            pendingItemId = candidate.ItemId;
+            mergeHere = mergeableHere;
+            found = true;
+            break;
         }
 
         if (!found)
         {
-            FinishRun("no sellable items left in the bottom-right quarter");
+            FinishRun(slotsFull ? "the retainer's sell slots are full" : "no sellable items left in the bottom-right quarter");
             return true;
         }
 
         skipCurrentItem = false;
         vendorCurrentItem = false;
+        mergeCompleted = false;
+        mergePending = false;
         newPrice = null;
         compareOpenAt = 0;
         currentContainer = itemContainer;
         currentSlot = slot;
         currentItemId = pendingItemId;
+
+        if (mergeHere && mergeRow >= 0)
+        {
+            mergePending = true;
+            mergeMarketCountBefore = retainer->MarketItemCount;
+            mergeItemName = ItemNameOf(pendingItemId);
+            var row = mergeRow;
+            Svc.Chat.Print($"[AutoLister] {mergeItemName}: this retainer already sells it - pulling that listing so both stacks go up as one.");
+            taskManager.Enqueue(() => OpenListingContextMenu(row), "MergeOpenListingMenu");
+            taskManager.EnqueueDelay(150);
+            taskManager.Enqueue(ClickReturnForMerge, "ClickReturnForMerge", new TaskManagerConfiguration { TimeLimitMS = 3000, AbortOnTimeout = false, TimeoutSilently = true });
+            taskManager.Enqueue(WaitMergeReturned, "WaitMergeReturned", new TaskManagerConfiguration { TimeLimitMS = 8000, AbortOnTimeout = false, TimeoutSilently = true });
+            taskManager.EnqueueDelay(400);
+        }
 
         taskManager.Enqueue(() => OpenItemContextMenu(itemContainer, slot), "OpenItemContextMenu");
         taskManager.EnqueueDelay(150);
@@ -469,11 +521,14 @@ public sealed class Plugin : IDalamudPlugin
 
     private void FinishRun(string reason)
     {
+        RefreshActiveRetainerSnapshot();
         var summary = runMode == RunMode.Pinch
             ? $"[AutoLister] Done ({reason}). Repriced {repricedCount} listing(s)."
             : $"[AutoLister] Done ({reason}). Listed {listedCount} item(s).";
         if (vendoredCount > 0)
             summary += $" Vendored {vendoredCount}.";
+        if (setAsideReport.Count > 0)
+            summary += $" Set aside {setAsideReport.Count} (listed elsewhere).";
         if (crashedReport.Count > 0)
             summary += $" Pulled {crashedReport.Count} (price crash).";
         if (returnedReport.Count > 0)
@@ -1012,7 +1067,7 @@ public sealed class Plugin : IDalamudPlugin
     private void PrintReport()
     {
         if (listedReport.Count == 0 && manualPricingReport.Count == 0 && culledReport.Count == 0
-            && returnedReport.Count == 0 && crashedReport.Count == 0)
+            && returnedReport.Count == 0 && crashedReport.Count == 0 && setAsideReport.Count == 0)
             return;
 
         var maxLen = listedReport.Select(e => e.Name.Length)
@@ -1020,6 +1075,7 @@ public sealed class Plugin : IDalamudPlugin
             .Concat(culledReport.Select(n => n.Length))
             .Concat(returnedReport.Select(n => n.Length))
             .Concat(crashedReport.Select(e => e.Name.Length))
+            .Concat(setAsideReport.Select(e => e.Name.Length))
             .Max();
 
         Svc.Chat.Print("[AutoLister] --- Listing report ---");
@@ -1031,6 +1087,8 @@ public sealed class Plugin : IDalamudPlugin
             Svc.Chat.Print($"{name} {Leaders(name, maxLen)} delisted & vendored");
         foreach (var name in returnedReport)
             Svc.Chat.Print($"{name} {Leaders(name, maxLen)} returned to bags - vendor manually");
+        foreach (var (name, retainerName) in setAsideReport)
+            Svc.Chat.Print($"{name} {Leaders(name, maxLen)} set aside - already listed by {retainerName}");
         foreach (var name in manualPricingReport)
             Svc.Chat.Print($"{name} {Leaders(name, maxLen)} pending manual listing");
 
@@ -1168,9 +1226,9 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         addon->AskingPrice->SetValue(newPrice.Value);
-        Svc.Chat.Print($"[AutoLister] {itemName}: listed at {newPrice.Value:N0} gil.");
+        Svc.Chat.Print($"[AutoLister] {itemName}: listed at {newPrice.Value:N0} gil{(mergeCompleted ? " (merged with the previous listing)" : "")}.");
         listedCount++;
-        listedReport.Add((itemName, newPrice.Value, ""));
+        listedReport.Add((itemName, newPrice.Value, mergeCompleted ? "(merged stacks)" : ""));
         Callback.Fire(&addon->AtkUnitBase, true, RetainerSellConfirmEvent);
         addon->AtkUnitBase.Close(true);
         return true;
@@ -1293,6 +1351,148 @@ public sealed class Plugin : IDalamudPlugin
     #endregion
 
     #region Market board price handling (mirrors Dagobert's MarketBoardHandler)
+
+    private unsafe void OnRetainerSellListPostSetup(AddonEvent type, AddonArgs args)
+        => RefreshActiveRetainerSnapshot();
+
+    /// <summary>Records what the summoned retainer has on the market. Runs whenever a
+    /// sell list opens (and when a run finishes), keeping the cross-retainer lookup
+    /// fresh through normal play.</summary>
+    private unsafe void RefreshActiveRetainerSnapshot()
+    {
+        var manager = RetainerManager.Instance();
+        var retainer = manager != null ? manager->GetActiveRetainer() : null;
+        if (retainer == null || retainer->RetainerId == 0)
+            return;
+
+        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
+        if (container == null)
+            return;
+
+        var snapshot = new RetainerSnapshot { Name = retainer->NameString, At = DateTime.UtcNow };
+        for (var i = 0; i < container->Size; i++)
+        {
+            var item = container->GetInventorySlot(i);
+            if (item == null || item->ItemId == 0)
+                continue;
+            if (item->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality))
+                snapshot.HqItems.Add(item->ItemId);
+            else
+                snapshot.Items.Add(item->ItemId);
+        }
+
+        config.RetainerListings[retainer->RetainerId] = snapshot;
+        config.Save();
+    }
+
+    /// <summary>Finds the sell-list UI row of the active retainer's listing of the
+    /// item (matching HQ state). The UI shows the RetainerMarket container's occupied
+    /// slots in slot order; the return confirmation dialog re-verifies by name.</summary>
+    private static unsafe bool TryFindActiveRetainerListingRow(uint itemId, bool hq, out int rowIndex)
+    {
+        rowIndex = -1;
+        var container = InventoryManager.Instance()->GetInventoryContainer(InventoryType.RetainerMarket);
+        if (container == null)
+            return false;
+
+        var row = 0;
+        for (var i = 0; i < container->Size; i++)
+        {
+            var item = container->GetInventorySlot(i);
+            if (item == null || item->ItemId == 0)
+                continue;
+            if (item->ItemId == itemId && item->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) == hq)
+            {
+                rowIndex = row;
+                return true;
+            }
+
+            row++;
+        }
+
+        return false;
+    }
+
+    private unsafe bool TryFindOtherRetainerListing(uint itemId, bool hq, out string retainerName)
+    {
+        retainerName = "";
+        var manager = RetainerManager.Instance();
+        var active = manager != null ? manager->GetActiveRetainer() : null;
+        var activeId = active != null ? active->RetainerId : 0;
+
+        foreach (var (id, snapshot) in config.RetainerListings)
+        {
+            if (id == activeId)
+                continue;
+            if ((hq ? snapshot.HqItems : snapshot.Items).Contains(itemId))
+            {
+                retainerName = snapshot.Name;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private unsafe bool? ClickReturnForMerge()
+    {
+        if (!mergePending)
+            return true;
+
+        if (!TryGetAddonByName<AtkUnitBase>("ContextMenu", out var addon) || !IsAddonReady(addon))
+            return false;
+
+        var entries = new ReaderContextMenu(addon).Entries;
+        var index = entries.FindIndex(e =>
+            e.Name.Contains("return", StringComparison.CurrentCultureIgnoreCase)
+            || e.Name.Contains("zurück", StringComparison.CurrentCultureIgnoreCase)
+            || e.Name.Contains("récupér", StringComparison.CurrentCultureIgnoreCase)
+            || e.Name.Contains("返却", StringComparison.CurrentCultureIgnoreCase));
+        if (index < 0)
+        {
+            Svc.Log.Debug($"No return entry for merge ({string.Join(", ", entries.Select(e => e.Name))})");
+            mergePending = false;
+            addon->Close(true);
+            return true;
+        }
+
+        Callback.Fire(addon, true, 0, index, 0, 0, 0);
+        return true;
+    }
+
+    /// <summary>Confirms the return of the to-be-merged listing. The confirmation
+    /// dialog names the item, which double-checks the row mapping: a mismatch means
+    /// the wrong listing was targeted, so answer no and list normally instead.</summary>
+    private unsafe bool? WaitMergeReturned()
+    {
+        if (!mergePending)
+            return true;
+
+        if (TryGetAddonMaster<AddonMaster.SelectYesno>("SelectYesno", out var yesno) && yesno.IsAddonReady)
+        {
+            var text = new string((yesno.Text ?? "").Where(c => c < 0xE000 || c > 0xF8FF).ToArray());
+            if (!text.Contains(mergeItemName, StringComparison.OrdinalIgnoreCase))
+            {
+                Svc.Log.Warning($"Merge return dialog mismatch (\"{text}\" vs \"{mergeItemName}\"), listing normally");
+                mergePending = false;
+                yesno.No();
+                return true;
+            }
+
+            if (EzThrottler.Throttle("ALMerge.Yes", 500))
+                yesno.Yes();
+            return false;
+        }
+
+        if (CurrentMarketItemCount() < mergeMarketCountBefore)
+        {
+            mergePending = false;
+            mergeCompleted = true;
+            return true;
+        }
+
+        return false;
+    }
 
     private unsafe void OnRetainerSellPostSetup(AddonEvent type, AddonArgs args)
     {
