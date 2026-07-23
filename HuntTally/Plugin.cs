@@ -372,8 +372,7 @@ public sealed class Plugin : IDalamudPlugin
 
         if (requestQueue.Count == 0)
         {
-            statusText = $"Updated {DateTime.Now:HH:mm}.";
-            config.Save();
+            FinishRefresh();
             return;
         }
 
@@ -390,6 +389,8 @@ public sealed class Plugin : IDalamudPlugin
             // shows it full if we ever fetched partial numbers before.
             if (CurrentCache().TryGetValue(next, out var cached))
                 cached.Current = cached.Max;
+            if (requestQueue.Count == 0)
+                FinishRefresh();
             return;
         }
 
@@ -397,6 +398,75 @@ public sealed class Plugin : IDalamudPlugin
         pendingId = next;
         requestSentAt = now;
         lastRequestAt = now;
+    }
+
+    private void FinishRefresh()
+    {
+        statusText = $"Updated {DateTime.Now:HH:mm}.";
+        RecordTallySnapshot();
+        config.Save();
+    }
+
+    // The A-rank counters behind the train estimate: the per-expansion "III" tiers
+    // and the overall Bring Your A Game series counter.
+    private const uint ShbAThree = 2352;
+    private const uint EwAThree = 2996;
+    private const uint DtAThree = 3533;
+    private const uint OverallA = 1918;
+
+    private void RecordTallySnapshot()
+    {
+        var character = Svc.PlayerState.ContentId;
+        if (character == 0)
+            return;
+
+        var cache = CurrentCache();
+        var counters = new Dictionary<uint, uint>();
+        foreach (var id in (uint[])[ShbAThree, EwAThree, DtAThree, OverallA])
+        {
+            if (cache.TryGetValue(id, out var progress) && progress.Max > 0)
+                counters[id] = progress.Current;
+        }
+
+        if (counters.Count == 0)
+            return;
+
+        if (!config.TallyHistory.TryGetValue(character, out var history))
+            config.TallyHistory[character] = history = [];
+
+        var today = DateTime.UtcNow.Date;
+        var entry = history.FirstOrDefault(h => h.Date == today);
+        if (entry == null)
+            history.Add(entry = new DailyTally { Date = today });
+        entry.Counters = counters;
+        history.RemoveAll(h => h.Date < today.AddDays(-60));
+    }
+
+    /// <summary>Kills per day for one counter, measured across the recorded daily
+    /// snapshots (preferring the last two weeks).</summary>
+    private double? PacePerDay(uint achievementId)
+    {
+        var character = Svc.PlayerState.ContentId;
+        if (character == 0 || !config.TallyHistory.TryGetValue(character, out var history))
+            return null;
+
+        var points = history
+            .Where(h => h.Counters.ContainsKey(achievementId))
+            .OrderBy(h => h.Date)
+            .ToList();
+
+        var recent = points.Where(p => p.Date >= DateTime.UtcNow.Date.AddDays(-14)).ToList();
+        if (recent.Count >= 2)
+            points = recent;
+        if (points.Count < 2)
+            return null;
+
+        var days = (points[^1].Date - points[0].Date).TotalDays;
+        if (days <= 0)
+            return null;
+
+        var gained = (double)points[^1].Counters[achievementId] - points[0].Counters[achievementId];
+        return gained > 0 ? gained / days : null;
     }
 
     private unsafe bool IsAchievementComplete(uint id)
@@ -455,6 +525,7 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.Separator();
 
             var cache = CurrentCache();
+            DrawTrainEstimate(cache);
             foreach (var expansion in ExpansionOrder)
             {
                 var group = Tracked.Where(a => a.Expansion == expansion
@@ -525,6 +596,57 @@ public sealed class Plugin : IDalamudPlugin
 
         result.Sort((x, y) => Array.IndexOf(ExpansionOrder, x.Expansion).CompareTo(Array.IndexOf(ExpansionOrder, y.Expansion)));
         return result;
+    }
+
+    /// <summary>How many full triple trains (ShB + EW + DT, both As in every zone:
+    /// 12 kills per leg, 36 total) are left for the A-rank achievements, plus an ETA
+    /// from the recorded daily kill pace.</summary>
+    private void DrawTrainEstimate(Dictionary<uint, CachedProgress> cache)
+    {
+        var targets = new List<(uint Id, string Label, int PerTrain, long Remaining)>();
+        foreach (var (id, label, perTrain) in (ReadOnlySpan<(uint, string, int)>)
+                 [(ShbAThree, "ShB", 12), (EwAThree, "EW", 12), (DtAThree, "DT", 12), (OverallA, "overall", 36)])
+        {
+            if (IsAchievementComplete(id) || !cache.TryGetValue(id, out var progress)
+                || progress.Max == 0 || progress.Current >= progress.Max)
+                continue;
+            targets.Add((id, label, perTrain, progress.Max - progress.Current));
+        }
+
+        if (targets.Count == 0)
+            return;
+
+        var trains = targets.Max(t => (t.Remaining + t.PerTrain - 1) / t.PerTrain);
+        var breakdown = string.Join(", ", targets.Select(t => $"{t.Label} {t.Remaining:N0}"));
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f),
+            $"A-rank trains: about {trains} full triples left ({breakdown} kills to go).");
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Assumes full triple trains: both A ranks in every zone,\nso 12 kills per expansion leg and 36 in total per triple.\nThe ETA below uses your recorded pace instead.");
+
+        double? worstDays = null;
+        var paceKnown = false;
+        foreach (var t in targets)
+        {
+            var pace = PacePerDay(t.Id);
+            if (pace == null)
+                continue;
+            paceKnown = true;
+            var days = t.Remaining / pace.Value;
+            if (worstDays == null || days > worstDays)
+                worstDays = days;
+        }
+
+        if (!paceKnown)
+        {
+            ImGui.TextDisabled("Pace: recording your daily kills - an ETA appears once refreshes exist on two different days.");
+            return;
+        }
+
+        var overallPace = PacePerDay(OverallA);
+        var paceNote = overallPace != null ? $" ({overallPace:N0} A kills/day)" : "";
+        var finish = DateTime.Now.AddDays(worstDays!.Value);
+        ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f),
+            $"At your recent pace{paceNote}: about {Math.Ceiling(worstDays.Value):N0} days left - finishing around {finish:d MMM yyyy}.");
     }
 
     private static int RankOrder(string rank) => rank switch

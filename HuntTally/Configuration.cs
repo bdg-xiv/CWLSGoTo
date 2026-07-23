@@ -13,6 +13,13 @@ public class CachedProgress
 }
 
 [Serializable]
+public class DailyTally
+{
+    public DateTime Date { get; set; }
+    public Dictionary<uint, uint> Counters { get; set; } = [];
+}
+
+[Serializable]
 public class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 0;
@@ -25,6 +32,10 @@ public class Configuration : IPluginConfiguration
     // player, per character. The server only reports totals for the "slay each unique
     // mark" achievements, so which specific marks are done is tracked on our side.
     public Dictionary<ulong, HashSet<uint>> SlainMarksByCharacter { get; set; } = [];
+
+    // One A-rank counter snapshot per day per character (recorded on refresh),
+    // used to measure the kill pace behind the hunt train estimate.
+    public Dictionary<ulong, List<DailyTally>> TallyHistory { get; set; } = [];
 
     // Hide achievements that are already complete.
     public bool HideCompleted { get; set; } = false;
