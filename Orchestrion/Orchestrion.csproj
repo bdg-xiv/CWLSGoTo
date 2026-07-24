@@ -4,9 +4,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <AssemblyName>orchestrion</AssemblyName>
-    <AssemblyTitle>orchestrion</AssemblyTitle>
-    <Product>orchestrion</Product>
+    <AssemblyName>OrchestrionLocal</AssemblyName>
+    <AssemblyTitle>OrchestrionLocal</AssemblyTitle>
+    <Product>OrchestrionLocal</Product>
     <Authors>Meli, perchbird, bdg</Authors>
     <Copyright>Copyright ©  2021</Copyright>
     <Version>$(PluginVersion)</Version>

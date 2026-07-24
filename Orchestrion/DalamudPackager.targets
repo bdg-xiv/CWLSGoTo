@@ -7,7 +7,7 @@
                 ProjectDir="$(ProjectDir)"
                 ManifestType="yaml"
                 MakeZip="true"
-                Include="orchestrion.dll;
+                Include="OrchestrionLocal.dll;
                         NAudio.dll;
                         NAudio.Core.dll;
                         NAudio.Asio.dll;
@@ -23,6 +23,6 @@
                         xiv_bgm_ja.csv;
                         xiv_bgm_zh.csv;
                         xiv_bgm_metadata.csv;
-                        orchestrion.json"/>
+                        OrchestrionLocal.json"/>
     </Target>    
 </Project>

@@ -57,7 +57,7 @@ jobs:
           @{ Project = "HookNamer"; InternalName = "HookNamer" },
           @{ Project = "HuntTally"; InternalName = "HuntTally" },
           @{ Project = "StackSplitter"; InternalName = "StackSplitter" },
-          @{ Project = "Orchestrion"; InternalName = "orchestrion" },
+          @{ Project = "Orchestrion"; InternalName = "OrchestrionLocal" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 
