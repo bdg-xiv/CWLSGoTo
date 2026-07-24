@@ -198,27 +198,56 @@ public partial class MainWindow : Window, IDisposable
 	private void DrawFooter()
 	{
 		var song = GetSelectedSongForTab();
-		
+		var selected = GetSelectedSongsForTab();
+		var targetPlaylist = PlaylistManager.CurrentPlaylist ?? _selectedPlaylist;
+
 		var width = ImGui.GetContentRegionAvail().X - ImGui.GetStyle().WindowPadding.X;
 		var stopText = Loc.Localize("Stop", "Stop");
 		var playText = Loc.Localize("Play", "Play");
+		var addText = targetPlaylist == null
+			? Loc.Localize("AddToNoPlaylist", "Add to...")
+			: selected.Count > 1
+				? string.Format(Loc.Localize("AddCountToPlaylist", "Add {0} to {1}"), selected.Count, targetPlaylist.Name)
+				: string.Format(Loc.Localize("AddToPlaylist", "Add to {0}"), targetPlaylist.Name);
 		var buttonHeight = ImGui.CalcTextSize(stopText).Y + ImGui.GetStyle().FramePadding.Y * 2f;
 
 		ImGui.SetCursorPosY(ImGui.GetWindowSize().Y - buttonHeight - ImGui.GetStyle().WindowPadding.Y);
 
 		ImGui.BeginDisabled(BGMManager.PlayingSongId == 0);
-		if (ImGui.Button(stopText, new Vector2(width / 2, buttonHeight)))
+		if (ImGui.Button(stopText, new Vector2(width / 3, buttonHeight)))
 			BGMManager.Stop();
 		ImGui.EndDisabled();
 
 		ImGui.SameLine();
 
 		ImGui.BeginDisabled(!song.FileExists);
-		if (ImGui.Button(playText, new Vector2(width / 2, buttonHeight)))
+		if (ImGui.Button(playText, new Vector2(width / 3, buttonHeight)))
 			BGMManager.Play(song.Id);
 		ImGui.EndDisabled();
 		if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
 			BgmTooltip.DrawBgmTooltip(song);
+
+		ImGui.SameLine();
+
+		ImGui.BeginDisabled(targetPlaylist == null || selected.Count == 0);
+		if (ImGui.Button(addText, new Vector2(width / 3, buttonHeight)))
+			targetPlaylist.AddSongs(selected.Select(s => s.Id));
+		ImGui.EndDisabled();
+		if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+			ImGui.SetTooltip(targetPlaylist == null
+				? Loc.Localize("AddToPlaylistNoneTooltip", "Select a playlist in the Playlists tab first")
+				: string.Format(Loc.Localize("AddToPlaylistTooltip",
+					"Add the selected song(s) to \"{0}\" (the playing playlist, or the one selected in the Playlists tab).\nCtrl/Shift-click to select multiple songs."), targetPlaylist.Name));
+	}
+
+	private List<Song> GetSelectedSongsForTab()
+	{
+		return _currentTab switch
+		{
+			TabType.AllSongs => _mainSongList.GetSelectedSongs(),
+			TabType.History => _historySongList.GetSelectedSongs(),
+			_ => new List<Song>(),
+		};
 	}
 	
 	private Song GetSelectedSongForTab()

@@ -13,6 +13,10 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.6:
+  New "Add to <playlist>" button in the All Songs / History footer: adds the selected
+  song(s) to the playing playlist, or the one selected in the Playlists tab. Supports
+  Ctrl/Shift multi-select.
   2.3.0.5:
   New fist button in the player/mini player: moves the current song out of the playing
   playlist into the combat playlist and skips to the next.

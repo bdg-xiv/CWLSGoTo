@@ -47,7 +47,11 @@ public class RenderableSongList
 
 	public List<Song> GetSelectedSongs()
 	{
-		return _selected.Select(index => _listSource[index]).Select(entry => SongList.Instance.GetSong(entry.Id)).ToList();
+		return _selected
+			.Where(index => index >= 0 && index < _listSource.Count)
+			.Select(index => _listSource[index])
+			.Select(entry => SongList.Instance.GetSong(entry.Id))
+			.ToList();
 	}
 
 	public Song GetFirstSelectedSong()
