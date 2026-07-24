@@ -650,14 +650,14 @@ public sealed class Plugin : IDalamudPlugin
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Assumes full triple trains: both A ranks in every zone,\nso 12 kills per expansion leg and 36 in total per triple.\nThe ETA below uses your recorded pace instead.");
 
-        DrawPaceLine(targets.Select(t => (t.Id, t.Remaining)).ToList(), OverallA, "A");
+        DrawPaceLine(targets.Select(t => (t.Id, t.Label, t.Remaining)).ToList(), OverallA, "A");
     }
 
     /// <summary>The S-rank counterpart: no train math (there are no S trains), just
     /// the kill remainders and the recorded-pace ETA.</summary>
     private void DrawSEstimate(Dictionary<uint, CachedProgress> cache)
     {
-        var targets = new List<(uint Id, long Remaining)>();
+        var targets = new List<(uint Id, string Label, long Remaining)>();
         var parts = new List<string>();
         long expansionSum = 0;
         long? overallRemaining = null;
@@ -668,7 +668,7 @@ public sealed class Plugin : IDalamudPlugin
                 || progress.Max == 0 || progress.Current >= progress.Max)
                 continue;
             var remaining = (long)progress.Max - progress.Current;
-            targets.Add((id, remaining));
+            targets.Add((id, label, remaining));
             if (id == OverallS)
                 overallRemaining = remaining;
             else
@@ -697,7 +697,7 @@ public sealed class Plugin : IDalamudPlugin
     /// it includes Bring Your S Game V's 2,000 rather than VI's 5,000).</summary>
     private void DrawMountSEstimate(Dictionary<uint, CachedProgress> cache)
     {
-        var targets = new List<(uint Id, long Remaining)>();
+        var targets = new List<(uint Id, string Label, long Remaining)>();
         var parts = new List<string>();
         var byId = Tracked.ToDictionary(a => a.Id);
 
@@ -714,7 +714,7 @@ public sealed class Plugin : IDalamudPlugin
                 if (!cache.TryGetValue(requirementId, out var progress) || progress.Max == 0 || progress.Current >= progress.Max)
                     continue;
 
-                targets.Add((requirementId, (long)progress.Max - progress.Current));
+                targets.Add((requirementId, ShortExpansion(requirement.Expansion), (long)progress.Max - progress.Current));
                 parts.Add($"{ShortExpansion(requirement.Expansion)} {progress.Max - progress.Current:N0}");
             }
         }
@@ -739,17 +739,21 @@ public sealed class Plugin : IDalamudPlugin
         _ => "overall",
     };
 
-    private void DrawPaceLine(List<(uint Id, long Remaining)> targets, uint overallId, string rank)
+    private void DrawPaceLine(List<(uint Id, string Label, long Remaining)> targets, uint overallId, string rank)
     {
         double? worstDays = null;
-        foreach (var (id, remaining) in targets)
+        var worstLabel = "";
+        foreach (var (id, label, remaining) in targets)
         {
             var pace = PacePerDay(id);
             if (pace == null)
                 continue;
             var days = remaining / pace.Value;
             if (worstDays == null || days > worstDays)
+            {
                 worstDays = days;
+                worstLabel = label;
+            }
         }
 
         if (worstDays == null)
@@ -762,7 +766,9 @@ public sealed class Plugin : IDalamudPlugin
         var paceNote = overallPace != null ? $" ({overallPace:N0} {rank} kills/day)" : "";
         var finish = DateTime.Now.AddDays(worstDays.Value);
         ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f),
-            $"At your recent pace{paceNote}: about {Math.Ceiling(worstDays.Value):N0} days left - finishing around {finish:d MMM yyyy}.");
+            $"At your recent pace{paceNote}: about {Math.Ceiling(worstDays.Value):N0} days left (slowest: {worstLabel}) - finishing around {finish:d MMM yyyy}.");
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("The counters progress in parallel (each only advances with kills in\nits own expansion), so the finish date is set by the slowest one -\nlines sharing the same slowest requirement share the same date.");
     }
 
     private static int RankOrder(string rank) => rank switch
