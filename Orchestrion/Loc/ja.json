@@ -1,0 +1,462 @@
+{
+  "HelpMessage": {
+    "message": "Orchestrionウィンドウを表示し、ゲーム内のBGMを表示、変更、停止します。",
+    "description": "OrchestrionPlugin..ctor"
+  },
+  "MustSpecifySong": {
+    "message": "再生する曲を指定する必要があります。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "NoPlaylistPlaying": {
+    "message": "再生中のプレイリストはありません",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "NoShuffleModeSpecified": {
+    "message": "シャッフルモードを指定してください。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "NoRepeatModeSpecified": {
+    "message": "リピートモードを指定してください。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "SongIdNotFound": {
+    "message": "曲ID {0} が見つかりません。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "InvalidMode": {
+    "message": "指定されたモードは無効です。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "InvalidDDModeCommand": {
+    "message": "無効なDDモードコマンド <i>{0}</i>.",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "PlaylistNotFound": {
+    "message": "プレイリスト <i>{0}</i> が見つかりません。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "SongNameNotFound": {
+    "message": "曲 <i>{0}</i> が見つかりません。",
+    "description": "OrchestrionPlugin.HandlePlayBySongName"
+  },
+  "HelpColon": {
+    "message": "ヘルプ:",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "GeneralCommandsColon": {
+    "message": "全般的なコマンド:",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpDisplayThisMessage": {
+    "message": "このメッセージを表示する",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpOpenOrchestrionWindow": {
+    "message": "Orchestrionウィンドウを開く",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaySongWithId": {
+    "message": "指定されたIDの曲を再生する",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaySongWithName": {
+    "message": "指定した曲名の曲を再生する (英語と日本語の両方の曲名が使用できます)",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayRandomSong": {
+    "message": "ランダムに曲を再生",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpStopSong": {
+    "message": "再生中の曲、置換曲、プレイリスト、DDモードを停止します。",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpDDModeStart": {
+    "message": "ディープダンジョンモードを有効にする: ゲーム内のBGM変更ごとに、BGMをランダムに再生します。",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpDDModeStartPlaylist": {
+    "message": "ディープダンジョンモードを有効にする： ゲーム中のBGMが変わるたびに、指定したプレイリストの中からランダムにBGMを再生します。",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpDDModeStop": {
+    "message": "ディープダンジョンモードを無効にします。",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "PlaylistCommandsColon": {
+    "message": "プレイリストのコマンド：",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayRandomSongFromPlaylist": {
+    "message": "指定されたプレイリストからランダムな曲を再生します (プレイリストは開始しません)",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayPlaylist": {
+    "message": "現在の設定で指定したプレイリストを再生する",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayPlaylistShuffle": {
+    "message": "指定したプレイリストを再生し、プレイリストの設定をシャッフルに変更する",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayPlaylistRepeat": {
+    "message": "指定したプレイリストを再生し、プレイリストの設定を「すべて繰り返す」に変更する",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaylistShuffle": {
+    "message": "現在のプレイリストをシャッフルモードに設定する",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaylistRepeat": {
+    "message": "現在のプレイリストを指定したリピートモードに設定する",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaylistNext": {
+    "message": "現在のプレイリストの次の曲を再生する",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaylistPrevious": {
+    "message": "現在のプレイリストの前の曲を再生する",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "NowPlayingEcho": {
+    "message": "<i>{0}</i> を再生中。",
+    "description": "OrchestrionPlugin.UpdateChat"
+  },
+  "CreateNewPlaylist": {
+    "message": "新規プレイリストを作成",
+    "description": "NewPlaylistModal.Draw"
+  },
+  "EnterPlaylistNameColon": {
+    "message": "プレイリストの名前を入力してください：",
+    "description": "NewPlaylistModal.Draw"
+  },
+  "Create": {
+    "message": "作成する",
+    "description": "NewPlaylistModal.Draw"
+  },
+  "Cancel": {
+    "message": "キャンセル",
+    "description": "NewPlaylistModal.Draw"
+  },
+  "GeneralSettings": {
+    "message": "全般設定",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowSongTitleBar": {
+    "message": "プレーヤーのタイトルバーに現在の曲を表示する",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowNowPlayingChat": {
+    "message": "現在の曲が変更されたときにゲームチャットに「再生中」メッセージを表示する",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowSongServerInfo": {
+    "message": "Dalamud設定の“サーバー情報バー”に現在の曲を表示する",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowSongIdServerInfo": {
+    "message": "Dalamud設定の“サーバー情報バー”に現在の曲のIDを表示する",
+    "description": "SettingsWindow.Draw"
+  },
+  "HandleSpecialModes": {
+    "message": "Handle special \"in-combat\" and mount movement BGM modes",
+    "description": "SettingsWindow.Draw"
+  },
+  "AudioStreamingDisabledWarning": {
+    "message": "音声ストリーミングが無効になっています。これはサウンドフィルターまたはサードパーティのプラグインが原因かもしれません。上記の設定が期待通りに機能せず、音が途切れたり、トラックがチャンネルを入れ替えないなど、他のオーディオの問題が発生することがあります。これはOrchestrionプラグインとは関係ありません。",
+    "description": "SettingsWindow.Draw"
+  },
+  "UseDalamudChannelSetting": {
+    "message": "Dalamudの設定で選択されたチャットチャンネルをOrchestrionプラグインのチャットメッセージに使用する (デフォルト)",
+    "description": "SettingsWindow.Draw"
+  },
+  "ChatChannelSetting": {
+    "message": "Orchestrionプラグインが使用するチャットチャンネル",
+    "description": "SettingsWindow.Draw"
+  },
+  "LocSettings": {
+    "message": "ローカライズ設定",
+    "description": "SettingsWindow.Draw"
+  },
+  "UseDalamudLanguageSetting": {
+    "message": "DalamudのOrchestrionプラグインのUI設定で選択された言語を使用する",
+    "description": "SettingsWindow.Draw"
+  },
+  "UILanguageSetting": {
+    "message": "OrchestrionプラグインのUIに使用される言語",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowAltLangTitles": {
+    "message": "ツールチップに別の言語の曲名を表示する",
+    "description": "SettingsWindow.Draw"
+  },
+  "AltLangLanguageSetting": {
+    "message": "ツールチップの楽曲タイトル用の言語",
+    "description": "SettingsWindow.Draw"
+  },
+  "ServerInfoLanguageSetting": {
+    "message": "Dalamud設定の“サーバー情報バー”に表示される、曲のタイトルに使用される言語",
+    "description": "SettingsWindow.Draw"
+  },
+  "ChatMessageLanguageSetting": {
+    "message": "ゲーム内チャットに表示される曲名に使用される言語",
+    "description": "SettingsWindow.Draw"
+  },
+  "MiniPlayerSettings": {
+    "message": "ミニプレーヤー設定",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowMiniPlayer": {
+    "message": "ミニプレーヤーを表示",
+    "description": "SettingsWindow.Draw"
+  },
+  "LockMiniPlayer": {
+    "message": "ミニプレーヤーをロックする",
+    "description": "SettingsWindow.Draw"
+  },
+  "MiniPlayerOpacity": {
+    "message": "ミニプレーヤーの不透明度",
+    "description": "SettingsWindow.Draw"
+  },
+  "DDModeDescription": {
+    "message": "ディープダンジョンモードは、トラックが変更されるたびに、「すべての楽曲」または指定されたプレイリストからランダムなトラックを再生する機能です。",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "DDPlaylistAll": {
+    "message": "すべての曲",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "DDPlaylist": {
+    "message": "プレイリスト",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "DDModeStart": {
+    "message": "ディープダンジョンモードを開始",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "DDModeEnd": {
+    "message": "ディープダンジョンモードを停止",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "NoPlaylistSelected": {
+    "message": "プレイリストが選択されていません",
+    "description": "MainWindow.DrawPlaylistSongs"
+  },
+  "SelectAPlaylist": {
+    "message": "プレイリストを選択する",
+    "description": "MainWindow.DrawPlaylistSongs"
+  },
+  "Play": {
+    "message": "再生",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "Repeat": {
+    "message": "リピート再生",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "Shuffle": {
+    "message": "シャッフル再生",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "ClickAgainDelete": {
+    "message": "もう一度クリックして削除を確定する",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "Delete": {
+    "message": "削除",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "NewPlaylistEllipsis": {
+    "message": "プレイリストの新規作成",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "Playlists": {
+    "message": "プレイリスト",
+    "description": "MainWindow.DrawPlaylistPaneButton"
+  },
+  "ReplaceWith": {
+    "message": "以下の曲に置き換え",
+    "description": "MainWindow.DrawReplacementList"
+  },
+  "Edit": {
+    "message": "編集",
+    "description": "MainWindow.DrawReplacementList"
+  },
+  "TargetSong": {
+    "message": "対象の曲",
+    "description": "MainWindow.DrawCurrentReplacement"
+  },
+  "ReplacementSong": {
+    "message": "置き換える曲",
+    "description": "MainWindow.DrawCurrentReplacement"
+  },
+  "AddReplacement": {
+    "message": "曲の置換を追加",
+    "description": "MainWindow.DrawCurrentReplacement"
+  },
+  "SearchColon": {
+    "message": "検索",
+    "description": "MainWindow.Draw"
+  },
+  "AllSongs": {
+    "message": "すべての曲",
+    "description": "MainWindow.Draw"
+  },
+  "History": {
+    "message": "履歴",
+    "description": "MainWindow.Draw"
+  },
+  "Replacements": {
+    "message": "置き換え",
+    "description": "MainWindow.Draw"
+  },
+  "DDMode": {
+    "message": "DDモード",
+    "description": "MainWindow.Draw"
+  },
+  "Stop": {
+    "message": "停止",
+    "description": "MainWindow.DrawFooter"
+  },
+  "NoChange": {
+    "message": "BGMを変更しない",
+    "description": "MainWindow..cctor"
+  },
+  "SecondsAgo": {
+    "message": "{0}秒前",
+    "description": "MainWindow..cctor"
+  },
+  "MinutesAgo": {
+    "message": "{0} 分前",
+    "description": "MainWindow..cctor"
+  },
+  "SongInfo": {
+    "message": "曲の詳細",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "TitleColon": {
+    "message": "曲名： ",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "AlternateTitleColon": {
+    "message": "別の曲名 ",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "SpecialModeTitleColon": {
+    "message": "スペシャルモードの曲名: ",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "LocationColon": {
+    "message": "場所： ",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "Unknown": {
+    "message": "不明",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "InfoColon": {
+    "message": "情報: ",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "DurationColon": {
+    "message": "時間: ",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "SongNotFound": {
+    "message": "この曲は使用できません。トラックは現在のゲームファイルに存在しません。",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "FilePathColon": {
+    "message": "ファイルパス: ",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "None": {
+    "message": "なし",
+    "description": "Player.Draw"
+  },
+  "FromPlaylist": {
+    "message": "{0} から:",
+    "description": "Player.Draw"
+  },
+  "PopOutMiniPlayer": {
+    "message": "Orchestrionウィンドウからミニプレーヤーをポップアップさせる",
+    "description": "Player.Draw"
+  },
+  "PopInMiniPlayer": {
+    "message": "ミニプレーヤーをOrchestrionウィンドウに戻す",
+    "description": "Player.Draw"
+  },
+  "RepeatOne": {
+    "message": "繰り返し：現在の曲を繰り返す",
+    "description": "Player.Draw"
+  },
+  "RepeatAll": {
+    "message": "すべてを繰り返す：現在のプレイリストを繰り返す",
+    "description": "Player.Draw"
+  },
+  "RepeatOnce": {
+    "message": "1周再生：現在のプレイリスト全体を一度だけ再生する",
+    "description": "Player.Draw"
+  },
+  "ShuffleOff": {
+    "message": "シャッフルオフ: 曲を順番に再生する",
+    "description": "Player.Draw"
+  },
+  "ShuffleOn": {
+    "message": "シャッフルオン：ランダムに曲を再生する",
+    "description": "Player.Draw"
+  },
+  "AddTo": {
+    "message": "追加",
+    "description": "RenderableSongList.DrawPlaylistAddSubmenu"
+  },
+  "SongId": {
+    "message": "曲のID",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongTitle": {
+    "message": "曲名",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongAltTitle": {
+    "message": "曲の別名タイトル",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongSpcModeTitle": {
+    "message": "スペシャルモードの曲名",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongLocation": {
+    "message": "曲の場所",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongAdditionalInfo": {
+    "message": "曲の追加情報",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "Duration": {
+    "message": "時間",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongFilePath": {
+    "message": "曲ファイルのパス",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "All": {
+    "message": "すべて",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "Copy": {
+    "message": "コピー",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "RemoveSelected": {
+    "message": "{0} 曲を削除する",
+    "description": "RenderableSongList.DrawRemoveSubmenu"
+  },
+  "NoPossibleSongs": {
+    "message": "曲が見つかりませんでした。",
+    "description": "BGMManager.PlayRandomSong"
+  }
+}

@@ -1,0 +1,80 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <PluginVersion>2.3.0.2</PluginVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AssemblyName>orchestrion</AssemblyName>
+    <AssemblyTitle>orchestrion</AssemblyTitle>
+    <Product>orchestrion</Product>
+    <Authors>Meli, perchbird, bdg</Authors>
+    <Copyright>Copyright ©  2021</Copyright>
+    <Version>$(PluginVersion)</Version>
+    <FileVersion>$(PluginVersion)</FileVersion>
+    <AssemblyVersion>$(PluginVersion)</AssemblyVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="CheapLoc">
+      <HintPath>$(DalamudLibPath)CheapLoc.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="NAudio.Vorbis" Version="1.5.0" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <ContentWithTargetPath Include="Data\xiv_bgm_en.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>xiv_bgm_en.csv</TargetPath>
+    </ContentWithTargetPath>
+    <ContentWithTargetPath Include="Data\xiv_bgm_de.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>xiv_bgm_de.csv</TargetPath>
+    </ContentWithTargetPath>
+    <ContentWithTargetPath Include="Data\xiv_bgm_fr.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>xiv_bgm_fr.csv</TargetPath>
+    </ContentWithTargetPath>
+    <ContentWithTargetPath Include="Data\xiv_bgm_ja.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>xiv_bgm_ja.csv</TargetPath>
+    </ContentWithTargetPath>
+    <ContentWithTargetPath Include="Data\xiv_bgm_zh.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>xiv_bgm_zh.csv</TargetPath>
+    </ContentWithTargetPath>
+    <ContentWithTargetPath Include="Data\xiv_bgm_metadata.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>xiv_bgm_metadata.csv</TargetPath>
+    </ContentWithTargetPath>
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Folder Include="UI\" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <None Remove="Loc\de.json" />
+    <EmbeddedResource Include="Loc\de.json" />
+    <None Remove="Loc\en.json" />
+    <EmbeddedResource Include="Loc\en.json" />
+    <None Remove="Loc\es.json" />
+    <EmbeddedResource Include="Loc\es.json" />
+    <None Remove="Loc\fr.json" />
+    <EmbeddedResource Include="Loc\fr.json" />
+    <None Remove="Loc\it.json" />
+    <EmbeddedResource Include="Loc\it.json" />
+    <None Remove="Loc\ja.json" />
+    <EmbeddedResource Include="Loc\ja.json" />
+    <None Remove="Loc\zh.json" />
+    <EmbeddedResource Include="Loc\zh.json" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Update="DalamudPackager" Version="15.0.0" />
+  </ItemGroup>
+</Project>

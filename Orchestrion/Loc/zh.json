@@ -1,0 +1,462 @@
+{
+  "HelpMessage": {
+    "message": "显示 Orchestrion 界面，以查看，改变，或者停止游戏内BGM",
+    "description": "OrchestrionPlugin..ctor"
+  },
+  "MustSpecifySong": {
+    "message": "你必须选定一章乐谱才能播放。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "NoPlaylistPlaying": {
+    "message": "当前没有播放列表。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "NoShuffleModeSpecified": {
+    "message": "请指定一个随机播放模式。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "NoRepeatModeSpecified": {
+    "message": "请指定一个重复播放模式。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "SongIdNotFound": {
+    "message": "未找到ID为 {0} 的乐谱。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "InvalidMode": {
+    "message": "指定的模式无效。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "InvalidDDModeCommand": {
+    "message": "无效的深层迷宫模式命令 <i>{0}</i> 。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "PlaylistNotFound": {
+    "message": "未找到播放列表 <i>{0}</i> 。",
+    "description": "OrchestrionPlugin.OnCommand"
+  },
+  "SongNameNotFound": {
+    "message": "未找到乐谱 <i>{0}</i> 。",
+    "description": "OrchestrionPlugin.HandlePlayBySongName"
+  },
+  "HelpColon": {
+    "message": "帮助：",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "GeneralCommandsColon": {
+    "message": "一般命令：",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpDisplayThisMessage": {
+    "message": "显示此消息",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpOpenOrchestrionWindow": {
+    "message": "打开 Orchestrion 界面",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaySongWithId": {
+    "message": "播放指定ID的乐谱",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaySongWithName": {
+    "message": "播放指定名称的乐谱 (英语与日语名称都有效)",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayRandomSong": {
+    "message": "随机播放一章乐谱",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpStopSong": {
+    "message": "停止正在播放的乐谱，替换的乐谱，播放列表，或者深层迷宫模式。",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpDDModeStart": {
+    "message": "启用深层迷宫模式：每次游戏中的BGM改变时，将BGM替换为随机乐谱",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpDDModeStartPlaylist": {
+    "message": "启用深层迷宫模式：每次游戏中的BGM更改时，将BGM替换为指定播放列表中的随机乐谱",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpDDModeStop": {
+    "message": "禁用深层迷宫模式。",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "PlaylistCommandsColon": {
+    "message": "播放列表命令:",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayRandomSongFromPlaylist": {
+    "message": "播放指定播放列表中的随机歌曲(并非播放此列表)",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayPlaylist": {
+    "message": "以其当前设置播放指定的播放列表",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayPlaylistShuffle": {
+    "message": "播放指定的播放列表，并将播放列表的设置更改为随机播放",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlayPlaylistRepeat": {
+    "message": "播放指定的播放列表，将播放列表的设置更改为列表循环",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaylistShuffle": {
+    "message": "将当前播放列表设置为指定的随机播放模式",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaylistRepeat": {
+    "message": "将当前播放列表设置为指定的重复模式",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaylistNext": {
+    "message": "播放当前播放列表中的下一章乐谱",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "HelpPlaylistPrevious": {
+    "message": "播放当前播放列表中的上一章乐谱",
+    "description": "OrchestrionPlugin.PrintHelp"
+  },
+  "NowPlayingEcho": {
+    "message": "正在播放 <i>{0}</i>。",
+    "description": "OrchestrionPlugin.UpdateChat"
+  },
+  "CreateNewPlaylist": {
+    "message": "创建新播放列表",
+    "description": "NewPlaylistModal.Draw"
+  },
+  "EnterPlaylistNameColon": {
+    "message": "为你的播放列表命名:",
+    "description": "NewPlaylistModal.Draw"
+  },
+  "Create": {
+    "message": "创建",
+    "description": "NewPlaylistModal.Draw"
+  },
+  "Cancel": {
+    "message": "取消",
+    "description": "NewPlaylistModal.Draw"
+  },
+  "GeneralSettings": {
+    "message": "一般设置",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowSongTitleBar": {
+    "message": "在播放器标题栏显示当前播放的乐谱",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowNowPlayingChat": {
+    "message": "在当前播放的乐谱更换时，在消息窗口发送一条提示",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowSongServerInfo": {
+    "message": "在服务器信息栏显示当前播放的乐谱",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowSongIdServerInfo": {
+    "message": "在服务器信息栏显示当前播放乐谱的ID",
+    "description": "SettingsWindow.Draw"
+  },
+  "HandleSpecialModes": {
+    "message": "显示战斗音乐与坐骑音乐的乐谱",
+    "description": "SettingsWindow.Draw"
+  },
+  "AudioStreamingDisabledWarning": {
+    "message": "音频流被禁用。这可能是由声音滤波器或者第三方插件所引起的。上述设置可能无法像预计的那样执行，您可能会遇到其他音频问题，例如爆音或音轨不交换信道。这与 Orchestrion 插件无关。",
+    "description": "SettingsWindow.Draw"
+  },
+  "UseDalamudChannelSetting": {
+    "message": "Use the chat channel selected in Dalamud's settings for Orchestrion's chat messages (default)",
+    "description": "SettingsWindow.Draw"
+  },
+  "ChatChannelSetting": {
+    "message": "Chat channel used for Orchestrion messages",
+    "description": "SettingsWindow.Draw"
+  },
+  "LocSettings": {
+    "message": "本地化设置",
+    "description": "SettingsWindow.Draw"
+  },
+  "UseDalamudLanguageSetting": {
+    "message": "Use the language selected in Dalamud's settings for the Orchestrion Plugin's UI",
+    "description": "SettingsWindow.Draw"
+  },
+  "UILanguageSetting": {
+    "message": "Language used for the Orchestrion Plugin's UI",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowAltLangTitles": {
+    "message": "在提示中显示相应语言的乐谱名称",
+    "description": "SettingsWindow.Draw"
+  },
+  "AltLangLanguageSetting": {
+    "message": "Alternate language for song titles in tooltips",
+    "description": "SettingsWindow.Draw"
+  },
+  "ServerInfoLanguageSetting": {
+    "message": "Language used for song titles in the \"server info\" UI element in-game",
+    "description": "SettingsWindow.Draw"
+  },
+  "ChatMessageLanguageSetting": {
+    "message": "Language used for song titles in Orchestrion chat messages in-game",
+    "description": "SettingsWindow.Draw"
+  },
+  "MiniPlayerSettings": {
+    "message": "迷你播放器设置",
+    "description": "SettingsWindow.Draw"
+  },
+  "ShowMiniPlayer": {
+    "message": "显示迷你播放器界面",
+    "description": "SettingsWindow.Draw"
+  },
+  "LockMiniPlayer": {
+    "message": "锁定迷你播放器界面",
+    "description": "SettingsWindow.Draw"
+  },
+  "MiniPlayerOpacity": {
+    "message": "迷你播放器不透明度",
+    "description": "SettingsWindow.Draw"
+  },
+  "DDModeDescription": {
+    "message": "深层迷宫模式会在切换乐谱时从所有乐谱中或者指定的播放列表中随机播放乐谱。",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "DDPlaylistAll": {
+    "message": "所有乐谱",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "DDPlaylist": {
+    "message": "播放列表",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "DDModeStart": {
+    "message": "开启深层迷宫模式",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "DDModeEnd": {
+    "message": "关闭深层迷宫模式",
+    "description": "MainWindow.DrawDeepDungeonModeSelector"
+  },
+  "NoPlaylistSelected": {
+    "message": "没有选择播放列表",
+    "description": "MainWindow.DrawPlaylistSongs"
+  },
+  "SelectAPlaylist": {
+    "message": "选择一个播放列表。",
+    "description": "MainWindow.DrawPlaylistSongs"
+  },
+  "Play": {
+    "message": "播放",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "Repeat": {
+    "message": "重复",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "Shuffle": {
+    "message": "随机",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "ClickAgainDelete": {
+    "message": "再次点击确认删除",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "Delete": {
+    "message": "删除",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "NewPlaylistEllipsis": {
+    "message": "新播放列表...",
+    "description": "MainWindow.DrawPlaylistPane"
+  },
+  "Playlists": {
+    "message": "播放列表",
+    "description": "MainWindow.DrawPlaylistPaneButton"
+  },
+  "ReplaceWith": {
+    "message": "会被下面的乐谱所替换",
+    "description": "MainWindow.DrawReplacementList"
+  },
+  "Edit": {
+    "message": "编辑",
+    "description": "MainWindow.DrawReplacementList"
+  },
+  "TargetSong": {
+    "message": "目标乐谱",
+    "description": "MainWindow.DrawCurrentReplacement"
+  },
+  "ReplacementSong": {
+    "message": "替换乐谱",
+    "description": "MainWindow.DrawCurrentReplacement"
+  },
+  "AddReplacement": {
+    "message": "作为替换乐谱添加",
+    "description": "MainWindow.DrawCurrentReplacement"
+  },
+  "SearchColon": {
+    "message": "搜索：",
+    "description": "MainWindow.Draw"
+  },
+  "AllSongs": {
+    "message": "所有乐谱",
+    "description": "MainWindow.Draw"
+  },
+  "History": {
+    "message": "历史",
+    "description": "MainWindow.Draw"
+  },
+  "Replacements": {
+    "message": "替换",
+    "description": "MainWindow.Draw"
+  },
+  "DDMode": {
+    "message": "深层迷宫模式",
+    "description": "MainWindow.Draw"
+  },
+  "Stop": {
+    "message": "停止",
+    "description": "MainWindow.DrawFooter"
+  },
+  "NoChange": {
+    "message": "不更换BGM",
+    "description": "MainWindow..cctor"
+  },
+  "SecondsAgo": {
+    "message": "{0}秒钟之前",
+    "description": "MainWindow..cctor"
+  },
+  "MinutesAgo": {
+    "message": "{0}分钟之前",
+    "description": "MainWindow..cctor"
+  },
+  "SongInfo": {
+    "message": "乐谱信息",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "TitleColon": {
+    "message": "标题：",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "AlternateTitleColon": {
+    "message": "替代标题：",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "SpecialModeTitleColon": {
+    "message": "特殊模式标题：",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "LocationColon": {
+    "message": "位置：",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "Unknown": {
+    "message": "未知",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "InfoColon": {
+    "message": "信息:",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "DurationColon": {
+    "message": "持续时间:",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "SongNotFound": {
+    "message": "当前乐谱不可用；当前的游戏文件中不存在该音轨。",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "FilePathColon": {
+    "message": "文件路径:",
+    "description": "BgmTooltip.DrawBgmTooltip"
+  },
+  "None": {
+    "message": "空",
+    "description": "Player.Draw"
+  },
+  "FromPlaylist": {
+    "message": "来自播放列表：{0}",
+    "description": "Player.Draw"
+  },
+  "PopOutMiniPlayer": {
+    "message": "从 Orchestrion 界面分离出迷你播放器",
+    "description": "Player.Draw"
+  },
+  "PopInMiniPlayer": {
+    "message": "使迷你播放器回到 Orchestrion 界面",
+    "description": "Player.Draw"
+  },
+  "RepeatOne": {
+    "message": "单曲循环：重复当前乐谱",
+    "description": "Player.Draw"
+  },
+  "RepeatAll": {
+    "message": "列表循环：重复当前播放列表",
+    "description": "Player.Draw"
+  },
+  "RepeatOnce": {
+    "message": "列表播放：播放一次当前播放列表",
+    "description": "Player.Draw"
+  },
+  "ShuffleOff": {
+    "message": "随机播放关闭：按顺序播放乐谱",
+    "description": "Player.Draw"
+  },
+  "ShuffleOn": {
+    "message": "随机播放开：随机播放乐谱",
+    "description": "Player.Draw"
+  },
+  "AddTo": {
+    "message": "添加到...",
+    "description": "RenderableSongList.DrawPlaylistAddSubmenu"
+  },
+  "SongId": {
+    "message": "乐谱ID",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongTitle": {
+    "message": "乐谱标题",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongAltTitle": {
+    "message": "乐谱备选标题",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongSpcModeTitle": {
+    "message": "乐谱特殊模式标题",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongLocation": {
+    "message": "乐谱的位置",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongAdditionalInfo": {
+    "message": "乐谱额外信息",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "Duration": {
+    "message": "持续时间",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "SongFilePath": {
+    "message": "乐谱文件路径",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "All": {
+    "message": "所有",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "Copy": {
+    "message": "复制",
+    "description": "RenderableSongList.DrawCopyContentSubmenu"
+  },
+  "RemoveSelected": {
+    "message": "移除了 {0} 章乐谱",
+    "description": "RenderableSongList.DrawRemoveSubmenu"
+  },
+  "NoPossibleSongs": {
+    "message": "未找到符合条件的乐谱。",
+    "description": "BGMManager.PlayRandomSong"
+  }
+}

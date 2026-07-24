@@ -1,0 +1,28 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project>
+    <Target Name="PackagePlugin" AfterTargets="Build">
+        <DalamudPackager
+                AssemblyName="$(AssemblyName)"
+                OutputPath="$(OutputPath)"
+                ProjectDir="$(ProjectDir)"
+                ManifestType="yaml"
+                MakeZip="true"
+                Include="orchestrion.dll;
+                        NAudio.dll;
+                        NAudio.Core.dll;
+                        NAudio.Asio.dll;
+                        NAudio.Midi.dll;
+                        NAudio.Wasapi.dll;
+                        NAudio.WinForms.dll;
+                        NAudio.WinMM.dll;
+                        NAudio.Vorbis.dll;
+                        NVorbis.dll;
+                        xiv_bgm_en.csv;
+                        xiv_bgm_de.csv;
+                        xiv_bgm_fr.csv;
+                        xiv_bgm_ja.csv;
+                        xiv_bgm_zh.csv;
+                        xiv_bgm_metadata.csv;
+                        orchestrion.json"/>
+    </Target>    
+</Project>
