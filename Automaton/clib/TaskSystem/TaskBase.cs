@@ -294,18 +294,6 @@ public abstract class TaskBase : AutoTask {
                     }
                 }
 
-                // patched: the teleport cast is silently dropped while mounted or flying,
-                // which used to burn every retry on casts that could never start. Land
-                // and dismount first; Dismount is bounded, so a failed landing still
-                // falls through to the retry counter instead of hanging here.
-                if (Player.Mounted) {
-                    Status = $"Dismounting before teleporting to {destinationName}";
-                    await Dismount();
-                    Status = $"Teleporting to {destinationName}";
-                    if (Player.Mounted)
-                        Warning($"Still mounted going into teleport attempt {teleportAttempts + 1}; the cast will likely not start");
-                }
-
                 // patched from upstream: never stay stuck in the teleporting state. If it
                 // keeps failing (e.g. the game reports another teleport already underway),
                 // give up and let the caller re-evaluate and try again later.
