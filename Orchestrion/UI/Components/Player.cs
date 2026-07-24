@@ -87,6 +87,7 @@ public static class Player
 		var backSize = ImGui.CalcTextSize(FontAwesomeIcon.StepBackward.ToIconString());
 		var middleItemSize = ImGui.CalcTextSize(middleButton.ToIconString());
 		var forwardSize = ImGui.CalcTextSize(FontAwesomeIcon.StepForward.ToIconString());
+		var removeSize = ImGui.CalcTextSize(FontAwesomeIcon.TrashAlt.ToIconString());
 		ImGui.PopFont();
 
 		var buttonPaddingWidth = ImGui.GetStyle().FramePadding.X;
@@ -94,7 +95,8 @@ public static class Player
 
 		// We get two sides of two buttons and one side of another on each side = 5
 		var spacingWidth = buttonPaddingWidth * 5 + buttonSpacingWidth * 2;
-		var buttonTotalWidth = repeatSize.X + backSize.X + middleItemSize.X + forwardSize.X + shuffleSize.X + spacingWidth * 2;
+		var buttonTotalWidth = repeatSize.X + backSize.X + middleItemSize.X + forwardSize.X + shuffleSize.X + spacingWidth * 2
+		                       + removeSize.X + buttonPaddingWidth * 2 + buttonSpacingWidth;
 		var buttonsStartX = (avail - buttonTotalWidth) / 2;
 		
 		// ImGui.Text($"spacingWidth: {spacingWidth} buttonTotalWidth: {buttonTotalWidth} avail: {avail} buttonsStartX: {buttonsStartX}");
@@ -152,6 +154,13 @@ public static class Player
 			};
 			ImGui.SetTooltip(text);
 		}
+		ImGui.SameLine();
+		if (ImGuiComponents.IconButton($"##orch_removecurrent", FontAwesomeIcon.TrashAlt))
+		{
+			PlaylistManager.RemoveCurrentAndSkip();
+		}
+		if (ImGui.IsItemHovered())
+			ImGui.SetTooltip(Loc.Localize("RemoveCurrentSong", "Remove this song from the playlist and skip to the next"));
 		ImGui.EndDisabled();
 
 		// Draw times

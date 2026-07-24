@@ -105,6 +105,32 @@ public static class PlaylistManager
 		}
 	}
 	
+	/// <summary>Removes the currently playing song from the current playlist and advances.</summary>
+	public static void RemoveCurrentAndSkip()
+	{
+		var playlist = CurrentPlaylist;
+		if (!IsPlaying || playlist == null) return;
+
+		var index = _currentSongIndex;
+		if (index >= 0 && index < playlist.Songs.Count)
+			playlist.RemoveSong(index);
+
+		ResetHistory();
+
+		if (playlist.Songs.Count == 0)
+		{
+			Stop();
+			return;
+		}
+
+		// Aim the index so the advance lands on the song that slid into the removed
+		// slot; shuffle and repeat modes still follow their own rules in GetNextSong.
+		_currentSongIndex = playlist.RepeatMode == RepeatMode.One
+			? index % playlist.Songs.Count
+			: index - 1;
+		BeginTrack(GetNextSong());
+	}
+
 	public static void Stop()
 	{
 		BGMManager.Stop();

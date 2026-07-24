@@ -198,8 +198,16 @@ public partial class MainWindow
 			ImGui.EndTable();
 		}
 		
-		if (ImGui.Button(Loc.Localize("NewPlaylistEllipsis", "New playlist..."), ImGuiHelpers.ScaledVector2(-1f, 0f)))
+		var halfWidth = (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) / 2;
+		if (ImGui.Button(Loc.Localize("NewPlaylistEllipsis", "New playlist..."), new Vector2(halfWidth, 0f)))
 			NewPlaylistModal.Instance.Show(new List<int>());
+		ImGui.SameLine();
+		if (ImGui.Button(Loc.Localize("EverythingPlaylist", "Everything playlist"), new Vector2(-1f, 0f)))
+			CreateEverythingPlaylist();
+		if (ImGui.IsItemHovered())
+			ImGui.SetTooltip(Loc.Localize("EverythingPlaylistTooltip",
+				"Creates an \"Everything\" playlist containing every available song, local tracks included.\n" +
+				"Clicking again only adds songs that are new since last time - songs you removed stay removed."));
 
 		// TODO: I don't know why the bottom is cut off, so I'm just going to do this and pretend it's not.
 		ImGui.Dummy(ImGuiHelpers.ScaledVector2(-1f, 26f));
@@ -215,6 +223,34 @@ public partial class MainWindow
 			Configuration.Instance.DeletePlaylist(_playlistToDelete);
 			_playlistToDelete = string.Empty;
 		}
+	}
+
+	private void CreateEverythingPlaylist()
+	{
+		var config = Configuration.Instance;
+		// Skip unavailable songs and the silent "None" track (BGM 1).
+		var all = SongList.Instance.GetSongs().Values
+			.Where(s => s.FileExists && s.Id != 1)
+			.Select(s => s.Id)
+			.ToList();
+
+		if (!config.Playlists.TryGetValue("Everything", out var playlist))
+		{
+			playlist = new Playlist("Everything", all.ToList());
+			config.Playlists.Add("Everything", playlist);
+		}
+		else
+		{
+			// Top up with songs never seeded before, so pruned songs stay out.
+			foreach (var id in all)
+				if (!config.EverythingPlaylistSeeded.Contains(id) && !playlist.Songs.Contains(id))
+					playlist.Songs.Add(id);
+		}
+
+		config.EverythingPlaylistSeeded.UnionWith(all);
+		config.LastSelectedPlaylist = playlist.Name;
+		config.Save();
+		RefreshPlaylist(playlist);
 	}
 
 	private void RefreshPlaylist(Playlist playlist)

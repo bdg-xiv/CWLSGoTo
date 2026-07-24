@@ -51,6 +51,10 @@ public class Configuration : IPluginConfiguration
     public Dictionary<string, int> LocalTrackIds { get; set; } = new();
     public int NextLocalTrackId { get; set; } = 100000;
 
+    // Songs ever auto-added to the "Everything" playlist; re-seeding only adds ids
+    // not in here, so songs the user pruned are not restored.
+    public HashSet<int> EverythingPlaylistSeeded { get; set; } = new();
+
     private Configuration() { }
 
     [JsonIgnore]

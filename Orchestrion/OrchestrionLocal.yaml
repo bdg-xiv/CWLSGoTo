@@ -13,6 +13,11 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.3:
+  New "Everything playlist" button in the playlist pane: one click builds an "Everything"
+  playlist with every available song (local tracks included); clicking again adds only
+  songs that are new since last time. New trash button in the player/mini player removes
+  the current song from the playing playlist and skips to the next.
   2.3.0.2:
   Local music support: scan a folder of your own audio files (mp3, ogg, wav, m4a, aac, wma, flac)
   and play them alongside game songs, including in playlists. Volume follows the in-game
