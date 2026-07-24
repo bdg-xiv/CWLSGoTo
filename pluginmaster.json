@@ -276,6 +276,30 @@
   },
   {
     "Author": "bdg",
+    "Name": "Stack Splitter",
+    "InternalName": "StackSplitter",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Adds a \"Split into stacks of 50\" entry to the right-click menu of stackable inventory items. The stack (and any other bag stacks of the same item) is split until no stack holds more than 50, leaving the remainder as the last stack.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "inventory",
+      "stack",
+      "split"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Right-click a stack to split it into stacks of 50.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/StackSplitter.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/StackSplitter.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/StackSplitter.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.25",
