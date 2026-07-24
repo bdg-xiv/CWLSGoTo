@@ -743,12 +743,18 @@ public sealed class Plugin : IDalamudPlugin
     {
         double? worstDays = null;
         var worstLabel = "";
+        var breakdown = new List<string>();
         foreach (var (id, label, remaining) in targets)
         {
             var pace = PacePerDay(id);
             if (pace == null)
+            {
+                breakdown.Add($"{label}: {remaining:N0} left, no pace data yet (not counted)");
                 continue;
+            }
+
             var days = remaining / pace.Value;
+            breakdown.Add($"{label}: {remaining:N0} left @ {pace.Value:0.#}/day = ~{Math.Ceiling(days):N0} days");
             if (worstDays == null || days > worstDays)
             {
                 worstDays = days;
@@ -768,7 +774,9 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f),
             $"At your recent pace{paceNote}: about {Math.Ceiling(worstDays.Value):N0} days left (slowest: {worstLabel}) - finishing around {finish:d MMM yyyy}.");
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("The counters progress in parallel (each only advances with kills in\nits own expansion), so the finish date is set by the slowest one -\nlines sharing the same slowest requirement share the same date.");
+            ImGui.SetTooltip("Each counter only advances with kills in its own expansion, so they run\nin parallel and the finish date is the slowest one's:\n\n"
+                + string.Join("\n", breakdown)
+                + "\n\nPaces are measured per counter from your daily snapshots and firm up\nas more days accumulate.");
     }
 
     private static int RankOrder(string rank) => rank switch
