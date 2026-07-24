@@ -75,6 +75,7 @@ public static class BGMManager
         _innController.Update();
         _bgmController.Update();
         LocalPlayer.Update();
+        CombatMusicManager.Update();
     }
     
     private static void HandleInnSongChanged(uint oldInnPlayingTrackId, uint newInnPlayingTrackId, string oldInnTrackDtrName, string newInnTrackDtrName, string newInnTrackChatName)

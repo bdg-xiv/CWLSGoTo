@@ -29,7 +29,7 @@ public class DalamudApi
     // [PluginService] public static IJobGauges JobGauges { get; private set; }
     // [PluginService] public static IKeyState KeyState { get; private set; }
     // [PluginService] public static ILibcFunction LibcFunction { get; private set; }
-    // [PluginService] public static IObjectTable ObjectTable { get; private set; }
+    [PluginService] public static IObjectTable ObjectTable { get; private set; }
     // [PluginService] public static IPartyFinderGui PartyFinderGui { get; private set; }
     // [PluginService] public static IPartyList PartyList { get; private set; }
     [PluginService] public static IPluginLog PluginLog { get; private set; }

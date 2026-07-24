@@ -13,6 +13,11 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.4:
+  Combat music: pick a playlist that takes over while you fight - triggered by any combat,
+  by hunt marks (an engaged B/A/S rank nearby), and/or by duty bosses (trials and raids
+  from the pull, dungeon bosses when the boss theme starts). The previous playlist or the
+  game BGM resumes a few seconds after the fight ends.
   2.3.0.3:
   New "Everything playlist" button in the playlist pane: one click builds an "Everything"
   playlist with every available song (local tracks included); clicking again adds only

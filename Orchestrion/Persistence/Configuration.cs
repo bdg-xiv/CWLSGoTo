@@ -55,6 +55,13 @@ public class Configuration : IPluginConfiguration
     // not in here, so songs the user pruned are not restored.
     public HashSet<int> EverythingPlaylistSeeded { get; set; } = new();
 
+    // Combat music: switch to a chosen playlist while fighting, per the triggers below.
+    public bool CombatPlaylistsEnabled { get; set; } = false;
+    public string CombatPlaylistName { get; set; } = string.Empty;
+    public bool CombatTriggerAnyCombat { get; set; } = false;
+    public bool CombatTriggerHuntMarks { get; set; } = true;
+    public bool CombatTriggerDutyBosses { get; set; } = true;
+
     private Configuration() { }
 
     [JsonIgnore]

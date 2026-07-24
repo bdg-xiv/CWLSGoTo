@@ -1,0 +1,179 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.ClientState.Objects.Types;
+using Lumina.Excel.Sheets;
+using Orchestrion.Persistence;
+
+namespace Orchestrion.Audio;
+
+/// <summary>
+/// Switches to a designated playlist while fighting (any combat, hunt marks, or duty
+/// bosses, per config) and restores the previous playlist - or the game BGM - a few
+/// seconds after combat ends.
+/// </summary>
+public static class CombatMusicManager
+{
+	private const int EndDebounceMs = 4000;
+	private const int HuntScanIntervalMs = 500;
+	private const float HuntMarkRange = 80f;
+
+	// ContentFinderCondition.ContentType: trials, raids, ultimate raids
+	private static readonly uint[] BossContentTypes = { 4, 5, 28 };
+
+	private static HashSet<uint> _nmNameIds;
+	private static bool _active;
+	private static string _restorePlaylist = string.Empty;
+	private static int _restoreIndex = -1;
+	private static long _triggerLostAt;
+	private static long _lastHuntScan;
+	private static bool _huntMarkEngaged;
+	private static int _peacefulSongId;
+	private static uint _lastTerritory;
+	private static uint _contentType;
+
+	/// <summary>Called every framework tick (via BGMManager.Update).</summary>
+	public static void Update()
+	{
+		var config = Configuration.Instance;
+		if (!config.CombatPlaylistsEnabled)
+		{
+			if (_active) Deactivate();
+			return;
+		}
+
+		var territory = DalamudApi.ClientState.TerritoryType;
+		if (territory != _lastTerritory)
+		{
+			_lastTerritory = territory;
+			_contentType = LookupContentType(territory);
+			_peacefulSongId = 0;
+		}
+
+		var inCombat = DalamudApi.Condition[ConditionFlag.InCombat];
+
+		// Track the game's own BGM while out of combat; a dungeon boss pull swaps it
+		// to the boss theme (trash pulls never do). The BGM controller reports the
+		// natural song even while a forced playlist plays.
+		if (!inCombat && BGMManager.CurrentSongId != 0)
+			_peacefulSongId = BGMManager.CurrentSongId;
+
+		var triggered = inCombat && (
+			config.CombatTriggerAnyCombat
+			|| (config.CombatTriggerHuntMarks && HuntMarkEngaged())
+			|| (config.CombatTriggerDutyBosses && InDutyBossFight()));
+
+		if (triggered)
+		{
+			_triggerLostAt = 0;
+			if (!_active) Activate();
+		}
+		else if (_active)
+		{
+			var now = Environment.TickCount64;
+			if (_triggerLostAt == 0)
+				_triggerLostAt = now;
+			else if (now - _triggerLostAt > EndDebounceMs)
+				Deactivate();
+		}
+	}
+
+	private static void Activate()
+	{
+		var config = Configuration.Instance;
+		if (!config.Playlists.TryGetValue(config.CombatPlaylistName ?? string.Empty, out var playlist)
+		    || playlist.Songs.Count == 0)
+			return;
+
+		if (PlaylistManager.CurrentPlaylist?.Name == playlist.Name)
+		{
+			// Already listening to the combat playlist; nothing to restore later.
+			_active = true;
+			_restorePlaylist = string.Empty;
+			_restoreIndex = -1;
+			return;
+		}
+
+		_restorePlaylist = PlaylistManager.IsPlaying ? PlaylistManager.CurrentPlaylist.Name : string.Empty;
+		_restoreIndex = PlaylistManager.IsPlaying ? PlaylistManager.CurrentSongIndex : -1;
+		DalamudApi.PluginLog.Debug($"[CombatMusic] Fight started - playing '{playlist.Name}'");
+		PlaylistManager.Play(playlist.Name);
+		_active = true;
+	}
+
+	private static void Deactivate()
+	{
+		_active = false;
+		_triggerLostAt = 0;
+		var config = Configuration.Instance;
+
+		// If the user changed music mid-fight, leave their choice alone.
+		if (PlaylistManager.CurrentPlaylist?.Name != config.CombatPlaylistName)
+			return;
+
+		if (_restorePlaylist != string.Empty
+		    && config.Playlists.TryGetValue(_restorePlaylist, out var playlist)
+		    && playlist.Songs.Count > 0)
+		{
+			DalamudApi.PluginLog.Debug($"[CombatMusic] Fight over - resuming '{playlist.Name}'");
+			if (_restoreIndex >= 0)
+				PlaylistManager.Play(playlist.Name, Math.Clamp(_restoreIndex, 0, playlist.Songs.Count - 1));
+			else
+				PlaylistManager.Play(playlist.Name);
+		}
+		else
+		{
+			DalamudApi.PluginLog.Debug("[CombatMusic] Fight over - stopping combat playlist");
+			PlaylistManager.Stop();
+		}
+	}
+
+	private static bool HuntMarkEngaged()
+	{
+		var now = Environment.TickCount64;
+		if (now - _lastHuntScan < HuntScanIntervalMs) return _huntMarkEngaged;
+		_lastHuntScan = now;
+
+		_nmNameIds ??= DalamudApi.DataManager.GetExcelSheet<NotoriousMonster>()!
+			.Where(m => m.BNpcName.RowId > 0)
+			.Select(m => m.BNpcName.RowId)
+			.ToHashSet();
+
+		_huntMarkEngaged = false;
+		var player = DalamudApi.ObjectTable.LocalPlayer;
+		if (player == null) return false;
+
+		foreach (var obj in DalamudApi.ObjectTable)
+		{
+			if (obj is not IBattleNpc npc || npc.IsDead || !_nmNameIds.Contains(npc.NameId)) continue;
+			if (!npc.StatusFlags.HasFlag(StatusFlags.InCombat)) continue;
+			if (Vector3.Distance(player.Position, npc.Position) > HuntMarkRange) continue;
+			_huntMarkEngaged = true;
+			break;
+		}
+
+		return _huntMarkEngaged;
+	}
+
+	private static bool InDutyBossFight()
+	{
+		if (!DalamudApi.Condition[ConditionFlag.BoundByDuty]) return false;
+
+		// Trials, raids and ultimates are a boss fight from the first pull.
+		if (BossContentTypes.Contains(_contentType)) return true;
+
+		// Dungeons (and other content): the game swapping its own BGM mid-combat is
+		// the boss theme starting.
+		return _peacefulSongId != 0
+		       && BGMManager.CurrentSongId != 0
+		       && BGMManager.CurrentSongId != _peacefulSongId;
+	}
+
+	private static uint LookupContentType(uint territory)
+	{
+		var row = DalamudApi.DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(territory);
+		return row?.ContentFinderCondition.ValueNullable?.ContentType.RowId ?? 0;
+	}
+}

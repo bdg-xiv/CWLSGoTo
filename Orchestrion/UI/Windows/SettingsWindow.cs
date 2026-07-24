@@ -22,7 +22,7 @@ public class SettingsWindow : Window
     
     public override void PreDraw()
     {
-        Size = ImGuiHelpers.ScaledVector2(720, 660);
+        Size = ImGuiHelpers.ScaledVector2(720, 860);
     }
 
     private static void Checkbox(string text, Func<bool> get, Action<bool> set, Action<bool> onChange = null)
@@ -278,6 +278,48 @@ public class SettingsWindow : Window
             string.Format(Loc.Localize("LocalMusicCount", "{0} local track(s) loaded."), LocalMusicManager.TrackCount));
         if (!string.IsNullOrEmpty(LocalMusicManager.LastScanError))
             ImGui.TextColored(ImGuiColors.DalamudRed, LocalMusicManager.LastScanError);
+
+        using (OrchestrionPlugin.LargeFont.Push())
+        {
+            ImGui.Text(Loc.Localize("CombatMusicSettings", "Combat Music"));
+        }
+
+        Checkbox(Loc.Localize("CombatMusicEnable",
+                "Switch to a combat playlist while fighting"),
+            () => Configuration.Instance.CombatPlaylistsEnabled,
+            b => Configuration.Instance.CombatPlaylistsEnabled = b);
+
+        ImGui.BeginDisabled(!Configuration.Instance.CombatPlaylistsEnabled);
+        ImGui.Indent(30f * ImGuiHelpers.GlobalScale);
+
+        DropDown(Loc.Localize("CombatPlaylist", "Combat playlist"),
+            () => string.IsNullOrEmpty(Configuration.Instance.CombatPlaylistName)
+                ? Loc.Localize("None", "None")
+                : Configuration.Instance.CombatPlaylistName,
+            s => Configuration.Instance.CombatPlaylistName = s,
+            s => s == Configuration.Instance.CombatPlaylistName,
+            Configuration.Instance.Playlists.Keys.ToList());
+
+        Checkbox(Loc.Localize("CombatTriggerAny",
+                "Trigger on any combat"),
+            () => Configuration.Instance.CombatTriggerAnyCombat,
+            b => Configuration.Instance.CombatTriggerAnyCombat = b);
+
+        Checkbox(Loc.Localize("CombatTriggerHunts",
+                "Trigger on hunt marks (an engaged B/A/S rank nearby)"),
+            () => Configuration.Instance.CombatTriggerHuntMarks,
+            b => Configuration.Instance.CombatTriggerHuntMarks = b);
+
+        Checkbox(Loc.Localize("CombatTriggerDuty",
+                "Trigger on duty bosses (trials and raids from the pull; dungeon bosses when the boss theme starts)"),
+            () => Configuration.Instance.CombatTriggerDutyBosses,
+            b => Configuration.Instance.CombatTriggerDutyBosses = b);
+
+        ImGui.TextColored(ImGuiColors.DalamudGrey, Loc.Localize("CombatMusicHint",
+            "The previous playlist (or the game's own BGM) resumes a few seconds after the fight ends."));
+
+        ImGui.Indent(-1 * 30f * ImGuiHelpers.GlobalScale);
+        ImGui.EndDisabled();
 
         ImGui.PopItemWidth();
     }
