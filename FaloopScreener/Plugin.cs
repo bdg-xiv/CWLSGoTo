@@ -401,6 +401,7 @@ public sealed class Plugin : IDalamudPlugin
             }
 
             DrawWorldFilter();
+            DrawExpansionFilter();
             DrawTable();
             DrawLeveSpawnerSection();
             DrawSonarRingSection();
@@ -432,11 +433,42 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
+    private static readonly (string Slug, string Label)[] ExpansionFilters =
+    [
+        ("a_realm_reborn", "ARR"), ("heavensward", "HW"), ("stormblood", "StB"),
+        ("shadowbringers", "ShB"), ("endwalker", "EW"), ("dawntrail", "DT"),
+    ];
+
+    private void DrawExpansionFilter()
+    {
+        var first = true;
+        foreach (var (slug, label) in ExpansionFilters)
+        {
+            if (!first)
+                ImGui.SameLine();
+            first = false;
+
+            var enabled = config.EnabledExpansions.Contains(slug);
+            if (ImGui.Checkbox(label, ref enabled))
+            {
+                if (enabled)
+                    config.EnabledExpansions.Add(slug);
+                else
+                    config.EnabledExpansions.Remove(slug);
+                config.Save();
+            }
+
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(FaloopData.Pretty(slug));
+        }
+    }
+
     private void DrawTable()
     {
         var visible = entries
             .Where(e => e.Mob.Rank == "S")
             .Where(e => config.EnabledWorlds.Contains(e.WorldSlug))
+            .Where(e => config.EnabledExpansions.Contains(e.Mob.Expansion))
             .Where(e => !config.HiddenMobs.Contains(e.Mob.Id))
             .Where(e => !e.Mob.Zones.All(z => config.HiddenZones.Contains(z)))
             .ToList();

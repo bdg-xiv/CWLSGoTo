@@ -19,6 +19,10 @@ public class Configuration : IPluginConfiguration
     // Worlds shown in the table. Defaults to all of Crystal.
     public HashSet<string> EnabledWorlds { get; set; } = FaloopData.CrystalWorlds.ToHashSet();
 
+    // Expansions shown in the table. Defaults to all of them.
+    public HashSet<string> EnabledExpansions { get; set; } =
+        ["a_realm_reborn", "heavensward", "stormblood", "shadowbringers", "endwalker", "dawntrail"];
+
     // Hunts / zones the user filtered out of the table.
     public HashSet<string> HiddenMobs { get; set; } = [];
     public HashSet<string> HiddenZones { get; set; } = [];
