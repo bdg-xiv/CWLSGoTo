@@ -41,6 +41,10 @@ public sealed class Plugin : IDalamudPlugin
     // The market board caps a single listing at 99 units regardless of bag stack size.
     private const int MaxItemsPerListing = 99;
 
+    // Stack merging (pulling an existing listing to combine stacks, set-asides and
+    // cross-retainer follow-ups) is disabled; every item just lists as its own stack.
+    private static readonly bool MergeStacksEnabled = false;
+
     // Below this total (price x stack quantity) an item is vendored through the
     // retainer instead of being listed on the market.
     private const long VendorThresholdGil = 2000;
@@ -493,11 +497,19 @@ public sealed class Plugin : IDalamudPlugin
             var stackable = stackSize > 1;
             var bagQty = Math.Max((int)inventorySlot->Quantity, 1);
             var maxPerListing = Math.Min(MaxItemsPerListing, stackSize);
-            var avail = stackable ? CheckActiveRetainerListings(candidate.ItemId, hq, bagQty, maxPerListing) : MergeAvail.None;
+            var avail = MergeStacksEnabled && stackable ? CheckActiveRetainerListings(candidate.ItemId, hq, bagQty, maxPerListing) : MergeAvail.None;
             var mergeableHere = avail == MergeAvail.Mergeable;
 
             if (slotsFull && !mergeableHere)
+            {
+                if (!MergeStacksEnabled)
+                {
+                    FinishRun("the retainer's sell slots are full");
+                    return true;
+                }
+
                 continue; // full retainer: only merges into existing listings still fit
+            }
 
             // Existing listings with no room (a full 99 stack) can't absorb anything:
             // the item goes up as a NEW stack instead of attempting a merge.
@@ -513,7 +525,7 @@ public sealed class Plugin : IDalamudPlugin
                 continue;
             }
 
-            if (!followUpPhase && !mergeableHere && stackable && avail == MergeAvail.None
+            if (MergeStacksEnabled && !followUpPhase && !mergeableHere && stackable && avail == MergeAvail.None
                 && TryFindOtherRetainerListing(candidate.ItemId, hq, out var otherRetainerId, out var otherRetainer))
             {
                 var setAsideName = ItemNameOf(candidate.ItemId);
