@@ -1,0 +1,12 @@
+{
+  "Author": "bdg",
+  "Name": "Stack Splitter",
+  "Punchline": "Right-click a stack to split it into stacks of 50.",
+  "Description": "Adds a \"Split into stacks of 50\" entry to the right-click menu of stackable inventory items. The stack (and any other bag stacks of the same item) is split until no stack holds more than 50, leaving the remainder as the last stack.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "inventory",
+    "stack",
+    "split"
+  ]
+}
