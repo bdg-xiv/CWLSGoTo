@@ -21,6 +21,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
     private const string CommandName = "/windows";
+    private const string SpawnCommandName = "/spawn";
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(60);
 
     private enum WindowState { Up, Open, Capped, Closed }
@@ -64,6 +65,11 @@ public sealed class Plugin : IDalamudPlugin
             HelpMessage = "Opens the Faloop spawn windows table. \"/windows debug\" logs the raw tracker payload."
         });
 
+        Svc.Commands.AddHandler(SpawnCommandName, new CommandInfo(OnSpawnCommand)
+        {
+            HelpMessage = "Prints the spawn trigger for the named S rank (partial names work, e.g. /spawn croque)."
+        });
+
         PluginInterface.UiBuilder.Draw += DrawWindow;
         PluginInterface.UiBuilder.OpenMainUi += ToggleWindow;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleWindow;
@@ -74,6 +80,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleWindow;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleWindow;
         PluginInterface.UiBuilder.Draw -= DrawWindow;
+        Svc.Commands.RemoveHandler(SpawnCommandName);
         Svc.Commands.RemoveHandler(CommandName);
         leveSpawner.Dispose();
         client.Dispose();
@@ -100,6 +107,41 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         windowOpen = !windowOpen;
+    }
+
+    /// <summary>/spawn &lt;name&gt;: prints the spawn trigger for an S rank by (partial)
+    /// name, using the same trigger texts as the table's Spawn buttons.</summary>
+    private static void OnSpawnCommand(string command, string args)
+    {
+        var query = args.Trim();
+        if (query.Length == 0)
+        {
+            Svc.Chat.Print("[FaloopScreener] Usage: /spawn <S rank name> - partial names work, e.g. /spawn croque.");
+            return;
+        }
+
+        var matches = FaloopData.Mobs
+            .Where(m => m.Rank == "S" && m.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var exact = matches.FirstOrDefault(m => m.Name.Equals(query, StringComparison.OrdinalIgnoreCase));
+        if (exact != null)
+            matches = [exact];
+
+        if (matches.Count == 0)
+        {
+            Svc.Chat.Print($"[FaloopScreener] No S rank matching \"{query}\".");
+            return;
+        }
+
+        if (matches.Count > 1)
+        {
+            Svc.Chat.Print($"[FaloopScreener] Multiple matches: {string.Join(", ", matches.Select(m => m.Name))} - be more specific.");
+            return;
+        }
+
+        var mob = matches[0];
+        var trigger = FaloopData.SpawnTriggers.TryGetValue(mob.Id, out var t) ? t : "No trigger information available.";
+        Svc.Chat.Print($"[FaloopScreener] {mob.Name} ({string.Join(" / ", mob.Zones.Select(FaloopData.Pretty))}): {trigger}");
     }
 
     #region Data fetching
