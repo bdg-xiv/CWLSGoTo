@@ -13,6 +13,9 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.5:
+  New fist button in the player/mini player: moves the current song out of the playing
+  playlist into the combat playlist and skips to the next.
   2.3.0.4:
   Combat music: pick a playlist that takes over while you fight - triggered by any combat,
   by hunt marks (an engaged B/A/S rank nearby), and/or by duty bosses (trials and raids

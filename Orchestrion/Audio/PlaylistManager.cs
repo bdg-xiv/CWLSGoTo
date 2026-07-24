@@ -105,6 +105,19 @@ public static class PlaylistManager
 		}
 	}
 	
+	/// <summary>Moves the currently playing song from the current playlist to the given playlist, then advances.</summary>
+	public static void MoveCurrentToPlaylist(Playlist target)
+	{
+		var playlist = CurrentPlaylist;
+		if (!IsPlaying || playlist == null || target == null || target == playlist) return;
+
+		var index = _currentSongIndex;
+		if (index < 0 || index >= playlist.Songs.Count) return;
+
+		target.AddSong(playlist.Songs[index]);
+		RemoveCurrentAndSkip();
+	}
+
 	/// <summary>Removes the currently playing song from the current playlist and advances.</summary>
 	public static void RemoveCurrentAndSkip()
 	{

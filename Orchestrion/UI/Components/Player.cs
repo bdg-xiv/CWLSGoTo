@@ -88,6 +88,7 @@ public static class Player
 		var middleItemSize = ImGui.CalcTextSize(middleButton.ToIconString());
 		var forwardSize = ImGui.CalcTextSize(FontAwesomeIcon.StepForward.ToIconString());
 		var removeSize = ImGui.CalcTextSize(FontAwesomeIcon.TrashAlt.ToIconString());
+		var moveSize = ImGui.CalcTextSize(FontAwesomeIcon.FistRaised.ToIconString());
 		ImGui.PopFont();
 
 		var buttonPaddingWidth = ImGui.GetStyle().FramePadding.X;
@@ -96,7 +97,7 @@ public static class Player
 		// We get two sides of two buttons and one side of another on each side = 5
 		var spacingWidth = buttonPaddingWidth * 5 + buttonSpacingWidth * 2;
 		var buttonTotalWidth = repeatSize.X + backSize.X + middleItemSize.X + forwardSize.X + shuffleSize.X + spacingWidth * 2
-		                       + removeSize.X + buttonPaddingWidth * 2 + buttonSpacingWidth;
+		                       + removeSize.X + moveSize.X + (buttonPaddingWidth * 2 + buttonSpacingWidth) * 2;
 		var buttonsStartX = (avail - buttonTotalWidth) / 2;
 		
 		// ImGui.Text($"spacingWidth: {spacingWidth} buttonTotalWidth: {buttonTotalWidth} avail: {avail} buttonsStartX: {buttonsStartX}");
@@ -161,6 +162,29 @@ public static class Player
 		}
 		if (ImGui.IsItemHovered())
 			ImGui.SetTooltip(Loc.Localize("RemoveCurrentSong", "Remove this song from the playlist and skip to the next"));
+
+		Playlist combatPlaylist = null;
+		var combatName = Configuration.Instance.CombatPlaylistName;
+		if (!string.IsNullOrEmpty(combatName))
+			Configuration.Instance.Playlists.TryGetValue(combatName, out combatPlaylist);
+		var canMove = combatPlaylist != null && PlaylistManager.CurrentPlaylist?.Name != combatName;
+
+		ImGui.SameLine();
+		ImGui.BeginDisabled(!canMove);
+		if (ImGuiComponents.IconButton($"##orch_movetocombat", FontAwesomeIcon.FistRaised))
+		{
+			PlaylistManager.MoveCurrentToPlaylist(combatPlaylist);
+		}
+		ImGui.EndDisabled();
+		if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+		{
+			if (combatPlaylist == null)
+				ImGui.SetTooltip(Loc.Localize("MoveToCombatNone", "Set a combat playlist in the settings to move songs to it"));
+			else if (!canMove)
+				ImGui.SetTooltip(Loc.Localize("MoveToCombatSelf", "The combat playlist is already playing"));
+			else
+				ImGui.SetTooltip(string.Format(Loc.Localize("MoveToCombat", "Move this song to the combat playlist ({0}) and skip to the next"), combatName));
+		}
 		ImGui.EndDisabled();
 
 		// Draw times
