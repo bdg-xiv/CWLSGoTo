@@ -299,6 +299,30 @@
     "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/StackSplitter.zip"
   },
   {
+    "Author": "perchbird (originally Meli), local music by bdg",
+    "Name": "Orchestrion Plugin",
+    "InternalName": "orchestrion",
+    "AssemblyVersion": "2.3.0.2",
+    "Description": "Orchestrion Plugin allows you to change the currently playing in-game BGM. It includes\na curated list of the most accurate in-game song titles, so you know exactly what's playing,\nif you want to know later! Add favorite songs to separate them from the rest.\nThis fork also plays your own music files: point it at a folder in the settings and the\ntracks join the song list, mixable with game songs in playlists.\nNote: This plugin does not currently allow you to play actual orchestrion songs.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "bgm",
+      "music"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Browse and change the in-game BGM, with your own music files mixed in.",
+    "Changelog": "2.3.0.2:\nLocal music support: scan a folder of your own audio files (mp3, ogg, wav, m4a, aac, wma, flac)\nand play them alongside game songs, including in playlists. Volume follows the in-game\nmaster/BGM sliders.\n2.3.0.1:\nFixed bug where Deep Dungeon mode would not switch tracks\n2.3.0.0:\nLong-awaited new feature, implemented by @NPittinger!\nThe Orchestrion plugin can now report the titles of songs played inside housing instances and inns by the Orchestrion furnishing.\nLimitations:\n- The plugin still cannot play Orchestrion rolls.\n- Titles of songs played inside housing instances can appear in the server bar and in chat messages.\n- Songs played inside housing instances will not appear in your listening history and cannot be added to playlists.\n- Only English and Japanese titles are available for Orchestrion rolls, as those are the only languages provided by the game.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/orchestrion.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/orchestrion.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/orchestrion.zip"
+  },
+  {
     "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
