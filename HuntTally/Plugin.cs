@@ -43,6 +43,11 @@ public sealed class Plugin : IDalamudPlugin
 
         // Set for "slay each unique mark" achievements (the "Mark of the ..." series).
         public List<UniqueMark>? UniqueMarks { get; set; }
+
+        // For meta achievements (sheet Type 2): the achievements they require, and
+        // whether the reward item is a mount (ItemAction type 1322).
+        public List<uint>? MetaRequirements { get; set; }
+        public bool AwardsMount { get; set; }
     }
 
     private sealed record UniqueMark(uint NotoriousId, uint BNpcNameId, string Name, string Zone);
@@ -151,8 +156,15 @@ public sealed class Plugin : IDalamudPlugin
                     continue;
 
                 var description = achievement.Description.ExtractText();
-                tracked.Add(new HuntAchievement(achievement.RowId, name, description,
-                    ClassifyRank(description), ClassifyExpansion(description), achievement.Order));
+                var entry = new HuntAchievement(achievement.RowId, name, description,
+                    ClassifyRank(description), ClassifyExpansion(description), achievement.Order);
+
+                if (achievement.Type == 2)
+                    entry.MetaRequirements = achievement.Data.Where(d => d.RowId != 0).Select(d => d.RowId).ToList();
+                entry.AwardsMount = achievement.Item.RowId != 0
+                    && achievement.Item.ValueNullable?.ItemAction.ValueNullable?.Action.RowId == 1322;
+
+                tracked.Add(entry);
             }
 
             ResolveUniqueMarks(tracked);
@@ -417,6 +429,11 @@ public sealed class Plugin : IDalamudPlugin
     private const uint EwSThree = 2999;
     private const uint DtSThree = 3536;
     private const uint OverallS = 1921;
+    private const uint BringSGameFive = 1920; // the overall S tier the mount meta needs
+
+    // Tiers of one series share a counter; use a sibling's recorded pace when the
+    // achievement itself has no snapshots yet.
+    private static readonly Dictionary<uint, uint> PaceAlias = new() { [BringSGameFive] = OverallS };
 
     private void RecordTallySnapshot()
     {
@@ -426,7 +443,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var cache = CurrentCache();
         var counters = new Dictionary<uint, uint>();
-        foreach (var id in (uint[])[ShbAThree, EwAThree, DtAThree, OverallA, ShbSThree, EwSThree, DtSThree, OverallS])
+        foreach (var id in (uint[])[ShbAThree, EwAThree, DtAThree, OverallA, ShbSThree, EwSThree, DtSThree, OverallS, BringSGameFive])
         {
             if (cache.TryGetValue(id, out var progress) && progress.Max > 0)
                 counters[id] = progress.Current;
@@ -463,7 +480,7 @@ public sealed class Plugin : IDalamudPlugin
         if (recent.Count >= 2)
             points = recent;
         if (points.Count < 2)
-            return null;
+            return PaceAlias.TryGetValue(achievementId, out var alias) ? PacePerDay(alias) : null;
 
         var days = (points[^1].Date - points[0].Date).TotalDays;
         if (days <= 0)
@@ -529,8 +546,13 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.Separator();
 
             var cache = CurrentCache();
-            DrawTrainEstimate(cache);
-            DrawSEstimate(cache);
+            if (ImGui.CollapsingHeader("Counters & pace###htCounters", ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                DrawTrainEstimate(cache);
+                DrawSEstimate(cache);
+                DrawMountSEstimate(cache);
+            }
+
             foreach (var expansion in ExpansionOrder)
             {
                 var group = Tracked.Where(a => a.Expansion == expansion
@@ -669,6 +691,53 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.SetTooltip("Every S kill feeds the overall counter, so finishing the\nper-expansion achievements covers part of it; the number in\nparentheses is what still has to come from any expansion on top.");
         DrawPaceLine(targets, OverallS, "S");
     }
+
+    /// <summary>S kills that actually gate a mount: the S-rank requirements of the
+    /// meta achievements whose reward item is a mount (resolved from the sheet, so
+    /// it includes Bring Your S Game V's 2,000 rather than VI's 5,000).</summary>
+    private void DrawMountSEstimate(Dictionary<uint, CachedProgress> cache)
+    {
+        var targets = new List<(uint Id, long Remaining)>();
+        var parts = new List<string>();
+        var byId = Tracked.ToDictionary(a => a.Id);
+
+        foreach (var meta in Tracked.Where(a => a.AwardsMount && a.MetaRequirements != null && !IsAchievementComplete(a.Id)))
+        {
+            foreach (var requirementId in meta.MetaRequirements!)
+            {
+                if (!byId.TryGetValue(requirementId, out var requirement)
+                    || RankLetter(requirement.Description) != "S"
+                    || IsAchievementComplete(requirementId)
+                    || targets.Any(t => t.Id == requirementId))
+                    continue;
+
+                if (!cache.TryGetValue(requirementId, out var progress) || progress.Max == 0 || progress.Current >= progress.Max)
+                    continue;
+
+                targets.Add((requirementId, (long)progress.Max - progress.Current));
+                parts.Add($"{ShortExpansion(requirement.Expansion)} {progress.Max - progress.Current:N0}");
+            }
+        }
+
+        if (targets.Count == 0)
+            return;
+
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"S ranks for mounts: {string.Join(", ", parts)} kills to go.");
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Only the S-rank requirements that gate a mount reward\n(Centurio Tiger, Triceratops, Victor, Ullr metas). The overall\ntier here is Bring Your S Game V at 2,000 - VI has no mount.");
+        DrawPaceLine(targets, OverallS, "S");
+    }
+
+    private static string ShortExpansion(string expansion) => expansion switch
+    {
+        "A Realm Reborn" => "ARR",
+        "Heavensward" => "HW",
+        "Stormblood" => "StB",
+        "Shadowbringers" => "ShB",
+        "Endwalker" => "EW",
+        "Dawntrail" => "DT",
+        _ => "overall",
+    };
 
     private void DrawPaceLine(List<(uint Id, long Remaining)> targets, uint overallId, string rank)
     {
