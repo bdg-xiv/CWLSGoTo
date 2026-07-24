@@ -254,7 +254,7 @@
     "Author": "bdg",
     "Name": "Hunt Tally",
     "InternalName": "HuntTally",
-    "AssemblyVersion": "0.0.0.11",
+    "AssemblyVersion": "0.0.0.12",
     "Description": "Reads the game's hunt achievement list, fetches your live progress from the server (the same request the achievement window makes) and shows it grouped by expansion: every S-rank and A-rank kill-count achievement with a progress bar and how many kills remain, plus the big overall elite-mark totals. Progress is cached per character so the window opens instantly; refresh on demand. Open with /hunttally.",
     "ApplicableVersion": "any",
     "Tags": [
