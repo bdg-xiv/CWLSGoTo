@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <PluginVersion>2.3.0.6</PluginVersion>
+    <PluginVersion>2.3.0.7</PluginVersion>
   </PropertyGroup>
 
   <PropertyGroup>

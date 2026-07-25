@@ -13,6 +13,9 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.7:
+  Local tracks now fade out (~1.5s) when replaced or stopped, matching the game's own
+  BGM transitions - no more abrupt cut when combat music ends.
   2.3.0.6:
   New "Add to <playlist>" button in the All Songs / History footer: adds the selected
   song(s) to the playing playlist, or the one selected in the Playlists tab. Supports

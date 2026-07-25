@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Dalamud.Game.Config;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
@@ -6,25 +7,49 @@ namespace Orchestrion.Audio;
 
 /// <summary>
 /// Plays local music files through NAudio while the game's BGM is parked on the
-/// silent placeholder track. Volume follows the in-game master/BGM sliders.
+/// silent placeholder track. Volume follows the in-game master/BGM sliders, and
+/// replaced or stopped tracks fade out to match the game's own BGM transitions.
 /// </summary>
 public static class LocalPlayer
 {
-	private static WaveOutEvent _output;
-	private static WaveStream _reader;
-	private static VolumeSampleProvider _volume;
-	private static int _generation;
+	private const int FadeOutMs = 1500;
+
+	private sealed class Voice
+	{
+		public WaveOutEvent Output;
+		public WaveStream Reader;
+		public VolumeSampleProvider Volume;
+		public long FadeStartedAt;
+		public float FadeFromVolume;
+
+		public void DisposeHard()
+		{
+			try
+			{
+				Output?.Stop();
+				Output?.Dispose();
+				Reader?.Dispose();
+			}
+			catch (Exception e)
+			{
+				DalamudApi.PluginLog.Warning($"[LocalPlayer] Dispose: {e.Message}");
+			}
+		}
+	}
+
+	private static Voice _current;
+	private static readonly List<Voice> _fading = new();
 	private static int _volumeRefreshCounter;
 
 	public static int CurrentTrackId { get; private set; }
 	public static bool IsPlaying => CurrentTrackId != 0;
 
-	public static TimeSpan Elapsed => _reader?.CurrentTime ?? TimeSpan.Zero;
-	public static TimeSpan Duration => _reader?.TotalTime ?? TimeSpan.Zero;
+	public static TimeSpan Elapsed => _current?.Reader?.CurrentTime ?? TimeSpan.Zero;
+	public static TimeSpan Duration => _current?.Reader?.TotalTime ?? TimeSpan.Zero;
 
 	public static bool Play(int trackId)
 	{
-		Stop();
+		FadeOutCurrent();
 
 		if (!LocalMusicManager.TryGetPath(trackId, out var path))
 		{
@@ -32,15 +57,16 @@ public static class LocalPlayer
 			return false;
 		}
 
+		var voice = new Voice();
 		try
 		{
-			_reader = LocalMusicManager.OpenFile(path);
-			_volume = new VolumeSampleProvider(_reader.ToSampleProvider()) { Volume = GetGameBgmVolume() };
-			_output = new WaveOutEvent();
-			var generation = _generation;
-			_output.PlaybackStopped += (_, args) => OnPlaybackStopped(generation, args);
-			_output.Init(_volume);
-			_output.Play();
+			voice.Reader = LocalMusicManager.OpenFile(path);
+			voice.Volume = new VolumeSampleProvider(voice.Reader.ToSampleProvider()) { Volume = GetGameBgmVolume() };
+			voice.Output = new WaveOutEvent();
+			voice.Output.PlaybackStopped += (_, args) => OnPlaybackStopped(voice, args);
+			voice.Output.Init(voice.Volume);
+			voice.Output.Play();
+			_current = voice;
 			CurrentTrackId = trackId;
 			DalamudApi.PluginLog.Debug($"[LocalPlayer] Playing {path}");
 			return true;
@@ -49,42 +75,46 @@ public static class LocalPlayer
 		{
 			DalamudApi.PluginLog.Error(e, $"[LocalPlayer] Failed to play {path}");
 			DalamudApi.ChatGui.PrintError($"[Orchestrion] Could not play local track: {e.Message}");
-			Cleanup();
+			voice.DisposeHard();
 			return false;
 		}
 	}
 
+	/// <summary>Stops the current track with a fade-out.</summary>
 	public static void Stop()
 	{
-		_generation++; // invalidate pending PlaybackStopped callbacks
-		Cleanup();
+		FadeOutCurrent();
 	}
 
-	private static void Cleanup()
+	/// <summary>Immediately stops and disposes everything, including pending fades. For plugin unload.</summary>
+	public static void Shutdown()
 	{
-		try
-		{
-			_output?.Stop();
-			_output?.Dispose();
-			_reader?.Dispose();
-		}
-		catch (Exception e)
-		{
-			DalamudApi.PluginLog.Warning($"[LocalPlayer] Cleanup: {e.Message}");
-		}
-		_output = null;
-		_reader = null;
-		_volume = null;
+		_current?.DisposeHard();
+		_current = null;
 		CurrentTrackId = 0;
+		foreach (var voice in _fading)
+			voice.DisposeHard();
+		_fading.Clear();
 	}
 
-	private static void OnPlaybackStopped(int generation, StoppedEventArgs args)
+	private static void FadeOutCurrent()
 	{
-		// Fires on NAudio's playback thread; only natural ends matter (manual stops
-		// bump the generation first).
+		var voice = _current;
+		_current = null;
+		CurrentTrackId = 0;
+		if (voice == null) return;
+		voice.FadeStartedAt = Environment.TickCount64;
+		voice.FadeFromVolume = voice.Volume.Volume;
+		_fading.Add(voice);
+	}
+
+	private static void OnPlaybackStopped(Voice voice, StoppedEventArgs args)
+	{
+		// Fires on NAudio's playback thread; only the active voice's natural end
+		// matters (fading and replaced voices are handled by Update).
 		DalamudApi.Framework.RunOnFrameworkThread(() =>
 		{
-			if (generation != _generation || !IsPlaying) return;
+			if (voice != _current || !IsPlaying) return;
 			if (args.Exception != null)
 			{
 				DalamudApi.PluginLog.Error(args.Exception, "[LocalPlayer] Playback error");
@@ -101,10 +131,29 @@ public static class LocalPlayer
 	/// <summary>Called every framework tick (via BGMManager.Update).</summary>
 	public static void Update()
 	{
-		if (!IsPlaying || _volume == null) return;
+		if (_fading.Count > 0)
+		{
+			var now = Environment.TickCount64;
+			for (var i = _fading.Count - 1; i >= 0; i--)
+			{
+				var voice = _fading[i];
+				var progress = (now - voice.FadeStartedAt) / (float)FadeOutMs;
+				if (progress >= 1f)
+				{
+					voice.DisposeHard();
+					_fading.RemoveAt(i);
+				}
+				else
+				{
+					voice.Volume.Volume = voice.FadeFromVolume * (1f - progress);
+				}
+			}
+		}
+
+		if (_current == null) return;
 		if (++_volumeRefreshCounter < 30) return;
 		_volumeRefreshCounter = 0;
-		_volume.Volume = GetGameBgmVolume();
+		_current.Volume.Volume = GetGameBgmVolume();
 	}
 
 	private static float GetGameBgmVolume()

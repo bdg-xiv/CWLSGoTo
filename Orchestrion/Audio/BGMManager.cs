@@ -58,6 +58,7 @@ public static class BGMManager
     {
         DalamudApi.Framework.Update -= Update;
         Stop();
+        LocalPlayer.Shutdown(); // fades no longer tick once the framework hook is gone
         OnSongChanged -= IpcUpdate;
         _innController.OnPlayingSongChanged -= HandleInnSongChanged;
         _bgmController.OnSongChanged -= HandleSongChanged;
