@@ -13,6 +13,8 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.9:
+  Entering combat now starts on a random song from the combat playlist.
   2.3.0.8:
   Coming out of combat now advances the normal playlist to its next song instead of
   restarting the interrupted one, and the combat playlist continues from where the last

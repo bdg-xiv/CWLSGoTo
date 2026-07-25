@@ -27,7 +27,6 @@ public static class CombatMusicManager
 	private static bool _active;
 	private static string _restorePlaylist = string.Empty;
 	private static int _restoreIndex = -1;
-	private static int _combatResumeIndex = -1;
 	private static long _triggerLostAt;
 	private static long _lastHuntScan;
 	private static bool _huntMarkEngaged;
@@ -100,8 +99,8 @@ public static class CombatMusicManager
 		_restorePlaylist = PlaylistManager.IsPlaying ? PlaylistManager.CurrentPlaylist.Name : string.Empty;
 		_restoreIndex = PlaylistManager.IsPlaying ? PlaylistManager.CurrentSongIndex : -1;
 		DalamudApi.PluginLog.Debug($"[CombatMusic] Fight started - playing '{playlist.Name}'");
-		// Continue the combat playlist where the last fight left off.
-		PlaylistManager.Resume(playlist.Name, Math.Min(_combatResumeIndex, playlist.Songs.Count - 1));
+		// Enter every fight on a random track from the combat playlist.
+		PlaylistManager.Play(playlist.Name, Random.Shared.Next(playlist.Songs.Count));
 		_active = true;
 	}
 
@@ -114,8 +113,6 @@ public static class CombatMusicManager
 		// If the user changed music mid-fight, leave their choice alone.
 		if (PlaylistManager.CurrentPlaylist?.Name != config.CombatPlaylistName)
 			return;
-
-		_combatResumeIndex = PlaylistManager.CurrentSongIndex;
 
 		if (_restorePlaylist != string.Empty
 		    && config.Playlists.TryGetValue(_restorePlaylist, out var playlist)
