@@ -13,6 +13,11 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.14:
+  New headphones button in the player/mini player: toggles whether music keeps playing
+  while the game window is in the background (it flips the game's own "Play sounds while
+  window is not active" + BGM settings, so game tracks and local files both follow).
+  Green while enabled.
   2.3.0.13:
   Volume normalization for local music: each file's loudness is measured during the scan
   (cached per file; the whole existing library is analyzed on the first scan after this

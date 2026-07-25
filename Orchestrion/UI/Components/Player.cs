@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using CheapLoc;
+using Dalamud.Game.Config;
 using Dalamud.Interface;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Components;
@@ -50,6 +51,22 @@ public static class Player
 			Configuration.Instance.ShowMiniPlayer
 			? Loc.Localize("PopInMiniPlayer", "Pop mini-player back into the Orchestrion window")
 			: Loc.Localize("PopOutMiniPlayer", "Pop mini-player out of the Orchestrion window");
+
+		// Background-audio toggle: flips the game's "Play sounds while window is not
+		// active" (+ BGM) settings, which local music follows too.
+		var bgAudioOn = BackgroundAudioEnabled();
+		var bgSize = Util.GetIconSize(FontAwesomeIcon.Headphones);
+		ImGui.SameLine();
+		ImGui.SetCursorPosX(avail - popSize.X - bgSize.X - ImGui.GetStyle().FramePadding.X * 4 - ImGui.GetStyle().ItemSpacing.X);
+		if (bgAudioOn) ImGui.PushStyleColor(ImGuiCol.Text, ImGuiColors.HealerGreen);
+		var bgClicked = ImGuiComponents.IconButton("##orch_bgaudio", FontAwesomeIcon.Headphones);
+		if (bgAudioOn) ImGui.PopStyleColor();
+		if (bgClicked)
+			ToggleBackgroundAudio();
+		if (ImGui.IsItemHovered())
+			ImGui.SetTooltip(bgAudioOn
+				? Loc.Localize("BgAudioOn", "Music keeps playing while the game is in the background - click to stop it")
+				: Loc.Localize("BgAudioOff", "Music stops while the game is in the background - click to keep it playing"));
 
 		ImGui.SameLine();
 		ImGui.SetCursorPosX(avail - popSize.X - ImGui.GetStyle().FramePadding.X * 2);
@@ -199,6 +216,26 @@ public static class Player
 		{
 			ImGui.Dummy(new Vector2(5, 5));
 			ImGui.Separator();
+		}
+	}
+
+	private static bool BackgroundAudioEnabled()
+	{
+		return DalamudApi.GameConfig.TryGet(SystemConfigOption.IsSoundAlways, out bool always) && always
+		       && DalamudApi.GameConfig.TryGet(SystemConfigOption.IsSoundBgmAlways, out bool bgm) && bgm;
+	}
+
+	private static void ToggleBackgroundAudio()
+	{
+		if (BackgroundAudioEnabled())
+		{
+			// Leave the master toggle alone so other channels keep their behavior.
+			DalamudApi.GameConfig.Set(SystemConfigOption.IsSoundBgmAlways, false);
+		}
+		else
+		{
+			DalamudApi.GameConfig.Set(SystemConfigOption.IsSoundAlways, true);
+			DalamudApi.GameConfig.Set(SystemConfigOption.IsSoundBgmAlways, true);
 		}
 	}
 }
