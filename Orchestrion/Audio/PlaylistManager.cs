@@ -63,6 +63,17 @@ public static class PlaylistManager
 		_currentSongStartTime = Environment.TickCount64;
 	}
 
+	/// <summary>
+	/// Starts the playlist continuing after lastIndex (the song that was interrupted),
+	/// honoring the playlist's shuffle/repeat modes. Pass -1 to start fresh.
+	/// </summary>
+	public static void Resume(string playlistName, int lastIndex)
+	{
+		if (BGMManager.InnMusicActive()) return;
+		Set(playlistName, lastIndex, isPlaying: true);
+		Next();
+	}
+
 	private static void Set(string playlistName, int index, bool isPlaying)
 	{
 		_currentPlaylist = playlistName;

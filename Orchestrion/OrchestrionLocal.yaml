@@ -13,6 +13,10 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.8:
+  Coming out of combat now advances the normal playlist to its next song instead of
+  restarting the interrupted one, and the combat playlist continues from where the last
+  fight left off instead of starting over.
   2.3.0.7:
   Local tracks now fade out (~1.5s) when replaced or stopped, matching the game's own
   BGM transitions - no more abrupt cut when combat music ends.

@@ -27,6 +27,7 @@ public static class CombatMusicManager
 	private static bool _active;
 	private static string _restorePlaylist = string.Empty;
 	private static int _restoreIndex = -1;
+	private static int _combatResumeIndex = -1;
 	private static long _triggerLostAt;
 	private static long _lastHuntScan;
 	private static bool _huntMarkEngaged;
@@ -99,7 +100,8 @@ public static class CombatMusicManager
 		_restorePlaylist = PlaylistManager.IsPlaying ? PlaylistManager.CurrentPlaylist.Name : string.Empty;
 		_restoreIndex = PlaylistManager.IsPlaying ? PlaylistManager.CurrentSongIndex : -1;
 		DalamudApi.PluginLog.Debug($"[CombatMusic] Fight started - playing '{playlist.Name}'");
-		PlaylistManager.Play(playlist.Name);
+		// Continue the combat playlist where the last fight left off.
+		PlaylistManager.Resume(playlist.Name, Math.Min(_combatResumeIndex, playlist.Songs.Count - 1));
 		_active = true;
 	}
 
@@ -113,15 +115,16 @@ public static class CombatMusicManager
 		if (PlaylistManager.CurrentPlaylist?.Name != config.CombatPlaylistName)
 			return;
 
+		_combatResumeIndex = PlaylistManager.CurrentSongIndex;
+
 		if (_restorePlaylist != string.Empty
 		    && config.Playlists.TryGetValue(_restorePlaylist, out var playlist)
 		    && playlist.Songs.Count > 0)
 		{
-			DalamudApi.PluginLog.Debug($"[CombatMusic] Fight over - resuming '{playlist.Name}'");
-			if (_restoreIndex >= 0)
-				PlaylistManager.Play(playlist.Name, Math.Clamp(_restoreIndex, 0, playlist.Songs.Count - 1));
-			else
-				PlaylistManager.Play(playlist.Name);
+			// Advance to the next song rather than replaying the interrupted one from
+			// the start (game tracks cannot be resumed mid-song).
+			DalamudApi.PluginLog.Debug($"[CombatMusic] Fight over - continuing '{playlist.Name}'");
+			PlaylistManager.Resume(playlist.Name, Math.Min(_restoreIndex, playlist.Songs.Count - 1));
 		}
 		else
 		{
