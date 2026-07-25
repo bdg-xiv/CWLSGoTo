@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using Dalamud.Game.Config;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
@@ -40,6 +41,14 @@ public static class LocalPlayer
 	private static Voice _current;
 	private static readonly List<Voice> _fading = new();
 	private static int _volumeRefreshCounter;
+	private static float _configVolume = 1f;
+	private static readonly int _gameProcessId = Process.GetCurrentProcess().Id;
+
+	[DllImport("user32.dll")]
+	private static extern IntPtr GetForegroundWindow();
+
+	[DllImport("user32.dll")]
+	private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
 	public static int CurrentTrackId { get; private set; }
 	public static bool IsPlaying => CurrentTrackId != 0;
@@ -60,8 +69,10 @@ public static class LocalPlayer
 		var voice = new Voice();
 		try
 		{
+			_configVolume = GetGameBgmVolume();
 			voice.Reader = LocalMusicManager.OpenFile(path);
-			voice.Volume = new VolumeSampleProvider(voice.Reader.ToSampleProvider()) { Volume = GetGameBgmVolume() };
+			voice.Volume = new VolumeSampleProvider(voice.Reader.ToSampleProvider())
+				{ Volume = MutedByFocus() ? 0f : _configVolume };
 			voice.Output = new WaveOutEvent();
 			voice.Output.PlaybackStopped += (_, args) => OnPlaybackStopped(voice, args);
 			voice.Output.Init(voice.Volume);
@@ -151,9 +162,35 @@ public static class LocalPlayer
 		}
 
 		if (_current == null) return;
-		if (++_volumeRefreshCounter < 30) return;
-		_volumeRefreshCounter = 0;
-		_current.Volume.Volume = GetGameBgmVolume();
+		if (++_volumeRefreshCounter >= 30)
+		{
+			_volumeRefreshCounter = 0;
+			_configVolume = GetGameBgmVolume();
+		}
+
+		// Like the game's own audio, go silent while the window is unfocused unless
+		// the game is configured to keep playing.
+		var target = MutedByFocus() ? 0f : _configVolume;
+		if (Math.Abs(_current.Volume.Volume - target) > 0.001f)
+			_current.Volume.Volume = target;
+	}
+
+	private static bool MutedByFocus()
+	{
+		try
+		{
+			GetWindowThreadProcessId(GetForegroundWindow(), out var foregroundPid);
+			if (foregroundPid == _gameProcessId) return false;
+
+			// Mirror "Play sounds while window is not active" plus its BGM sub-toggle.
+			if (!(DalamudApi.GameConfig.TryGet(SystemConfigOption.IsSoundAlways, out bool soundAlways) && soundAlways))
+				return true;
+			return !(DalamudApi.GameConfig.TryGet(SystemConfigOption.IsSoundBgmAlways, out bool bgmAlways) && bgmAlways);
+		}
+		catch
+		{
+			return false;
+		}
 	}
 
 	private static float GetGameBgmVolume()

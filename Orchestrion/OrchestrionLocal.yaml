@@ -13,6 +13,9 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.11:
+  Local music now goes silent while the game window is unfocused, matching the game's
+  own audio - it honors "Play sounds while window is not active" and its BGM sub-toggle.
   2.3.0.10:
   Playlists now remember their repeat/shuffle modes across restarts (they used to silently
   reset to Repeat One). The plugin also remembers the last playing playlist and resumes it
