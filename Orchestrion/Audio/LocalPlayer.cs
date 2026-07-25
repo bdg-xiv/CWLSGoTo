@@ -20,6 +20,7 @@ public static class LocalPlayer
 		public WaveOutEvent Output;
 		public WaveStream Reader;
 		public VolumeSampleProvider Volume;
+		public float Gain = 1f;
 		public long FadeStartedAt;
 		public float FadeFromVolume;
 
@@ -70,9 +71,10 @@ public static class LocalPlayer
 		try
 		{
 			_configVolume = GetGameBgmVolume();
+			voice.Gain = LocalMusicManager.GetPlaybackGain(trackId);
 			voice.Reader = LocalMusicManager.OpenFile(path);
 			voice.Volume = new VolumeSampleProvider(voice.Reader.ToSampleProvider())
-				{ Volume = MutedByFocus() ? 0f : _configVolume };
+				{ Volume = (MutedByFocus() ? 0f : _configVolume) * voice.Gain };
 			voice.Output = new WaveOutEvent();
 			voice.Output.PlaybackStopped += (_, args) => OnPlaybackStopped(voice, args);
 			voice.Output.Init(voice.Volume);
@@ -166,11 +168,13 @@ public static class LocalPlayer
 		{
 			_volumeRefreshCounter = 0;
 			_configVolume = GetGameBgmVolume();
+			// Re-read the gain so normalization/level setting changes apply live.
+			_current.Gain = LocalMusicManager.GetPlaybackGain(CurrentTrackId);
 		}
 
 		// Like the game's own audio, go silent while the window is unfocused unless
 		// the game is configured to keep playing.
-		var target = MutedByFocus() ? 0f : _configVolume;
+		var target = (MutedByFocus() ? 0f : _configVolume) * _current.Gain;
 		if (Math.Abs(_current.Volume.Volume - target) > 0.001f)
 			_current.Volume.Volume = target;
 	}

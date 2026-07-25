@@ -20,8 +20,12 @@ public static class LocalMusicManager
 
 	private static readonly string[] SupportedExtensions = { ".mp3", ".ogg", ".wav", ".m4a", ".aac", ".wma", ".flac" };
 
+	// Windowed-RMS level that normalized tracks are brought to (~-16.5 dBFS).
+	private const float NormalizationTarget = 0.15f;
+
 	// id -> full path of the scanned file; replaced wholesale on the framework thread after each scan
 	private static Dictionary<int, string> _pathsById = new();
+	private static Dictionary<int, LocalTrackLoudness> _loudnessById = new();
 	private static volatile bool _scanning;
 
 	public static event Action OnLibraryChanged;
@@ -54,6 +58,7 @@ public static class LocalMusicManager
 		var folder = config.LocalMusicFolder;
 		var songs = new List<Song>();
 		var paths = new Dictionary<int, string>();
+		var loudness = new Dictionary<int, LocalTrackLoudness>();
 		var error = string.Empty;
 
 		if (!string.IsNullOrWhiteSpace(folder) && !Directory.Exists(folder))
@@ -82,8 +87,22 @@ public static class LocalMusicManager
 				TimeSpan duration;
 				try
 				{
+					var size = new FileInfo(file).Length;
+					var haveLoudness = config.LocalTrackLoudness.TryGetValue(key, out var cached) && cached.Size == size;
+
 					using var reader = OpenFile(file);
 					duration = reader.TotalTime;
+
+					if (!haveLoudness)
+					{
+						// Decode once to measure loudness/peak for volume normalization.
+						cached = AnalyzeLoudness(reader, size);
+						config.LocalTrackLoudness[key] = cached;
+						idsChanged = true;
+						DalamudApi.PluginLog.Information(
+							$"[LocalMusicManager] Analyzed {relative}: loudness {cached.Loudness:0.000}, peak {cached.Peak:0.000}");
+					}
+					loudness[id] = cached;
 				}
 				catch (Exception e)
 				{
@@ -106,11 +125,70 @@ public static class LocalMusicManager
 		{
 			SongList.Instance.SetLocalSongs(songs);
 			_pathsById = paths;
+			_loudnessById = loudness;
 			TrackCount = songs.Count;
 			LastScanError = error;
 			DalamudApi.PluginLog.Information($"[LocalMusicManager] Loaded {songs.Count} local track(s)");
 			OnLibraryChanged?.Invoke();
 		});
+	}
+
+	/// <summary>
+	/// Gain to apply when playing the track: the user's local music level, times the
+	/// normalization factor, capped so the track's peak cannot clip.
+	/// </summary>
+	public static float GetPlaybackGain(int id)
+	{
+		var config = Configuration.Instance;
+		var gain = Math.Clamp(config.LocalMusicLevel, 0.2f, 2f);
+		if (_loudnessById.TryGetValue(id, out var info))
+		{
+			if (config.NormalizeLocalMusic && info.Loudness > 0.0001f)
+				gain *= NormalizationTarget / info.Loudness;
+			if (info.Peak > 0.0001f)
+				gain = Math.Min(gain, 0.98f / info.Peak);
+		}
+		return Math.Clamp(gain, 0.05f, 6f);
+	}
+
+	private static LocalTrackLoudness AnalyzeLoudness(NAudio.Wave.WaveStream reader, long size)
+	{
+		var sample = reader.ToSampleProvider();
+		var format = sample.WaveFormat;
+		// 400ms windows; the 90th-percentile window RMS approximates perceived
+		// loudness and ignores quiet intros/outros.
+		var windowSize = Math.Max(1, format.SampleRate * format.Channels * 2 / 5);
+		var buffer = new float[format.SampleRate * format.Channels];
+		var windows = new List<float>();
+		double sumSquares = 0;
+		var inWindow = 0;
+		var peak = 0f;
+
+		int read;
+		while ((read = sample.Read(buffer, 0, buffer.Length)) > 0)
+		{
+			for (var i = 0; i < read; i++)
+			{
+				var s = buffer[i];
+				var abs = Math.Abs(s);
+				if (abs > peak) peak = abs;
+				sumSquares += s * s;
+				if (++inWindow < windowSize) continue;
+				windows.Add((float)Math.Sqrt(sumSquares / inWindow));
+				sumSquares = 0;
+				inWindow = 0;
+			}
+		}
+		if (inWindow > windowSize / 4)
+			windows.Add((float)Math.Sqrt(sumSquares / inWindow));
+
+		var loudness = 0f;
+		if (windows.Count > 0)
+		{
+			windows.Sort();
+			loudness = windows[Math.Min(windows.Count - 1, (int)(windows.Count * 0.9f))];
+		}
+		return new LocalTrackLoudness { Size = size, Loudness = loudness, Peak = peak };
 	}
 
 	private static Song BuildSong(int id, string fullPath, string relativePath, TimeSpan duration)

@@ -22,7 +22,7 @@ public class SettingsWindow : Window
     
     public override void PreDraw()
     {
-        Size = ImGuiHelpers.ScaledVector2(720, 860);
+        Size = ImGuiHelpers.ScaledVector2(720, 920);
     }
 
     private static void Checkbox(string text, Func<bool> get, Action<bool> set, Action<bool> onChange = null)
@@ -283,6 +283,22 @@ public class SettingsWindow : Window
             string.Format(Loc.Localize("LocalMusicCount", "{0} local track(s) loaded."), LocalMusicManager.TrackCount));
         if (!string.IsNullOrEmpty(LocalMusicManager.LastScanError))
             ImGui.TextColored(ImGuiColors.DalamudRed, LocalMusicManager.LastScanError);
+
+        Checkbox(Loc.Localize("NormalizeLocalMusic",
+                "Normalize local music volume (tracks are analyzed during the scan)"),
+            () => Configuration.Instance.NormalizeLocalMusic,
+            b => Configuration.Instance.NormalizeLocalMusic = b);
+
+        var localLevel = Configuration.Instance.LocalMusicLevel;
+        ImGui.SetNextItemWidth(200f * ImGuiHelpers.GlobalScale);
+        if (ImGui.SliderFloat("##orch_localmusiclevel", ref localLevel, 0.2f, 2.0f, "%.2fx"))
+        {
+            Configuration.Instance.LocalMusicLevel = localLevel;
+            Configuration.Instance.Save();
+        }
+        ImGui.SameLine();
+        ImGui.TextWrapped(Loc.Localize("LocalMusicLevel",
+            "Local music level - nudge this until your files sit at the same loudness as the game's BGM"));
 
         using (OrchestrionPlugin.LargeFont.Push())
         {

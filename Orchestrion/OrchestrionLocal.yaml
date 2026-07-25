@@ -13,6 +13,12 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.13:
+  Volume normalization for local music: each file's loudness is measured during the scan
+  (cached per file; the whole existing library is analyzed on the first scan after this
+  update) and playback applies a per-track gain to bring everything to a common level,
+  capped so nothing clips. A new "local music level" slider aligns your files with the
+  game's BGM loudness; both settings apply live to the playing track.
   2.3.0.12:
   Auto-resume is now persistent: if the playlist can't start right after login (estate/inn
   music active, zone still loading), it retries every 5s for up to a minute and logs what

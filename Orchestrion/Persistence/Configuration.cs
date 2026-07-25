@@ -55,6 +55,12 @@ public class Configuration : IPluginConfiguration
     // not in here, so songs the user pruned are not restored.
     public HashSet<int> EverythingPlaylistSeeded { get; set; } = new();
 
+    // Volume normalization for local music: per-file loudness cache (keyed like
+    // LocalTrackIds) plus a user level to align local tracks with the game BGM.
+    public bool NormalizeLocalMusic { get; set; } = true;
+    public float LocalMusicLevel { get; set; } = 1.0f;
+    public Dictionary<string, LocalTrackLoudness> LocalTrackLoudness { get; set; } = new();
+
     // Auto-resume: restart the last playing playlist after login.
     public bool AutoResumeLastPlaylist { get; set; } = true;
     public string LastPlayingPlaylist { get; set; } = string.Empty;
@@ -119,4 +125,12 @@ public class Configuration : IPluginConfiguration
     {
         DalamudApi.PluginInterface.SavePluginConfig(this);
     }
+}
+
+[Serializable]
+public class LocalTrackLoudness
+{
+    public long Size { get; set; }
+    public float Loudness { get; set; }
+    public float Peak { get; set; }
 }
