@@ -107,6 +107,11 @@ public class SettingsWindow : Window
                 "Resume the last playing playlist after logging in"),
             () => Configuration.Instance.AutoResumeLastPlaylist,
             b => Configuration.Instance.AutoResumeLastPlaylist = b);
+
+        Checkbox(Loc.Localize("NextSongOnZoneChange",
+                "Skip to the next song of the playing playlist when changing zones"),
+            () => Configuration.Instance.NextSongOnZoneChange,
+            b => Configuration.Instance.NextSongOnZoneChange = b);
         
         Checkbox(Loc.Localize("ShowSongServerInfo",
             "Show current song in the \"server info\" UI element in-game"),

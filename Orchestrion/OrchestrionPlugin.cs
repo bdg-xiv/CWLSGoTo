@@ -81,6 +81,7 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 		// mid-session as well as the next login).
 		ArmAutoResume();
 		DalamudApi.ClientState.Login += ArmAutoResume;
+		DalamudApi.ClientState.TerritoryChanged += OnTerritoryChanged;
 
 		DalamudApi.CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
 		{
@@ -136,6 +137,7 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 	{
 		DalamudApi.PluginInterface.LanguageChanged -= LanguageChanged;
 
+		DalamudApi.ClientState.TerritoryChanged -= OnTerritoryChanged;
 		DalamudApi.ClientState.Login -= ArmAutoResume;
 		DalamudApi.ClientState.Logout -= ClientStateOnLogout;
 		DalamudApi.Framework.Update -= OrchestrionUpdate;
@@ -168,6 +170,14 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 		CheckDtr();
 		UpdateSettings();
 		CheckAutoResume();
+	}
+
+	private void OnTerritoryChanged(uint territory)
+	{
+		if (!Configuration.Instance.NextSongOnZoneChange) return;
+		if (!PlaylistManager.IsPlaying) return;
+		DalamudApi.PluginLog.Debug("[ZoneChange] New zone - skipping to the next song");
+		PlaylistManager.Next();
 	}
 
 	private void ArmAutoResume()

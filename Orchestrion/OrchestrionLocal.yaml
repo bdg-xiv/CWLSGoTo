@@ -13,6 +13,9 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.15:
+  The playing playlist now skips to its next song whenever you change zones, like the
+  game's own BGM changing per area (toggleable in settings).
   2.3.0.14:
   New headphones button in the player/mini player: toggles whether music keeps playing
   while the game window is in the background (it flips the game's own "Play sounds while

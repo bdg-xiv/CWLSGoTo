@@ -65,6 +65,9 @@ public class Configuration : IPluginConfiguration
     public bool AutoResumeLastPlaylist { get; set; } = true;
     public string LastPlayingPlaylist { get; set; } = string.Empty;
 
+    // Advance the playing playlist to its next song on every zone change.
+    public bool NextSongOnZoneChange { get; set; } = true;
+
     // Combat music: switch to a chosen playlist while fighting, per the triggers below.
     public bool CombatPlaylistsEnabled { get; set; } = false;
     public string CombatPlaylistName { get; set; } = string.Empty;
