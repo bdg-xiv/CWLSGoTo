@@ -13,6 +13,11 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.16:
+  Fixed dungeon boss detection: boss themes that start moments before the pull (door
+  seal, intro, cutscene) were poisoning the zone-music baseline, so the "music changed"
+  check never fired. The baseline now only adopts a song after 5s of out-of-combat
+  stability, and duty pulls log their detection state for troubleshooting.
   2.3.0.15:
   The playing playlist now skips to its next song whenever you change zones, like the
   game's own BGM changing per area (toggleable in settings).

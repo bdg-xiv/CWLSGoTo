@@ -31,8 +31,15 @@ public static class CombatMusicManager
 	private static long _lastHuntScan;
 	private static bool _huntMarkEngaged;
 	private static int _peacefulSongId;
+	private static int _candidateSongId;
+	private static long _candidateSince;
+	private static bool _wasInCombat;
 	private static uint _lastTerritory;
 	private static uint _contentType;
+
+	// A song must play this long out of combat before it becomes the "roaming"
+	// baseline - boss themes that start moments before the pull can't poison it.
+	private const int PeacefulStabilityMs = 5000;
 
 	/// <summary>Called every framework tick (via BGMManager.Update).</summary>
 	public static void Update()
@@ -50,15 +57,36 @@ public static class CombatMusicManager
 			_lastTerritory = territory;
 			_contentType = LookupContentType(territory);
 			_peacefulSongId = 0;
+			_candidateSongId = 0;
 		}
 
+		var now = Environment.TickCount64;
 		var inCombat = DalamudApi.Condition[ConditionFlag.InCombat];
+		var naturalSong = BGMManager.CurrentSongId;
 
-		// Track the game's own BGM while out of combat; a dungeon boss pull swaps it
-		// to the boss theme (trash pulls never do). The BGM controller reports the
-		// natural song even while a forced playlist plays.
-		if (!inCombat && BGMManager.CurrentSongId != 0)
-			_peacefulSongId = BGMManager.CurrentSongId;
+		// Track the game's own BGM as the "roaming" baseline, but only adopt a song
+		// after it has played for a while out of combat: dungeon boss themes often
+		// start seconds before the combat flag (door seal, intro, post-cutscene) and
+		// must not become the baseline. The BGM controller reports the natural song
+		// even while a forced playlist plays.
+		if (!inCombat && naturalSong != 0 && naturalSong != _peacefulSongId)
+		{
+			if (naturalSong != _candidateSongId)
+			{
+				_candidateSongId = naturalSong;
+				_candidateSince = now;
+			}
+			else if (now - _candidateSince >= PeacefulStabilityMs)
+			{
+				_peacefulSongId = naturalSong;
+				_candidateSongId = 0;
+			}
+		}
+
+		if (inCombat && !_wasInCombat && DalamudApi.Condition[ConditionFlag.BoundByDuty])
+			DalamudApi.PluginLog.Information(
+				$"[CombatMusic] Duty pull: contentType {_contentType}, natural song {naturalSong}, baseline {_peacefulSongId}");
+		_wasInCombat = inCombat;
 
 		var triggered = inCombat && (
 			config.CombatTriggerAnyCombat
@@ -72,7 +100,6 @@ public static class CombatMusicManager
 		}
 		else if (_active)
 		{
-			var now = Environment.TickCount64;
 			if (_triggerLostAt == 0)
 				_triggerLostAt = now;
 			else if (now - _triggerLostAt > EndDebounceMs)
