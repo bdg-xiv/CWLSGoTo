@@ -48,6 +48,8 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 	private readonly Hook<RaptureLogModule.Delegates.ShowLogMessageUInt> _logMessageHook;
 	private SeString _songEchoMsg;
 	private bool _inCutscene;
+	private bool _pendingAutoResume;
+	private long _autoResumeAt;
 
 	public OrchestrionPlugin(IDalamudPluginInterface pi)
 	{
@@ -73,6 +75,11 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 
 		if (!string.IsNullOrWhiteSpace(Configuration.Instance.LocalMusicFolder))
 			LocalMusicManager.Rescan();
+
+		// Resume the last playing playlist once we're in-game (covers plugin load
+		// mid-session as well as the next login).
+		ArmAutoResume();
+		DalamudApi.ClientState.Login += ArmAutoResume;
 
 		DalamudApi.CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
 		{
@@ -128,6 +135,7 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 	{
 		DalamudApi.PluginInterface.LanguageChanged -= LanguageChanged;
 
+		DalamudApi.ClientState.Login -= ArmAutoResume;
 		DalamudApi.ClientState.Logout -= ClientStateOnLogout;
 		DalamudApi.Framework.Update -= OrchestrionUpdate;
 
@@ -158,6 +166,40 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 		PerformEcho();
 		CheckDtr();
 		UpdateSettings();
+		CheckAutoResume();
+	}
+
+	private void ArmAutoResume()
+	{
+		if (!Configuration.Instance.AutoResumeLastPlaylist) return;
+		if (string.IsNullOrEmpty(Configuration.Instance.LastPlayingPlaylist)) return;
+		_pendingAutoResume = true;
+		_autoResumeAt = 0;
+	}
+
+	private void CheckAutoResume()
+	{
+		if (!_pendingAutoResume) return;
+		if (!DalamudApi.ClientState.IsLoggedIn || LocalMusicManager.Scanning) return;
+
+		// Small grace period so the zone and local library are settled.
+		var now = Environment.TickCount64;
+		if (_autoResumeAt == 0)
+		{
+			_autoResumeAt = now + 3000;
+			return;
+		}
+		if (now < _autoResumeAt) return;
+
+		_pendingAutoResume = false;
+		var name = Configuration.Instance.LastPlayingPlaylist;
+		if (!PlaylistManager.IsPlaying
+		    && Configuration.Instance.TryGetPlaylist(name, out var playlist)
+		    && playlist.Songs.Count > 0)
+		{
+			DalamudApi.PluginLog.Debug($"[AutoResume] Resuming playlist '{playlist.Name}'");
+			PlaylistManager.Play(playlist.Name);
+		}
 	}
 
 	private void PerformEcho()

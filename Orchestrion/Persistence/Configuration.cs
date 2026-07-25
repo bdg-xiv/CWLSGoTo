@@ -55,6 +55,10 @@ public class Configuration : IPluginConfiguration
     // not in here, so songs the user pruned are not restored.
     public HashSet<int> EverythingPlaylistSeeded { get; set; } = new();
 
+    // Auto-resume: restart the last playing playlist after login.
+    public bool AutoResumeLastPlaylist { get; set; } = true;
+    public string LastPlayingPlaylist { get; set; } = string.Empty;
+
     // Combat music: switch to a chosen playlist while fighting, per the triggers below.
     public bool CombatPlaylistsEnabled { get; set; } = false;
     public string CombatPlaylistName { get; set; } = string.Empty;

@@ -83,6 +83,16 @@ public static class PlaylistManager
 		_playbackHistory.Clear();
 		_indexInHistory = -1;
 		IsPlaying = isPlaying;
+
+		// Remember the last playlist the user was listening to for auto-resume on
+		// login; the combat playlist's takeovers don't count.
+		if (isPlaying && playlistName != string.Empty
+		    && playlistName != Configuration.Instance.CombatPlaylistName
+		    && Configuration.Instance.LastPlayingPlaylist != playlistName)
+		{
+			Configuration.Instance.LastPlayingPlaylist = playlistName;
+			Configuration.Instance.Save();
+		}
 	}
 
 	private static void ResetHistory()
@@ -159,6 +169,13 @@ public static class PlaylistManager
 	{
 		BGMManager.Stop();
 		Set("", -1, isPlaying: false);
+
+		// A deliberate stop also means "don't auto-resume next session".
+		if (Configuration.Instance.LastPlayingPlaylist != string.Empty)
+		{
+			Configuration.Instance.LastPlayingPlaylist = string.Empty;
+			Configuration.Instance.Save();
+		}
 	}
 	
 	public static void Reset()

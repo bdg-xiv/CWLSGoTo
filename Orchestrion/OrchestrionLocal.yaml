@@ -13,6 +13,11 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.10:
+  Playlists now remember their repeat/shuffle modes across restarts (they used to silently
+  reset to Repeat One). The plugin also remembers the last playing playlist and resumes it
+  automatically after login (toggleable in settings); stopping playback via the player
+  clears the auto-resume.
   2.3.0.9:
   Entering combat now starts on a random song from the combat playlist.
   2.3.0.8:

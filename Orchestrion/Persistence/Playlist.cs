@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Runtime.Serialization;
 using Newtonsoft.Json;
 
 namespace Orchestrion.Persistence;
@@ -9,8 +10,11 @@ public class Playlist
 	public string DisplayName { get; set; }
 	public List<int> Songs { get; set; }
 
+	// Persisted via the backing fields: the property setters call Configuration.Save,
+	// which would recurse into config loading during deserialization.
+	[JsonProperty("RepeatMode")]
 	private RepeatMode _repeatMode;
-	
+
 	[JsonIgnore]
 	public RepeatMode RepeatMode {
 		get => _repeatMode;
@@ -21,16 +25,25 @@ public class Playlist
 		}
 	}
 
+	[JsonProperty("ShuffleMode")]
 	private ShuffleMode _shuffleMode;
-	
+
 	[JsonIgnore]
-	public ShuffleMode ShuffleMode { 
+	public ShuffleMode ShuffleMode {
 		get => _shuffleMode;
 		set
 		{
 			_shuffleMode = value;
 			Configuration.Instance.Save();
 		}
+	}
+
+	[OnDeserializing]
+	internal void OnDeserializing(StreamingContext context)
+	{
+		// Configs from before the modes were persisted default to All/Off, not One.
+		_repeatMode = RepeatMode.All;
+		_shuffleMode = ShuffleMode.Off;
 	}
 	
 	[JsonIgnore]

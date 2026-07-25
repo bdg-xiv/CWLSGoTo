@@ -99,9 +99,14 @@ public class SettingsWindow : Window
             b => Configuration.Instance.DisableInCutscenes = b);
         
         Checkbox(Loc.Localize("StopReplacementInCutscenes",
-                "Disable Orchestrion replacements during cutscenes"), 
+                "Disable Orchestrion replacements during cutscenes"),
             () => Configuration.Instance.DisableReplacementsInCutscenes,
             b => Configuration.Instance.DisableReplacementsInCutscenes = b);
+
+        Checkbox(Loc.Localize("AutoResumeLastPlaylist",
+                "Resume the last playing playlist after logging in"),
+            () => Configuration.Instance.AutoResumeLastPlaylist,
+            b => Configuration.Instance.AutoResumeLastPlaylist = b);
         
         Checkbox(Loc.Localize("ShowSongServerInfo",
             "Show current song in the \"server info\" UI element in-game"),
