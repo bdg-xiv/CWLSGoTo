@@ -50,6 +50,7 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 	private bool _inCutscene;
 	private bool _pendingAutoResume;
 	private long _autoResumeAt;
+	private long _autoResumeGiveUpAt;
 
 	public OrchestrionPlugin(IDalamudPluginInterface pi)
 	{
@@ -187,19 +188,41 @@ public unsafe class OrchestrionPlugin : IDalamudPlugin
 		if (_autoResumeAt == 0)
 		{
 			_autoResumeAt = now + 3000;
+			_autoResumeGiveUpAt = now + 60000;
 			return;
 		}
 		if (now < _autoResumeAt) return;
 
-		_pendingAutoResume = false;
 		var name = Configuration.Instance.LastPlayingPlaylist;
-		if (!PlaylistManager.IsPlaying
-		    && Configuration.Instance.TryGetPlaylist(name, out var playlist)
-		    && playlist.Songs.Count > 0)
+		if (PlaylistManager.IsPlaying
+		    || string.IsNullOrEmpty(name)
+		    || !Configuration.Instance.TryGetPlaylist(name, out var playlist)
+		    || playlist.Songs.Count == 0)
 		{
-			DalamudApi.PluginLog.Debug($"[AutoResume] Resuming playlist '{playlist.Name}'");
-			PlaylistManager.Play(playlist.Name);
+			// Nothing to resume, or the user already started something themselves.
+			_pendingAutoResume = false;
+			return;
 		}
+
+		DalamudApi.PluginLog.Information($"[AutoResume] Resuming playlist '{playlist.Name}'");
+		PlaylistManager.Play(playlist.Name);
+
+		if (PlaylistManager.IsPlaying)
+		{
+			_pendingAutoResume = false;
+			return;
+		}
+
+		// Play can bail silently (estate/inn orchestrion music active, zone still
+		// settling) - keep retrying for a while.
+		if (now >= _autoResumeGiveUpAt)
+		{
+			DalamudApi.PluginLog.Information("[AutoResume] Could not start the playlist; giving up");
+			_pendingAutoResume = false;
+			return;
+		}
+		DalamudApi.PluginLog.Information("[AutoResume] Playlist did not start (inn/estate music?); retrying in 5s");
+		_autoResumeAt = now + 5000;
 	}
 
 	private void PerformEcho()

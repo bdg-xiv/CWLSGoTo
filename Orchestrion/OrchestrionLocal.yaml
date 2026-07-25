@@ -13,6 +13,10 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.12:
+  Auto-resume is now persistent: if the playlist can't start right after login (estate/inn
+  music active, zone still loading), it retries every 5s for up to a minute and logs what
+  happened instead of silently giving up.
   2.3.0.11:
   Local music now goes silent while the game window is unfocused, matching the game's
   own audio - it honors "Play sounds while window is not active" and its BGM sub-toggle.
