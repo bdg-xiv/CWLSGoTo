@@ -1,31 +1,38 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
-using System.Numerics;
 
 namespace Laziness;
 
 public class MainWindow : Window
 {
     private readonly Plugin plugin;
+    private readonly Configuration configuration;
 
-    public MainWindow(Plugin plugin) : base("Laziness###LazinessMain")
+    public MainWindow(Plugin plugin, Configuration configuration)
+        : base("Laziness###LazinessMain", ImGuiWindowFlags.AlwaysAutoResize)
     {
-        Size = new Vector2(340, 190);
-        SizeCondition = ImGuiCond.FirstUseEver;
         this.plugin = plugin;
+        this.configuration = configuration;
+    }
+
+    public override void OnOpen() => RememberOpenState(true);
+
+    public override void OnClose() => RememberOpenState(false);
+
+    private void RememberOpenState(bool open)
+    {
+        if (configuration.WindowOpen == open)
+            return;
+
+        configuration.WindowOpen = open;
+        configuration.Save();
     }
 
     public override void Draw()
     {
-        var (poetics, shells, topsoil) = Plugin.Counts();
-        ImGui.TextUnformatted($"Poetics: {poetics:N0}");
-        ImGui.TextUnformatted($"Unidentifiable Shell: {shells:N0}");
-        ImGui.TextUnformatted($"Grade 3 Shroud Topsoil: {topsoil:N0}");
-        ImGui.Separator();
-
-        var running = plugin.Running;
-        ImGui.BeginDisabled(running);
-        if (ImGui.Button("Buy soil", new Vector2(-1, 30)))
+        // One row of chore buttons; more get added beside this one.
+        ImGui.BeginDisabled(plugin.Running);
+        if (ImGui.Button("Buy soil"))
             plugin.StartBuySoil();
         ImGui.EndDisabled();
 
@@ -34,10 +41,11 @@ public class MainWindow : Window
                 + "Spends your poetics on Unidentifiable Shells, then trades\n"
                 + "every shell to Bertana for Grade 3 Shroud Topsoil.");
 
-        if (running && ImGui.Button("Stop", new Vector2(-1, 0)))
-            plugin.Abort();
+        if (!plugin.Running)
+            return;
 
-        ImGui.Separator();
-        ImGui.TextWrapped(plugin.Status);
+        ImGui.SameLine();
+        if (ImGui.Button("Stop"))
+            plugin.Abort();
     }
 }

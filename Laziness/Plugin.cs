@@ -1,4 +1,6 @@
 using Dalamud.Game.Command;
+using Dalamud.Game.Text;
+using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -41,12 +43,13 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem windowSystem = new("Laziness");
     private readonly MainWindow mainWindow;
     private readonly TaskManager taskManager;
+    private readonly Configuration configuration;
 
     private int shellsAtStart;
     private int topsoilAtStart;
     private int poeticsAtStart;
+    private int shellsBought;
 
-    internal string Status { get; private set; } = "Idle.";
     internal bool Running => taskManager.IsBusy;
 
     public Plugin()
@@ -60,7 +63,8 @@ public sealed class Plugin : IDalamudPlugin
             ShowError = false,
         });
 
-        mainWindow = new MainWindow(this);
+        configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        mainWindow = new MainWindow(this, configuration) { IsOpen = configuration.WindowOpen };
         windowSystem.AddWindow(mainWindow);
 
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
@@ -86,16 +90,19 @@ public sealed class Plugin : IDalamudPlugin
     internal void Abort()
     {
         taskManager.Abort();
-        SetStatus("Stopped.");
+        Print("Stopped.");
     }
 
-    private void SetStatus(string status)
-    {
-        Status = status;
-        Svc.Log.Information($"[Laziness] {status}");
-    }
+    private static void SetStatus(string status) => Svc.Log.Information($"[Laziness] {status}");
 
-    private static void Print(string message) => Svc.Chat.Print($"[Laziness] {message}");
+    /// <summary>Results go to the echo channel so they sit in the log with the rest
+    /// of the plugin chatter rather than in Dalamud's debug channel.</summary>
+    private static void Print(string message)
+        => Svc.Chat.Print(new XivChatEntry
+        {
+            Type = XivChatType.Echo,
+            Message = new SeStringBuilder().AddUiForeground("[Laziness] ", 45).AddText(message).Build(),
+        });
 
     internal static unsafe int CountOf(uint itemId)
         => InventoryManager.Instance()->GetInventoryItemCount(itemId);
@@ -177,14 +184,15 @@ public sealed class Plugin : IDalamudPlugin
         poeticsAtStart = CurrencyCount(PoeticsItemId);
         shellsAtStart = CountOf(UnidentifiableShellId);
         topsoilAtStart = CountOf(Grade3ShroudTopsoilId);
+        shellsBought = 0;
 
         SetStatus($"Starting with {poeticsAtStart:N0} poetics.");
-        Print($"Buying soil. Poetics: {poeticsAtStart:N0}, shells on hand: {shellsAtStart:N0}.");
 
         // Hismena: poetics -> Unidentifiable Shell.
         Enqueue(() => InteractWith(HismenaDataId, "Hismena"), "Interact with Hismena");
         Enqueue(() => OpenShopMenu(["special arms", "poetics", "tomestone"]), "Open Hismena's shop");
         Enqueue(BuyShells, "Buy Unidentifiable Shells", 120000);
+        Enqueue(RecordShellsBought, "Count shells bought");
         Enqueue(CloseShopWindows, "Close Hismena's shop");
 
         // Bertana: Unidentifiable Shell -> Grade 3 Shroud Topsoil.
@@ -198,18 +206,22 @@ public sealed class Plugin : IDalamudPlugin
     private void Enqueue(Func<bool?> task, string name, int timeoutMs = StepTimeoutMs)
         => taskManager.Enqueue(task, name, new TaskManagerConfiguration { TimeLimitMS = timeoutMs, AbortOnTimeout = true, ShowError = false });
 
-    /// <summary>Reports what actually landed in the bags, not what was requested.</summary>
+    /// <summary>Shells in hand once Hismena's part is done, so the report counts what
+    /// was actually bought rather than what was asked for.</summary>
+    private bool? RecordShellsBought()
+    {
+        shellsBought = Math.Max(CountOf(UnidentifiableShellId) - shellsAtStart, 0);
+        return true;
+    }
+
     private bool? FinishRun()
     {
         var poeticsSpent = poeticsAtStart - CurrencyCount(PoeticsItemId);
-        var shellsUsed = shellsAtStart - CountOf(UnidentifiableShellId);
-        var topsoilGained = CountOf(Grade3ShroudTopsoilId) - topsoilAtStart;
+        var topsoilBought = Math.Max(CountOf(Grade3ShroudTopsoilId) - topsoilAtStart, 0);
 
-        SetStatus($"Done - {topsoilGained} topsoil for {poeticsSpent:N0} poetics.");
-        Print($"Done. Spent {poeticsSpent:N0} poetics and gained {topsoilGained} Grade 3 Shroud Topsoil "
-            + $"({CountOf(UnidentifiableShellId)} shell(s) left over). Poetics remaining: {CurrencyCount(PoeticsItemId):N0}.");
-        if (shellsUsed < 0)
-            Svc.Log.Information($"[Laziness] shells net change {-shellsUsed}");
+        SetStatus($"Done - {topsoilBought} topsoil for {poeticsSpent:N0} poetics.");
+        Print($"Bought {shellsBought} Unidentifiable Shell and {topsoilBought} Grade 3 Shroud Topsoil "
+            + $"for {poeticsSpent:N0} poetics.");
         return true;
     }
 
@@ -424,6 +436,4 @@ public sealed class Plugin : IDalamudPlugin
         return false;
     }
 
-    internal static (int Poetics, int Shells, int Topsoil) Counts()
-        => (CurrencyCount(PoeticsItemId), CountOf(UnidentifiableShellId), CountOf(Grade3ShroudTopsoilId));
 }
