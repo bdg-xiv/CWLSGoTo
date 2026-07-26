@@ -145,7 +145,7 @@ public sealed class Plugin : IDalamudPlugin
         => Svc.Chat.Print(new XivChatEntry
         {
             Type = XivChatType.Echo,
-            Message = new SeStringBuilder().AddUiForeground("[Laziness] ", TagColor).AddText(message).Build(),
+            Message = new SeStringBuilder().AddUiForeground($"[Laziness] {message}", TagColor).Build(),
         });
 
     private static string NameOf(uint itemId)
@@ -286,10 +286,11 @@ public sealed class Plugin : IDalamudPlugin
 
         var npcIds = centurio ? new[] { ArdolainDataId } : HuntBillmasterDataIds;
         var npcLabel = centurio ? "Ardolain" : "the hunt billmaster";
-        // Ventures and aetheryte tickets live in the "(Other)" category, which these
-        // vendors offer as its own menu entry alongside the DoW/DoM/GC ones.
+        // The hunt billmaster splits Allied Seals by category and keeps ventures and
+        // tickets under "(Other)". Ardolain doesn't: he offers plain "Exchange Centurio
+        // Seals" plus an "(Advanced)" counter of high-end gear, so take the plain one.
         var keywords = centurio
-            ? new[] { "centurio+other", "(other)", "other" }
+            ? new[] { "centurio+seals+!advanced", "centurio+seals", "exchange" }
             : new[] { "allied+other", "(other)", "other" };
 
         Enqueue(() => InteractWith(npcIds, npcLabel), $"Interact with {npcLabel}");
@@ -725,12 +726,17 @@ public sealed class Plugin : IDalamudPlugin
         if (!EzThrottler.Throttle("Laziness.Menu", 1000))
             return false;
 
-        // A keyword may require several words at once ("centurio+other"), which is how
-        // the right category is picked out of menus that list one entry per category.
+        // A keyword may require several words at once ("centurio+seals") and rule words
+        // out with "!" ("!advanced"), which is how the right entry is picked from menus
+        // that list near-identical options.
         foreach (var keyword in keywords)
         {
-            var parts = keyword.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var index = Array.FindIndex(entries, e => parts.All(part => e.Contains(part, StringComparison.OrdinalIgnoreCase)));
+            var tokens = keyword.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var required = tokens.Where(t => !t.StartsWith('!')).ToArray();
+            var banned = tokens.Where(t => t.StartsWith('!')).Select(t => t[1..]).ToArray();
+            var index = Array.FindIndex(entries, e =>
+                required.All(part => e.Contains(part, StringComparison.OrdinalIgnoreCase))
+                && !banned.Any(part => e.Contains(part, StringComparison.OrdinalIgnoreCase)));
             if (index >= 0)
             {
                 SetStatus($"Menu: {entries[index]}");
