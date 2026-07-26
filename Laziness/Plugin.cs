@@ -135,13 +135,17 @@ public sealed class Plugin : IDalamudPlugin
 
     private static void SetStatus(string status) => Svc.Log.Information($"[Laziness] {status}");
 
+    // UIColor 561 (#FA89B6) - a pink nothing else in chat uses, so these lines are
+    // easy to pick out of a busy log.
+    private const ushort TagColor = 561;
+
     /// <summary>Results go to the echo channel so they sit in the log with the rest
     /// of the plugin chatter rather than in Dalamud's debug channel.</summary>
     private static void Print(string message)
         => Svc.Chat.Print(new XivChatEntry
         {
             Type = XivChatType.Echo,
-            Message = new SeStringBuilder().AddUiForeground("[Laziness] ", 45).AddText(message).Build(),
+            Message = new SeStringBuilder().AddUiForeground("[Laziness] ", TagColor).AddText(message).Build(),
         });
 
     private static string NameOf(uint itemId)
