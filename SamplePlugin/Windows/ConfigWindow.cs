@@ -69,6 +69,25 @@ public class ConfigWindow : Window, IDisposable
         }
         ImGui.TextDisabled("/hunts toggles the hunt tracker window.");
 
+        var trackFates = configuration.TrackFates;
+        if (ImGui.Checkbox("Track FATE reports", ref trackFates))
+        {
+            configuration.TrackFates = trackFates;
+            configuration.Save();
+        }
+        ImGui.TextDisabled("When off, FATE calls are ignored completely:\nno tracker entry and no [Go To] link.");
+
+        ImGui.BeginDisabled(!trackFates);
+        var fateExpiry = configuration.FateExpiryMinutes;
+        ImGui.SetNextItemWidth(80);
+        if (ImGui.InputInt("FATE expiry (minutes)", ref fateExpiry))
+        {
+            configuration.FateExpiryMinutes = Math.Clamp(fateExpiry, 0, 24 * 60);
+            configuration.Save();
+        }
+        ImGui.TextDisabled("FATEs despawn on their own timer, so their entries age\nout instead of waiting for a kill report. 0 = never expire.");
+        ImGui.EndDisabled();
+
         ImGui.Separator();
         ImGui.TextUnformatted("Hunt relay message");
         var template = configuration.RelayMessageTemplate;

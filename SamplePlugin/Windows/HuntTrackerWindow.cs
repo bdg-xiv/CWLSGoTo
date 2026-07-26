@@ -22,6 +22,8 @@ public class HuntTrackerWindow : Window
 
     public override void Draw()
     {
+        plugin.PruneExpiredFates();
+
         if (plugin.Hunts.Count == 0)
         {
             ImGui.TextWrapped("No active hunts. Watched messages with map links show up here, and entries disappear when a kill report for them arrives.");
@@ -53,6 +55,11 @@ public class HuntTrackerWindow : Window
 
             ImGui.TableNextColumn();
             ImGui.TextUnformatted(hunt.Label);
+            if (hunt.IsFate)
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled("FATE");
+            }
 
             ImGui.TableNextColumn();
             ImGui.TextUnformatted(hunt.WorldName.Length == 0 ? "-" : hunt.WorldName);
@@ -63,6 +70,15 @@ public class HuntTrackerWindow : Window
             ImGui.TableNextColumn();
             var age = DateTime.UtcNow - hunt.AddedAt;
             ImGui.TextUnformatted(age.TotalHours >= 1 ? $"{(int)age.TotalHours}h{age.Minutes:00}m" : $"{age.Minutes:00}:{age.Seconds:00}");
+
+            var expiryMinutes = plugin.Configuration.FateExpiryMinutes;
+            if (hunt.IsFate && expiryMinutes > 0 && ImGui.IsItemHovered())
+            {
+                var left = TimeSpan.FromMinutes(expiryMinutes) - age;
+                ImGui.SetTooltip(left > TimeSpan.Zero
+                    ? $"FATE - drops off this list in {left.Minutes:00}:{left.Seconds:00}"
+                    : "FATE - expiring now");
+            }
 
             ImGui.TableNextColumn();
             if (ImGui.SmallButton("Go To"))

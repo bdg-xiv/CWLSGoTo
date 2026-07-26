@@ -25,6 +25,15 @@ public class Configuration : IPluginConfiguration
     // Pop the hunt tracker window open whenever a new hunt is tracked.
     public bool AutoOpenHuntWindow { get; set; } = true;
 
+    // FATE reports (Faloop's FATE rank) are handled like any other call when on;
+    // when off they are ignored completely - no tracking and no [Go To] link.
+    public bool TrackFates { get; set; } = true;
+
+    // Unlike hunts, FATEs despawn on their own timer, so their entries age out
+    // instead of waiting for a kill report. 0 disables the expiry.
+    public const int DefaultFateExpiryMinutes = 30;
+    public int FateExpiryMinutes { get; set; } = DefaultFateExpiryMinutes;
+
     // Hard-stop (not pause) all running SomethingNeedDoing macros whenever a
     // Go To starts, from either a chat link or the hunt tracker window.
     public bool StopSndOnGoTo { get; set; } = true;

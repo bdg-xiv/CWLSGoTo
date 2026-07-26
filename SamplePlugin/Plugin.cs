@@ -25,6 +25,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Text.RegularExpressions;
 using System;
 using static ECommons.GenericHelpers;
 
@@ -50,7 +51,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ConfigWindow configWindow;
     private readonly HuntTrackerWindow huntTrackerWindow;
 
-    internal sealed record HuntEntry(string Label, string WorldName, World? World, Aetheryte Aetheryte, MapLinkPayload MapLink, DateTime AddedAt);
+    internal sealed record HuntEntry(string Label, string WorldName, World? World, Aetheryte Aetheryte, MapLinkPayload MapLink, DateTime AddedAt, bool IsFate);
 
     /// <summary>Hunts tracked from watched messages, newest first. Shown by <see cref="HuntTrackerWindow"/>.</summary>
     internal List<HuntEntry> Hunts { get; } = [];
@@ -170,6 +171,10 @@ public sealed class Plugin : IDalamudPlugin
         if (mapLink == null)
             return;
 
+        var isFate = IsFateReport(message.Message.TextValue);
+        if (isFate && !Configuration.TrackFates)
+            return;
+
         var aetheryte = MapManager.GetNearestAetheryte(mapLink);
         if (aetheryte == null)
         {
@@ -197,7 +202,7 @@ public sealed class Plugin : IDalamudPlugin
         var targetWorld = MapManager.ParseWorldFromText(textAfterLink);
 
         if (isPluginReport)
-            TrackHunt(payloads, linkIndex, targetWorld, aetheryte.Value, mapLink);
+            TrackHunt(payloads, linkIndex, targetWorld, aetheryte.Value, mapLink, isFate);
 
         var linkPayload = CreateGoToLink(aetheryte.Value, mapLink, targetWorld);
         message.Message = new SeStringBuilder()
@@ -223,8 +228,31 @@ public sealed class Plugin : IDalamudPlugin
         return string.Join(' ', words);
     }
 
-    private void TrackHunt(List<Payload> payloads, int linkIndex, World? world, Aetheryte aetheryte, MapLinkPayload mapLink)
+    // Faloop tags every report with its rank glyph; the FATE one tells a FATE call
+    // apart from a hunt call. Other sources just write the word, which the game and
+    // players always spell in caps.
+    private const char FaloopFateRankIcon = '\uE076'; // Faloop's FATE rank glyph
+
+    private static bool IsFateReport(string text)
+        => text.Contains(FaloopFateRankIcon) || Regex.IsMatch(text, @"\bFATE\b");
+
+    /// <summary>Drops FATE entries once they age out. Hunts stay until killed, but a
+    /// FATE despawns on its own timer, so a stale row is worse than no row.</summary>
+    internal void PruneExpiredFates()
     {
+        if (Configuration.FateExpiryMinutes <= 0)
+            return;
+
+        var cutoff = DateTime.UtcNow.AddMinutes(-Configuration.FateExpiryMinutes);
+        Hunts.RemoveAll(h => h.IsFate && h.AddedAt < cutoff);
+    }
+
+    private void TrackHunt(List<Payload> payloads, int linkIndex, World? world, Aetheryte aetheryte, MapLinkPayload mapLink, bool isFate)
+    {
+        // Expire first, so a FATE that respawned after its window can be tracked
+        // again instead of being swallowed by the repeat-report check below.
+        PruneExpiredFates();
+
         // The mob name is the text before the map link (minus game icon glyphs and
         // rank decorations, so Sonar and Faloop reports of one mob look identical).
         var label = NormalizeHuntName(CleanHuntLabel(string.Concat(payloads
@@ -250,8 +278,8 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         // Hunts never expire on their own - they leave the list only via a kill
-        // report, the row's remove button, or Clear all.
-        Hunts.Insert(0, new HuntEntry(label, worldName, world, aetheryte, mapLink, DateTime.UtcNow));
+        // report, the row's remove button, or Clear all. FATEs age out instead.
+        Hunts.Insert(0, new HuntEntry(label, worldName, world, aetheryte, mapLink, DateTime.UtcNow, isFate));
 
         if (Configuration.AutoOpenHuntWindow)
             huntTrackerWindow.IsOpen = true;

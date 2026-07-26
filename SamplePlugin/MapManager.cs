@@ -46,6 +46,26 @@ internal static class MapManager
     {
         var territoryId = mapLink.TerritoryType.RowId;
 
+        // The Dravanian Hinterlands is the game's only overworld zone that holds no
+        // aetheryte, so nothing is "nearest" there and its FATE bosses (Pale Rider)
+        // used to be dropped outright. The territory names its own travel destination
+        // - Idyllshire for the Hinterlands - so fall back to that.
+        return FindNearestInTerritory(territoryId, mapLink) ?? GetTerritoryAetheryte(territoryId);
+    }
+
+    private static Aetheryte? GetTerritoryAetheryte(uint territoryId)
+    {
+        var aetheryte = Svc.Data.GetExcelSheet<TerritoryType>().GetRowOrDefault(territoryId)?.Aetheryte.ValueNullable;
+        if (aetheryte is not { IsAetheryte: true })
+            return null;
+
+        return aetheryte.Value.RowId == MacarensesAngle
+            ? Svc.Data.GetExcelSheet<Aetheryte>().GetRowOrDefault(OndoCups)
+            : aetheryte;
+    }
+
+    private static Aetheryte? FindNearestInTerritory(uint territoryId, MapLinkPayload mapLink)
+    {
         Map? map = null;
         foreach (var m in Svc.Data.GetExcelSheet<Map>())
         {
