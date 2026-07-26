@@ -314,24 +314,22 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        var dataCenter = Svc.Data.GetExcelSheet<World>()
-            .GetRowOrDefault(Svc.PlayerState.CurrentWorld.RowId)?
-            .DataCenter.ValueNullable?.Name.ExtractText();
-        if (string.IsNullOrEmpty(dataCenter))
+        var world = SellingWorld();
+        if (string.IsNullOrEmpty(world))
         {
-            Print("Couldn't work out your data centre.");
+            Print("Couldn't work out your home world.");
             return;
         }
 
         consultingMarket = true;
-        Print($"Checking {dataCenter} prices for {tomes:N0} tomestones ({tomes / MathsUnitCost} items)...");
+        Print($"Checking {world} prices for {tomes:N0} tomestones ({tomes / MathsUnitCost} items)...");
 
         Task.Run(async () =>
         {
             List<MarketAdvisor.Candidate> ranked;
             try
             {
-                ranked = await MarketAdvisor.Rank(dataCenter, MathsWares, MathsUnitCost);
+                ranked = await MarketAdvisor.Rank(world, MathsWares, MathsUnitCost);
             }
             catch (Exception ex)
             {
@@ -480,19 +478,22 @@ public sealed class Plugin : IDalamudPlugin
             return null;
         }
 
-        var dataCenter = Svc.Data.GetExcelSheet<World>()
-            .GetRowOrDefault(Svc.PlayerState.CurrentWorld.RowId)?
-            .DataCenter.ValueNullable?.Name.ExtractText();
-        if (string.IsNullOrEmpty(dataCenter))
+        var world = SellingWorld();
+        if (string.IsNullOrEmpty(world))
         {
-            Print("Couldn't work out your data centre.");
+            Print("Couldn't work out your home world.");
             return null;
         }
 
-        SetStatus($"Pricing {tradeable.Count} Materials rows on {dataCenter}...");
-        LaunchGcMarketLookup(dataCenter, tradeable);
+        SetStatus($"Pricing {tradeable.Count} Materials rows on {world}...");
+        LaunchGcMarketLookup(world, tradeable);
         return true;
     }
+
+    /// <summary>The world these items would actually be sold on. Market boards are per
+    /// world, and retainers stay on the home world even while visiting another.</summary>
+    private static string? SellingWorld()
+        => Svc.Data.GetExcelSheet<World>().GetRowOrDefault(Svc.PlayerState.HomeWorld.RowId)?.Name.ExtractText();
 
     /// <summary>The await has to live outside the unsafe row-reading code.</summary>
     private void LaunchGcMarketLookup(string dataCenter, List<GrandCompanyShop.Row> rows)

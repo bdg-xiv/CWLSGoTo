@@ -8,8 +8,8 @@ using System.Threading.Tasks;
 namespace Laziness;
 
 /// <summary>
-/// Ranks vendor items by what they realistically fetch on the market board, from
-/// Universalis sales history. "Realistically" leans on the current lowest listing
+/// Ranks vendor items by what they realistically fetch on your world's market board,
+/// from Universalis sales history. "Realistically" leans on the current lowest listing
 /// rather than the average sale price: you won't be the only one selling these, so
 /// you end up pricing into the existing competition rather than above it.
 /// </summary>
@@ -20,9 +20,11 @@ internal static class MarketAdvisor
 
     internal record Candidate(uint ItemId, string Name, int Price, double UnitsPerDay, double GilPerUnitCost);
 
-    internal static async Task<List<Candidate>> Rank(string dataCenter, IReadOnlyDictionary<uint, string> items, int unitCost)
+    internal static async Task<List<Candidate>> Rank(string world, IReadOnlyDictionary<uint, string> items, int unitCost)
     {
-        var url = $"https://universalis.app/api/v2/{dataCenter}/{string.Join(',', items.Keys)}?listings=20&entries=200";
+        // Per world, not per data centre: boards aren't shared, so only the listings
+        // and sales on the world being sold to say anything about the price.
+        var url = $"https://universalis.app/api/v2/{world}/{string.Join(',', items.Keys)}?listings=20&entries=200";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Add("User-Agent", "Laziness-Dalamud-Plugin");
 
