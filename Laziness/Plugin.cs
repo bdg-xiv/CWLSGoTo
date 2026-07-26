@@ -6,7 +6,6 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using ECommons;
 using ECommons.Automation.NeoTaskManager;
-using ECommons.Automation.UIInput;
 using ECommons.DalamudServices;
 using ECommons.Throttlers;
 using ECommons.UIHelpers.AddonMasterImplementations;
@@ -79,7 +78,6 @@ public sealed class Plugin : IDalamudPlugin
     private int shellsBought;
 
     private volatile bool consultingMarket;
-    private int shopTabsTried;
 
     internal bool Running => taskManager.IsBusy || consultingMarket;
 
@@ -366,7 +364,7 @@ public sealed class Plugin : IDalamudPlugin
             return false;
         }
 
-        shopTabsTried = 0;
+        EzThrottler.Reset("Laziness.TabHint");
         return Svc.ClientState.IsLoggedIn;
     }
 
@@ -494,43 +492,6 @@ public sealed class Plugin : IDalamudPlugin
         return null;
     }
 
-    /// <summary>Clicks the next unvisited tab of the currency shop. The tabs are the
-    /// window's radio buttons, taken left to right; which one holds what is decided by
-    /// checking the rows afterwards rather than by reading tab labels.</summary>
-    private unsafe bool TrySelectNextShopTab()
-    {
-        if (!TryGetAddonByName<AtkUnitBase>("ShopExchangeCurrency", out var addon) || !IsAddonReady(addon))
-            return false;
-
-        var tabs = new List<(float X, nint Component)>();
-        for (var i = 0; i < addon->UldManager.NodeListCount; i++)
-        {
-            var node = addon->UldManager.NodeList[i];
-            if (node == null || (ushort)node->Type < 1000)
-                continue;
-
-            var component = ((AtkComponentNode*)node)->Component;
-            if (component == null || component->GetComponentType() != ComponentType.RadioButton)
-                continue;
-
-            tabs.Add((node->X, (nint)component));
-        }
-
-        if (shopTabsTried >= tabs.Count)
-            return false;
-
-        // Give the window a beat to repopulate between tabs.
-        if (!EzThrottler.Throttle("Laziness.ShopTab", 700))
-            return true;
-
-        var ordered = tabs.OrderBy(t => t.X).ToList();
-        var radio = (AtkComponentRadioButton*)ordered[shopTabsTried].Component;
-        shopTabsTried++;
-        SetStatus($"Looking for {NameOf(buyTargetItemId)} on shop tab {shopTabsTried}/{ordered.Count}...");
-        radio->ClickRadioButton(addon);
-        return true;
-    }
-
     private static unsafe bool? CloseShopWindows()
     {
         foreach (var name in (string[])["ShopExchangeCurrency", "ShopExchangeItem"])
@@ -562,17 +523,20 @@ public sealed class Plugin : IDalamudPlugin
         if (!TryGetAddonMaster<AddonMaster.ShopExchangeCurrency>("ShopExchangeCurrency", out var shop) || !shop.IsAddonReady)
             return false;
 
-        // The window only publishes the rows of the tab you're looking at, so what
-        // you want (ventures and tickets sit under "Others") may be a tab over.
+        // The window only publishes the rows of the tab being displayed, and switching
+        // tabs from code crashes this addon, so wait for the tab to be opened instead.
+        // Buying resumes by itself the moment the item shows up.
         var entry = shop.BasicShopItems.FirstOrDefault(x => x.ItemId == buyTargetItemId);
         if (entry == null)
         {
-            if (TrySelectNextShopTab())
-                return false;
+            if (EzThrottler.Throttle("Laziness.TabHint", 10000))
+            {
+                SetStatus($"Waiting for the tab holding {NameOf(buyTargetItemId)}.");
+                Print($"{NameOf(buyTargetItemId)} isn't on the tab that's showing - click the tab that has it "
+                    + "(ventures and aetheryte tickets are under \"Others\") and I'll carry on.");
+            }
 
-            SetStatus($"{NameOf(buyTargetItemId)} isn't in this shop.");
-            Print($"This shop doesn't sell {NameOf(buyTargetItemId)} on any of its tabs - wrong menu entry?");
-            return null;
+            return false;
         }
 
         var cost = (int)Math.Max(entry.CostAmount, 1);

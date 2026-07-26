@@ -34,7 +34,7 @@ public class MainWindow : Window
         // One row of chore buttons; more get added beside these.
         ImGui.BeginDisabled(plugin.Running);
 
-        Chore("Buy soil", "Stand near Hismena in Idyllshire.\n"
+        Chore("Soil", "Stand near Hismena in Idyllshire.\n"
             + "Spends your poetics on Unidentifiable Shells, then trades\n"
             + "every shell to Bertana for Grade 3 Shroud Topsoil.",
             plugin.StartBuySoil);
