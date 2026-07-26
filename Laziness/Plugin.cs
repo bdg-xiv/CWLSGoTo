@@ -266,9 +266,11 @@ public sealed class Plugin : IDalamudPlugin
 
         var npcIds = centurio ? new[] { ArdolainDataId } : HuntBillmasterDataIds;
         var npcLabel = centurio ? "Ardolain" : "the hunt billmaster";
+        // Ventures and aetheryte tickets live in the "(Other)" category, which these
+        // vendors offer as its own menu entry alongside the DoW/DoM/GC ones.
         var keywords = centurio
-            ? new[] { "centurio seal", "seal", "exchange", "trade" }
-            : new[] { "allied seal", "seal", "exchange", "trade" };
+            ? new[] { "centurio+other", "(other)", "other" }
+            : new[] { "allied+other", "(other)", "other" };
 
         Enqueue(() => InteractWith(npcIds, npcLabel), $"Interact with {npcLabel}");
         Enqueue(() => OpenShopMenu(keywords), "Open the seal shop");
@@ -350,7 +352,9 @@ public sealed class Plugin : IDalamudPlugin
         Print($"Buying {best.Name}.");
 
         Enqueue(() => InteractWith([ZirconDataId], "Zircon"), "Interact with Zircon");
-        Enqueue(() => OpenShopMenu(["mathematics", "other", "material", "tomestone", "exchange"]), "Open Zircon's shop");
+        // Zircon lists a category per tomestone, so both words are needed - he sells
+        // the other current tomestone's wares too.
+        Enqueue(() => OpenShopMenu(["mathematics+other", "(other)"]), "Open Zircon's shop");
         Enqueue(BuyFromCurrencyShop, $"Buy {best.Name}", 180000);
         Enqueue(CloseShopWindows, "Close Zircon's shop");
         Enqueue(ReportCurrencyRun, "Report");
@@ -475,9 +479,12 @@ public sealed class Plugin : IDalamudPlugin
         if (!EzThrottler.Throttle("Laziness.Menu", 1000))
             return false;
 
+        // A keyword may require several words at once ("centurio+other"), which is how
+        // the right category is picked out of menus that list one entry per category.
         foreach (var keyword in keywords)
         {
-            var index = Array.FindIndex(entries, e => e.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+            var parts = keyword.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var index = Array.FindIndex(entries, e => parts.All(part => e.Contains(part, StringComparison.OrdinalIgnoreCase)));
             if (index >= 0)
             {
                 SetStatus($"Menu: {entries[index]}");
