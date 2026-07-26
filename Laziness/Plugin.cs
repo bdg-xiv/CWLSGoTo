@@ -14,7 +14,9 @@ using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using static ECommons.GenericHelpers;
 using GameObjectStruct = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
 
@@ -43,6 +45,21 @@ public sealed class Plugin : IDalamudPlugin
     private const uint VentureId = 21072;
     private const uint AetheryteTicketId = 7569;
 
+    // Zircon in Solution Nine runs the "Allagan Tomestones of Mathematics (Other)"
+    // counter - the only tradeable things those tomestones buy, all at the same cost.
+    private const uint ZirconDataId = 1049079;
+    private const uint MathsTomeId = 48;
+    private const int MathsUnitCost = 20;
+    private static readonly Dictionary<uint, string> MathsWares = new()
+    {
+        [49223] = "Insulating Varnish",
+        [49224] = "Double Duracoat",
+        [49225] = "Everkeep Resin",
+        [49226] = "Mastodon Pelt",
+        [49227] = "Turali Pigment",
+        [49228] = "Yollal Extract",
+    };
+
     // The game takes at most 99 units per exchange, however much you can afford.
     private const int MaxPerPurchase = 99;
     private const int StepTimeoutMs = 15000;
@@ -60,7 +77,9 @@ public sealed class Plugin : IDalamudPlugin
     private int shellsAtStart;
     private int shellsBought;
 
-    internal bool Running => taskManager.IsBusy;
+    private volatile bool consultingMarket;
+
+    internal bool Running => taskManager.IsBusy || consultingMarket;
 
     public Plugin()
     {
@@ -255,6 +274,85 @@ public sealed class Plugin : IDalamudPlugin
         Enqueue(() => OpenShopMenu(keywords), "Open the seal shop");
         Enqueue(BuyFromCurrencyShop, $"Buy {NameOf(targetId)}s", 180000);
         Enqueue(CloseShopWindows, "Close the seal shop");
+        Enqueue(ReportCurrencyRun, "Report");
+    }
+
+    /// <summary>Buys whichever Mathematics ware currently pays best per tomestone,
+    /// judged from live market data rather than a fixed pick.</summary>
+    internal void StartMaths()
+    {
+        if (!CanStart())
+            return;
+
+        var tomes = CurrencyCount(MathsTomeId);
+        if (tomes < MathsUnitCost)
+        {
+            Print($"Only {tomes:N0} Mathematics tomestones - not enough for anything.");
+            return;
+        }
+
+        var dataCenter = Svc.Data.GetExcelSheet<World>()
+            .GetRowOrDefault(Svc.PlayerState.CurrentWorld.RowId)?
+            .DataCenter.ValueNullable?.Name.ExtractText();
+        if (string.IsNullOrEmpty(dataCenter))
+        {
+            Print("Couldn't work out your data centre.");
+            return;
+        }
+
+        consultingMarket = true;
+        Print($"Checking {dataCenter} prices for {tomes:N0} tomestones ({tomes / MathsUnitCost} items)...");
+
+        Task.Run(async () =>
+        {
+            List<MarketAdvisor.Candidate> ranked;
+            try
+            {
+                ranked = await MarketAdvisor.Rank(dataCenter, MathsWares, MathsUnitCost);
+            }
+            catch (Exception ex)
+            {
+                Svc.Log.Warning($"[Laziness] Universalis lookup failed: {ex.Message}");
+                await Svc.Framework.RunOnFrameworkThread(() =>
+                {
+                    consultingMarket = false;
+                    Print("Couldn't reach Universalis - try again in a moment.");
+                });
+                return;
+            }
+
+            await Svc.Framework.RunOnFrameworkThread(() =>
+            {
+                consultingMarket = false;
+                StartMathsPurchase(ranked);
+            });
+        });
+    }
+
+    private void StartMathsPurchase(List<MarketAdvisor.Candidate> ranked)
+    {
+        if (ranked.Count == 0)
+        {
+            Print("No market data for any of the Mathematics wares.");
+            return;
+        }
+
+        foreach (var candidate in ranked)
+            Print($"  {candidate.Name}: {candidate.Price:N0} gil, {candidate.UnitsPerDay:N0}/day sold "
+                + $"=> {candidate.GilPerUnitCost:N0} gil per tomestone");
+
+        var best = ranked[0];
+        spentCurrencyId = MathsTomeId;
+        currencyAtStart = CurrencyCount(MathsTomeId);
+        buyTargetItemId = best.ItemId;
+        targetAtStart = CountOf(best.ItemId);
+
+        Print($"Buying {best.Name}.");
+
+        Enqueue(() => InteractWith([ZirconDataId], "Zircon"), "Interact with Zircon");
+        Enqueue(() => OpenShopMenu(["mathematics", "other", "material", "tomestone", "exchange"]), "Open Zircon's shop");
+        Enqueue(BuyFromCurrencyShop, $"Buy {best.Name}", 180000);
+        Enqueue(CloseShopWindows, "Close Zircon's shop");
         Enqueue(ReportCurrencyRun, "Report");
     }
 

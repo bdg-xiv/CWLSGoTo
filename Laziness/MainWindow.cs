@@ -51,6 +51,12 @@ public class MainWindow : Window
             + "whichever you hold fewer of right now.",
             () => plugin.StartSealExchange(centurio: true));
 
+        ImGui.SameLine();
+        Chore("Maths", "Stand near Zircon in Solution Nine.\n"
+            + "Checks current market prices for the six tradeable wares and\n"
+            + "spends your Mathematics tomestones on whichever pays best.",
+            plugin.StartMaths);
+
         ImGui.EndDisabled();
 
         if (!plugin.Running)
