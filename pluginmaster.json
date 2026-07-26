@@ -324,6 +324,32 @@
   },
   {
     "Author": "bdg",
+    "Name": "Excess Entrust",
+    "InternalName": "ExcessEntrust",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "With the summoning bell's retainer list open, /excess walks every retainer that has an AutoRetainer entrust plan and hands over the excess of each plan's items and categories - while keeping enough in your bags to cover the materials of a selected Artisan crafting list. '/excess list <name>' picks the list, '/excess none' clears it, '/excess stop' aborts.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "retainer",
+      "inventory",
+      "artisan",
+      "autoretainer",
+      "entrust"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Entrust excess materials to your themed retainers, keeping what your Artisan list needs.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/ExcessEntrust.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/ExcessEntrust.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/ExcessEntrust.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.25",
