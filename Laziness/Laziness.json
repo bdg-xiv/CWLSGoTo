@@ -1,0 +1,12 @@
+{
+  "Author": "bdg",
+  "Name": "Laziness",
+  "Punchline": "One button for the chores you keep putting off.",
+  "Description": "A window of one-click chores. \"Buy soil\" talks to Hismena in Idyllshire, spends your Allagan Tomestones of Poetics on Unidentifiable Shells, then walks over to Bertana and trades every shell for Grade 3 Shroud Topsoil. Stand near the NPCs and press the button.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "automation",
+    "vendor",
+    "gardening"
+  ]
+}
