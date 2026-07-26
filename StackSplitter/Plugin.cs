@@ -1,5 +1,7 @@
+using Dalamud.Game.Command;
 using Dalamud.Game.Gui.ContextMenu;
 using Dalamud.Game.Text;
+using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -8,6 +10,7 @@ using ECommons.DalamudServices;
 using ECommons.Throttlers;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using Lumina.Excel.Sheets;
+using StackSplitter.Windows;
 using System;
 
 namespace StackSplitter;
@@ -17,16 +20,22 @@ public sealed class Plugin : IDalamudPlugin
     public string Name => PluginInterface.Manifest.Name;
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
-    private const int StackTarget = 50;
+    private const string CommandName = "/stacksplitter";
     private const int SplitIntervalMs = 650;
     private const int NoProgressTimeoutMs = 4000;
     private const int RunTimeoutMs = 60000;
 
+    private readonly Configuration configuration;
+    private readonly WindowSystem windowSystem = new("StackSplitter");
+    private readonly ConfigWindow configWindow;
+
     // The active split run: keep splitting every bag stack of the item (matching HQ
-    // state) until none holds more than the target.
+    // state) until none holds more than the target the run started with - changing
+    // the setting mid-run would otherwise never converge.
     private bool running;
     private uint runItemId;
     private bool runHq;
+    private int runStackTarget;
     private string runItemName = "";
     private long runDeadline;
     private long lastProgressAt;
@@ -36,12 +45,29 @@ public sealed class Plugin : IDalamudPlugin
     {
         ECommonsMain.Init(PluginInterface, this);
 
+        configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        configWindow = new ConfigWindow(configuration);
+        windowSystem.AddWindow(configWindow);
+
         Svc.ContextMenu.OnMenuOpened += OnMenuOpened;
         Svc.Framework.Update += OnFrameworkUpdate;
+        PluginInterface.UiBuilder.Draw += windowSystem.Draw;
+        PluginInterface.UiBuilder.OpenConfigUi += configWindow.Toggle;
+        PluginInterface.UiBuilder.OpenMainUi += configWindow.Toggle;
+
+        Svc.Commands.AddHandler(CommandName, new CommandInfo((_, _) => configWindow.Toggle())
+        {
+            HelpMessage = "Opens the Stack Splitter settings (the size stacks are split into)."
+        });
     }
 
     public void Dispose()
     {
+        Svc.Commands.RemoveHandler(CommandName);
+        PluginInterface.UiBuilder.OpenMainUi -= configWindow.Toggle;
+        PluginInterface.UiBuilder.OpenConfigUi -= configWindow.Toggle;
+        PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+        windowSystem.RemoveAllWindows();
         Svc.Framework.Update -= OnFrameworkUpdate;
         Svc.ContextMenu.OnMenuOpened -= OnMenuOpened;
         ECommonsMain.Dispose();
@@ -59,22 +85,23 @@ public sealed class Plugin : IDalamudPlugin
             or Dalamud.Game.Inventory.GameInventoryType.Inventory4))
             return;
 
+        var stackTarget = configuration.StackSize;
         var row = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(item.ItemId);
-        if (row == null || row.Value.StackSize <= 1 || item.Quantity <= StackTarget)
+        if (row == null || row.Value.StackSize <= 1 || item.Quantity <= stackTarget)
             return;
 
         var itemId = item.ItemId;
         var hq = item.IsHq;
         args.AddMenuItem(new MenuItem
         {
-            Name = $"Split into stacks of {StackTarget}",
+            Name = $"Split into stacks of {stackTarget}",
             Prefix = SeIconChar.BoxedLetterS,
             PrefixColor = 37,
-            OnClicked = _ => StartSplit(itemId, hq),
+            OnClicked = _ => StartSplit(itemId, hq, stackTarget),
         });
     }
 
-    private void StartSplit(uint itemId, bool hq)
+    private void StartSplit(uint itemId, bool hq, int stackTarget)
     {
         if (running)
         {
@@ -85,11 +112,12 @@ public sealed class Plugin : IDalamudPlugin
         running = true;
         runItemId = itemId;
         runHq = hq;
+        runStackTarget = stackTarget;
         runItemName = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId)?.Name.ExtractText() ?? $"Item {itemId}";
         runDeadline = Environment.TickCount64 + RunTimeoutMs;
         lastProgressAt = Environment.TickCount64;
         lastTotalOversize = -1;
-        Svc.Chat.Print($"[StackSplitter] Splitting {runItemName} into stacks of {StackTarget}...");
+        Svc.Chat.Print($"[StackSplitter] Splitting {runItemName} into stacks of {stackTarget}...");
     }
 
     private unsafe void OnFrameworkUpdate(IFramework framework)
@@ -122,7 +150,7 @@ public sealed class Plugin : IDalamudPlugin
                 var slot = container->GetInventorySlot(i);
                 if (slot == null || slot->ItemId != runItemId
                     || slot->Flags.HasFlag(InventoryItem.ItemFlags.HighQuality) != runHq
-                    || slot->Quantity <= StackTarget)
+                    || slot->Quantity <= runStackTarget)
                     continue;
 
                 totalOversize += slot->Quantity;
@@ -153,14 +181,14 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         if (EzThrottler.Throttle("StackSplitter.Split", SplitIntervalMs))
-            manager->SplitItem(bestContainer, (ushort)bestSlot, StackTarget);
+            manager->SplitItem(bestContainer, (ushort)bestSlot, runStackTarget);
     }
 
     private void Finish(string reason)
     {
         running = false;
         if (reason == "done")
-            Svc.Chat.Print($"[StackSplitter] {runItemName} is now in stacks of {StackTarget} or less.");
+            Svc.Chat.Print($"[StackSplitter] {runItemName} is now in stacks of {runStackTarget} or less.");
         else
             Svc.Chat.Print($"[StackSplitter] {runItemName}: {reason}.");
     }

@@ -139,6 +139,10 @@ public sealed class Plugin : IDalamudPlugin
     private string crashDetail = "";
     private int currentListingIndex;
     private int currentQuantity;
+    // A bag stack larger than one listing goes up in chunks: the leftover is
+    // re-queued so each chunk becomes its own listing (and its own sell slot).
+    private bool listRemainder;
+    private int quantityBeforeListing;
     private int marketCountBeforeReturn;
     private int repricedCount;
     private readonly List<string> culledReport = [];
@@ -430,6 +434,8 @@ public sealed class Plugin : IDalamudPlugin
         pendingListingIndexes.Clear();
         cullCurrentItem = false;
         crashKeepItem = false;
+        listRemainder = false;
+        quantityBeforeListing = 0;
         repricedCount = 0;
         culledReport.Clear();
         returnedReport.Clear();
@@ -457,6 +463,18 @@ public sealed class Plugin : IDalamudPlugin
             Svc.Chat.Print("[AutoLister] No active retainer, stopping.");
             PrintReport();
             return null;
+        }
+
+        // The previous item was a stack too big for one listing: put what's left of
+        // it back in the queue so the next chunk goes up as its own listing.
+        if (listRemainder)
+        {
+            listRemainder = false;
+            var remaining = SlotQuantity(currentContainer, currentSlot, currentItemId);
+            if (remaining > 0 && remaining < quantityBeforeListing)
+                pendingItems.Enqueue((currentContainer, currentSlot, currentItemId));
+            else if (remaining > 0)
+                Svc.Chat.Print($"[AutoLister] {ItemNameOf(currentItemId)}: {remaining} left over that could not be listed - put the rest up manually.");
         }
 
         // A merge pull that never completed leaves the flag set; surface it - the
@@ -1468,7 +1486,12 @@ public sealed class Plugin : IDalamudPlugin
 
         cachedPrices.TryAdd(itemName, newPrice.Value);
 
-        var quantity = GetCurrentItemQuantity();
+        // A single listing holds at most MaxItemsPerListing units, so a bigger bag
+        // stack has to go up as several listings of the same item. List one chunk
+        // now; the leftover is re-queued by ProcessNextItem.
+        var stackQuantity = GetCurrentItemQuantity();
+        var quantity = Math.Min(stackQuantity, MaxItemsPerListing);
+        var splitAcrossListings = stackQuantity > MaxItemsPerListing;
         var total = (long)newPrice.Value * quantity;
         var vendorTotal = GetVendorPrice(currentItemId, itemIsHq) * quantity;
         var marketNet = total * (100 - MarketTaxPercent) / 100;
@@ -1487,10 +1510,22 @@ public sealed class Plugin : IDalamudPlugin
             return true;
         }
 
+        var chunkNote = "";
+        if (splitAcrossListings)
+        {
+            addon->Quantity->SetValue(quantity);
+            var listingsNeeded = (stackQuantity + MaxItemsPerListing - 1) / MaxItemsPerListing;
+            chunkNote = $" ({quantity} of {stackQuantity} - needs {listingsNeeded} listings)";
+            Svc.Chat.Print($"[AutoLister] {itemName}: {stackQuantity} in one stack is over the {MaxItemsPerListing}-per-listing cap "
+                + $"- putting up {quantity} now, {listingsNeeded} listing(s) in total.");
+            listRemainder = true;
+            quantityBeforeListing = stackQuantity;
+        }
+
         addon->AskingPrice->SetValue(newPrice.Value);
-        Svc.Chat.Print($"[AutoLister] {itemName}: listed at {newPrice.Value:N0} gil{(mergeCompleted ? " (merged with the previous listing)" : "")}.");
+        Svc.Chat.Print($"[AutoLister] {itemName}: listed at {newPrice.Value:N0} gil{(mergeCompleted ? " (merged with the previous listing)" : "")}{chunkNote}.");
         listedCount++;
-        listedReport.Add((itemName, newPrice.Value, mergeCompleted ? "(merged stacks)" : ""));
+        listedReport.Add((itemName, newPrice.Value, mergeCompleted ? "(merged stacks)" : chunkNote.TrimStart()));
         Callback.Fire(&addon->AtkUnitBase, true, RetainerSellConfirmEvent);
         addon->AtkUnitBase.Close(true);
         return true;
@@ -1509,10 +1544,14 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private unsafe int GetCurrentItemQuantity()
+        => Math.Max(SlotQuantity(currentContainer, currentSlot, currentItemId), 1);
+
+    /// <summary>Units of the given item still sitting in that slot, 0 once it's gone.</summary>
+    private static unsafe int SlotQuantity(InventoryType container, int slotIndex, uint itemId)
     {
-        var container = InventoryManager.Instance()->GetInventoryContainer(currentContainer);
-        var slot = container != null ? container->GetInventorySlot(currentSlot) : null;
-        return slot != null && slot->ItemId == currentItemId ? Math.Max((int)slot->Quantity, 1) : 1;
+        var containerPtr = InventoryManager.Instance()->GetInventoryContainer(container);
+        var slot = containerPtr != null ? containerPtr->GetInventorySlot(slotIndex) : null;
+        return slot != null && slot->ItemId == itemId ? (int)slot->Quantity : 0;
     }
 
     private unsafe bool? VendorViaRetainer()

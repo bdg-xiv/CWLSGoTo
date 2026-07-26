@@ -47,10 +47,8 @@ jobs:
         $plugins = @(
           @{ Project = "SamplePlugin"; InternalName = "CWLSGoTo" },
           @{ Project = "DesynthAllCommand"; InternalName = "DesynthAllCommand" },
-          @{ Project = "LogoutOnTell"; InternalName = "LogoutOnTell" },
           @{ Project = "ModGuard"; InternalName = "ModGuard" },
           @{ Project = "TypoGuard"; InternalName = "TypoGuard" },
-          @{ Project = "ModSnap"; InternalName = "ModSnap" },
           @{ Project = "AutoLister"; InternalName = "AutoLister" },
           @{ Project = "GemRate"; InternalName = "GemRate" },
           @{ Project = "FaloopScreener"; InternalName = "FaloopScreener" },
