@@ -55,3 +55,49 @@ internal readonly unsafe struct ItemExchangeShop(AtkUnitBase* addon)
     /// <summary>Starts the exchange for a row; a confirmation dialog follows.</summary>
     internal void Select(Row row, int amount) => Callback.Fire(Addon, true, 0, row.Index, amount);
 }
+
+/// <summary>
+/// Reader for the "GrandCompanyExchange" addon - the company seal counter. Its rows
+/// live in parallel AtkValue blocks the same way the shop windows' do, and only the
+/// selected category's rows are published.
+/// </summary>
+internal readonly unsafe struct GrandCompanyShop(AtkUnitBase* addon)
+{
+    private const int RowCountIndex = 1;
+    private const int RowBase = 17;
+    private const int SealCostOffset = 50;
+    private const int ItemIdOffset = 300;
+    private const int RequiredRankOffset = 400;
+
+    internal readonly AtkUnitBase* Addon = addon;
+
+    internal record Row(uint ItemId, uint SealCost, uint RequiredRank, int Index);
+
+    private uint Value(int index) => Addon->AtkValues[index].UInt;
+
+    internal List<Row> Rows()
+    {
+        var rows = new List<Row>();
+        var count = (int)Value(RowCountIndex);
+        for (var i = 0; i < count; i++)
+        {
+            var basis = RowBase + i;
+            // Stay inside the addon's value array whatever the row count claims.
+            if (basis + RequiredRankOffset >= Addon->AtkValuesCount)
+                break;
+
+            var itemId = Value(basis + ItemIdOffset);
+            var cost = Value(basis + SealCostOffset);
+            if (itemId == 0 || cost == 0)
+                continue;
+
+            rows.Add(new Row(itemId, cost, Value(basis + RequiredRankOffset), i));
+        }
+
+        return rows;
+    }
+
+    /// <summary>Buys a stackable row; a yes/no confirmation follows.</summary>
+    internal void Buy(Row row, int amount)
+        => Callback.Fire(Addon, true, 0, row.Index, amount, 0, true, false, 0, 0, 0);
+}

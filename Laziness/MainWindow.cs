@@ -57,6 +57,12 @@ public class MainWindow : Window
             + "spends your Mathematics tomestones on whichever pays best.",
             plugin.StartMaths);
 
+        // Second row, so the window doesn't grow into a long strip.
+        Chore("Seals", "Stand near your Grand Company quartermaster.\n"
+            + "Opens the Materials tab and spends every company seal on\n"
+            + "whichever material the market pays best for per seal.",
+            plugin.StartSeals);
+
         ImGui.EndDisabled();
 
         if (!plugin.Running)

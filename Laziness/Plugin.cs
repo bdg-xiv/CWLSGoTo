@@ -45,6 +45,12 @@ public sealed class Plugin : IDalamudPlugin
     private const uint VentureId = 21072;
     private const uint AetheryteTicketId = 7569;
 
+    // Grand Company quartermasters - all three, so it works whichever company you're in.
+    private static readonly uint[] QuartermasterDataIds = [1002390, 1002387, 1002393];
+    private static readonly uint[] GcSealIds = [22, 20, 21]; // Flame, Storm, Serpent
+    private const uint GcCategoryTabNodeId = 44;             // + index; Materials is the 4th
+    private const int GcMaterialsTabIndex = 3;
+
     // Zircon in Solution Nine runs the "Allagan Tomestones of Mathematics (Other)"
     // counter - the only tradeable things those tomestones buy, all at the same cost.
     private const uint ZirconDataId = 1049079;
@@ -78,6 +84,11 @@ public sealed class Plugin : IDalamudPlugin
     private int shellsBought;
 
     private volatile bool consultingMarket;
+    private volatile bool gcLookupDone;
+    private int gcTabAttempts;
+    private long gcStallDeadline;
+    private int gcSealsAtLastPurchase;
+    private GrandCompanyShop.Row? gcTargetRow;
 
     internal bool Running => taskManager.IsBusy || consultingMarket;
 
@@ -146,18 +157,23 @@ public sealed class Plugin : IDalamudPlugin
     internal static unsafe int CurrencyCount(uint itemId)
     {
         var manager = InventoryManager.Instance();
-        var container = manager->GetInventoryContainer(InventoryType.Currency);
-        if (container == null)
-            return manager->GetInventoryItemCount(itemId);
-
-        for (var i = 0; i < container->Size; i++)
+        foreach (var type in (InventoryType[])[InventoryType.Currency, InventoryType.Crystals])
         {
-            var slot = container->GetInventorySlot(i);
-            if (slot != null && slot->ItemId == itemId)
-                return (int)slot->Quantity;
+            var container = manager->GetInventoryContainer(type);
+            if (container == null)
+                continue;
+
+            for (var i = 0; i < container->Size; i++)
+            {
+                var slot = container->GetInventorySlot(i);
+                if (slot != null && slot->ItemId == itemId)
+                    return (int)slot->Quantity;
+            }
         }
 
-        return 0;
+        // Not every currency sits in the currency container - Centurio Seals don't -
+        // so fall back to a whole-inventory count rather than reporting none.
+        return manager->GetInventoryItemCount(itemId);
     }
 
     private static unsafe int FreeBagSlots()
@@ -360,6 +376,231 @@ public sealed class Plugin : IDalamudPlugin
         Enqueue(ReportCurrencyRun, "Report");
     }
 
+    /// <summary>Spends company seals on whichever Materials row pays best per seal,
+    /// judged the same way as the tomestone wares.</summary>
+    internal void StartSeals()
+    {
+        if (!CanStart())
+            return;
+
+        var sealId = GcSealIds.OrderByDescending(CurrencyCount).First();
+        var seals = CurrencyCount(sealId);
+        if (seals <= 0)
+        {
+            Print("No company seals to spend.");
+            return;
+        }
+
+        spentCurrencyId = sealId;
+        currencyAtStart = seals;
+        buyTargetItemId = 0;
+        gcTargetRow = null;
+        gcLookupDone = false;
+        gcTabAttempts = 0;
+
+        Print($"{NameOf(sealId)}s: {seals:N0}. Checking the Materials counter...");
+
+        Enqueue(() => InteractWith(QuartermasterDataIds, "a quartermaster"), "Interact with the quartermaster");
+        Enqueue(() => OpenShopMenu(["purchase", "exchange", "trade"]), "Open the seal exchange");
+        Enqueue(SelectMaterialsTab, "Select the Materials tab", 60000);
+        Enqueue(StartGcMarketLookup, "Read the Materials rows");
+        Enqueue(() => gcLookupDone ? true : null, "Wait for prices", 60000);
+        Enqueue(BuyGcMaterial, "Buy the best material", 300000);
+        Enqueue(CloseGcExchange, "Close the exchange");
+        Enqueue(ReportCurrencyRun, "Report");
+    }
+
+    private static unsafe bool GcExchangeOpen(out AtkUnitBase* addon)
+        => TryGetAddonByName("GrandCompanyExchange", out addon) && IsAddonReady(addon);
+
+    /// <summary>Switches to the Materials category. The tab is a radio button, clicked
+    /// the way a player would; if that doesn't take, the run asks for a click instead
+    /// of hammering the window.</summary>
+    private unsafe bool? SelectMaterialsTab()
+    {
+        if (!GcExchangeOpen(out var addon))
+            return false;
+
+        var node = addon->GetNodeById(GcCategoryTabNodeId + GcMaterialsTabIndex);
+        var radio = node != null ? node->GetAsAtkComponentRadioButton() : null;
+        if (radio == null)
+            return false;
+
+        if (radio->IsSelected)
+            return true;
+
+        if (gcTabAttempts >= 4)
+        {
+            if (EzThrottler.Throttle("Laziness.GcTabHint", 10000))
+                Print("Couldn't switch to the Materials tab - click it and I'll carry on.");
+            return false;
+        }
+
+        if (!EzThrottler.Throttle("Laziness.GcTab", 1000))
+            return false;
+
+        gcTabAttempts++;
+        if (!radio->AtkComponentButton.IsEnabled)
+            return false;
+
+        var owner = radio->AtkComponentButton.AtkComponentBase.OwnerNode;
+        if (owner == null || !owner->AtkResNode.IsVisible())
+            return false;
+
+        var atkEvent = owner->AtkResNode.AtkEventManager.Event;
+        if (atkEvent == null)
+            return false;
+
+        SetStatus($"Selecting the Materials tab (attempt {gcTabAttempts})...");
+        addon->ReceiveEvent(atkEvent->State.EventType, (int)atkEvent->Param, atkEvent);
+        return false;
+    }
+
+    /// <summary>Reads what the Materials tab is offering and asks the market which of
+    /// those tradeable rows pays best per seal.</summary>
+    private unsafe bool? StartGcMarketLookup()
+    {
+        if (!GcExchangeOpen(out var addon))
+            return false;
+
+        var rows = new GrandCompanyShop(addon).Rows();
+        var sheet = Svc.Data.GetExcelSheet<Item>();
+        var tradeable = rows
+            .Where(r => sheet.GetRowOrDefault(r.ItemId) is { IsUntradable: false })
+            .ToList();
+
+        if (tradeable.Count == 0)
+        {
+            Print("Nothing tradeable on the Materials tab - is it the tab that's showing?");
+            return null;
+        }
+
+        var dataCenter = Svc.Data.GetExcelSheet<World>()
+            .GetRowOrDefault(Svc.PlayerState.CurrentWorld.RowId)?
+            .DataCenter.ValueNullable?.Name.ExtractText();
+        if (string.IsNullOrEmpty(dataCenter))
+        {
+            Print("Couldn't work out your data centre.");
+            return null;
+        }
+
+        SetStatus($"Pricing {tradeable.Count} Materials rows on {dataCenter}...");
+        LaunchGcMarketLookup(dataCenter, tradeable);
+        return true;
+    }
+
+    /// <summary>The await has to live outside the unsafe row-reading code.</summary>
+    private void LaunchGcMarketLookup(string dataCenter, List<GrandCompanyShop.Row> rows)
+    {
+        var names = rows.ToDictionary(r => r.ItemId, r => NameOf(r.ItemId));
+        var costs = rows.ToDictionary(r => r.ItemId, r => (int)r.SealCost);
+
+        Task.Run(async () =>
+        {
+            List<MarketAdvisor.Candidate> ranked;
+            try
+            {
+                // Seal costs differ per row, so rank on a flat unit cost and divide by
+                // each row's own cost afterwards.
+                ranked = await MarketAdvisor.Rank(dataCenter, names, 1);
+            }
+            catch (Exception ex)
+            {
+                Svc.Log.Warning($"[Laziness] Universalis lookup failed: {ex.Message}");
+                await Svc.Framework.RunOnFrameworkThread(() => Print("Couldn't reach Universalis - try again in a moment."));
+                return;
+            }
+
+            await Svc.Framework.RunOnFrameworkThread(() =>
+            {
+                var best = ranked
+                    .Select(c => (Candidate: c, PerSeal: c.GilPerUnitCost / Math.Max(costs[c.ItemId], 1)))
+                    .OrderByDescending(x => x.PerSeal)
+                    .ToList();
+
+                if (best.Count == 0)
+                {
+                    Print("No market data for anything on the Materials tab.");
+                    return;
+                }
+
+                foreach (var (candidate, perSeal) in best.Take(5))
+                    Print($"  {candidate.Name}: {candidate.Price:N0} gil / {costs[candidate.ItemId]:N0} seals, "
+                        + $"{candidate.UnitsPerDay:N0}/day => {perSeal:N1} gil per seal");
+
+                var winner = best[0].Candidate;
+                buyTargetItemId = winner.ItemId;
+                targetAtStart = CountOf(winner.ItemId);
+                gcTargetRow = rows.First(r => r.ItemId == winner.ItemId);
+                Print($"Buying {winner.Name}.");
+                gcLookupDone = true;
+            });
+        });
+    }
+
+    private unsafe bool? BuyGcMaterial()
+    {
+        if (gcTargetRow == null)
+            return true;
+
+        if (TryGetAddonMaster<AddonMaster.SelectYesno>("SelectYesno", out var yesno) && yesno.IsAddonReady)
+        {
+            if (EzThrottler.Throttle("Laziness.Yes", 500))
+                yesno.Yes();
+            return false;
+        }
+
+        if (!GcExchangeOpen(out var addon))
+            return false;
+
+        var seals = CurrencyCount(spentCurrencyId);
+        var cost = (int)Math.Max(gcTargetRow.SealCost, 1);
+        var affordable = seals / cost;
+        if (affordable <= 0)
+        {
+            SetStatus($"Seals spent ({seals:N0} left, {cost} each).");
+            return true;
+        }
+
+        if (!HasRoomFor(buyTargetItemId))
+        {
+            Print($"No inventory room for more {NameOf(buyTargetItemId)} - stopping here.");
+            return true;
+        }
+
+        // Stall guard: if the seals stop going down the purchase isn't landing (rank
+        // requirement, a dialog we don't handle), so stop instead of looping.
+        var now = Environment.TickCount64;
+        if (seals != gcSealsAtLastPurchase)
+        {
+            gcSealsAtLastPurchase = seals;
+            gcStallDeadline = now + 15000;
+        }
+        else if (now > gcStallDeadline && gcStallDeadline != 0)
+        {
+            Print($"{NameOf(buyTargetItemId)} isn't going through - stopping.");
+            return true;
+        }
+
+        if (!EzThrottler.Throttle("Laziness.BuyGc", 1000))
+            return false;
+
+        var amount = Math.Min(affordable, MaxPerPurchase);
+        SetStatus($"Buying {amount} x {NameOf(buyTargetItemId)} at {cost} seals...");
+        new GrandCompanyShop(addon).Buy(gcTargetRow, amount);
+        return false;
+    }
+
+    private static unsafe bool? CloseGcExchange()
+    {
+        if (!GcExchangeOpen(out var addon))
+            return true;
+
+        if (EzThrottler.Throttle("Laziness.CloseGc", 500))
+            addon->Close(true);
+        return false;
+    }
+
     private bool CanStart()
     {
         if (Running)
@@ -450,7 +691,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private static unsafe bool ShopIsOpen()
         => (TryGetAddonByName<AtkUnitBase>("ShopExchangeCurrency", out var currency) && IsAddonReady(currency))
-        || (TryGetAddonByName<AtkUnitBase>("ShopExchangeItem", out var item) && IsAddonReady(item));
+        || (TryGetAddonByName<AtkUnitBase>("ShopExchangeItem", out var item) && IsAddonReady(item))
+        || GcExchangeOpen(out _);
 
     /// <summary>Walks the dialogue menus until a shop window is up, choosing entries by
     /// keyword so it works whatever the menu depth is.</summary>
