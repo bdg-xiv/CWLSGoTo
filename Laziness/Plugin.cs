@@ -14,7 +14,6 @@ using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using static ECommons.GenericHelpers;
 using GameObjectStruct = FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject;
@@ -36,6 +35,14 @@ public sealed class Plugin : IDalamudPlugin
     private const uint Grade3ShroudTopsoilId = 7763;
     private const uint PoeticsItemId = 28;
 
+    // One hunt billmaster per city - match all three so it works wherever you are.
+    private static readonly uint[] HuntBillmasterDataIds = [1001379, 1009152, 1009552];
+    private const uint ArdolainDataId = 1012225;
+    private const uint AlliedSealId = 27;
+    private const uint CenturioSealId = 10307;
+    private const uint VentureId = 21072;
+    private const uint AetheryteTicketId = 7569;
+
     // The game takes at most 99 units per exchange, however much you can afford.
     private const int MaxPerPurchase = 99;
     private const int StepTimeoutMs = 15000;
@@ -45,9 +52,12 @@ public sealed class Plugin : IDalamudPlugin
     private readonly TaskManager taskManager;
     private readonly Configuration configuration;
 
+    // Run bookkeeping: everything reported comes from inventory deltas.
+    private uint buyTargetItemId;
+    private uint spentCurrencyId;
+    private int currencyAtStart;
+    private int targetAtStart;
     private int shellsAtStart;
-    private int topsoilAtStart;
-    private int poeticsAtStart;
     private int shellsBought;
 
     internal bool Running => taskManager.IsBusy;
@@ -104,11 +114,16 @@ public sealed class Plugin : IDalamudPlugin
             Message = new SeStringBuilder().AddUiForeground("[Laziness] ", 45).AddText(message).Build(),
         });
 
+    private static string NameOf(uint itemId)
+        => Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId)?.Name.ExtractText() ?? $"item {itemId}";
+
+    // ---- Inventory --------------------------------------------------------------
+
     internal static unsafe int CountOf(uint itemId)
         => InventoryManager.Instance()->GetInventoryItemCount(itemId);
 
-    /// <summary>Poetics and other currencies live outside the bags, so they need the
-    /// currency container explicitly.</summary>
+    /// <summary>Seals and tomestones live outside the bags, so they need the currency
+    /// container explicitly.</summary>
     internal static unsafe int CurrencyCount(uint itemId)
     {
         var manager = InventoryManager.Instance();
@@ -170,37 +185,88 @@ public sealed class Plugin : IDalamudPlugin
         return false;
     }
 
+    // ---- Chores -----------------------------------------------------------------
+
     internal void StartBuySoil()
     {
-        if (taskManager.IsBusy)
-        {
-            Print("Already running - stop it first.");
-            return;
-        }
-
-        if (!Svc.ClientState.IsLoggedIn)
+        if (!CanStart())
             return;
 
-        poeticsAtStart = CurrencyCount(PoeticsItemId);
         shellsAtStart = CountOf(UnidentifiableShellId);
-        topsoilAtStart = CountOf(Grade3ShroudTopsoilId);
         shellsBought = 0;
+        targetAtStart = CountOf(Grade3ShroudTopsoilId);
+        spentCurrencyId = PoeticsItemId;
+        currencyAtStart = CurrencyCount(PoeticsItemId);
+        buyTargetItemId = UnidentifiableShellId;
 
-        SetStatus($"Starting with {poeticsAtStart:N0} poetics.");
+        SetStatus($"Buy soil: starting with {currencyAtStart:N0} poetics.");
 
         // Hismena: poetics -> Unidentifiable Shell.
-        Enqueue(() => InteractWith(HismenaDataId, "Hismena"), "Interact with Hismena");
+        Enqueue(() => InteractWith(HismenaDataIds, "Hismena"), "Interact with Hismena");
         Enqueue(() => OpenShopMenu(["special arms", "poetics", "tomestone"]), "Open Hismena's shop");
-        Enqueue(BuyShells, "Buy Unidentifiable Shells", 120000);
+        Enqueue(BuyFromCurrencyShop, "Buy Unidentifiable Shells", 120000);
         Enqueue(RecordShellsBought, "Count shells bought");
         Enqueue(CloseShopWindows, "Close Hismena's shop");
 
         // Bertana: Unidentifiable Shell -> Grade 3 Shroud Topsoil.
-        Enqueue(() => InteractWith(BertanaDataId, "Bertana"), "Interact with Bertana");
+        Enqueue(() => InteractWith([BertanaDataId], "Bertana"), "Interact with Bertana");
         Enqueue(() => OpenShopMenu(["uncanny", "knickknack", "exchange"]), "Open Bertana's shop");
         Enqueue(BuyTopsoil, "Buy Grade 3 Shroud Topsoil", 120000);
         Enqueue(CloseShopWindows, "Close Bertana's shop");
-        Enqueue(FinishRun, "Report");
+        Enqueue(ReportSoilRun, "Report");
+    }
+
+    private static readonly uint[] HismenaDataIds = [HismenaDataId];
+
+    /// <summary>Spends hunt seals on whichever of ventures / aetheryte tickets you
+    /// currently hold fewer of.</summary>
+    internal void StartSealExchange(bool centurio)
+    {
+        if (!CanStart())
+            return;
+
+        var currencyId = centurio ? CenturioSealId : AlliedSealId;
+        var seals = CurrencyCount(currencyId);
+        if (seals <= 0)
+        {
+            Print($"No {NameOf(currencyId)}s to spend.");
+            return;
+        }
+
+        var ventures = CountOf(VentureId);
+        var tickets = CountOf(AetheryteTicketId);
+        var targetId = ventures <= tickets ? VentureId : AetheryteTicketId;
+
+        spentCurrencyId = currencyId;
+        currencyAtStart = seals;
+        buyTargetItemId = targetId;
+        targetAtStart = CountOf(targetId);
+
+        Print($"{NameOf(currencyId)}s: {seals:N0}. Ventures {ventures:N0} vs tickets {tickets:N0} "
+            + $"- buying {NameOf(targetId)}s.");
+
+        var npcIds = centurio ? new[] { ArdolainDataId } : HuntBillmasterDataIds;
+        var npcLabel = centurio ? "Ardolain" : "the hunt billmaster";
+        var keywords = centurio
+            ? new[] { "centurio seal", "seal", "exchange", "trade" }
+            : new[] { "allied seal", "seal", "exchange", "trade" };
+
+        Enqueue(() => InteractWith(npcIds, npcLabel), $"Interact with {npcLabel}");
+        Enqueue(() => OpenShopMenu(keywords), "Open the seal shop");
+        Enqueue(BuyFromCurrencyShop, $"Buy {NameOf(targetId)}s", 180000);
+        Enqueue(CloseShopWindows, "Close the seal shop");
+        Enqueue(ReportCurrencyRun, "Report");
+    }
+
+    private bool CanStart()
+    {
+        if (taskManager.IsBusy)
+        {
+            Print("Already running - stop it first.");
+            return false;
+        }
+
+        return Svc.ClientState.IsLoggedIn;
     }
 
     private void Enqueue(Func<bool?> task, string name, int timeoutMs = StepTimeoutMs)
@@ -214,20 +280,28 @@ public sealed class Plugin : IDalamudPlugin
         return true;
     }
 
-    private bool? FinishRun()
+    private bool? ReportSoilRun()
     {
-        var poeticsSpent = poeticsAtStart - CurrencyCount(PoeticsItemId);
-        var topsoilBought = Math.Max(CountOf(Grade3ShroudTopsoilId) - topsoilAtStart, 0);
+        var spent = currencyAtStart - CurrencyCount(PoeticsItemId);
+        var topsoil = Math.Max(CountOf(Grade3ShroudTopsoilId) - targetAtStart, 0);
+        SetStatus($"Buy soil done: {topsoil} topsoil for {spent:N0} poetics.");
+        Print($"Bought {shellsBought} Unidentifiable Shell and {topsoil} Grade 3 Shroud Topsoil for {spent:N0} poetics.");
+        return true;
+    }
 
-        SetStatus($"Done - {topsoilBought} topsoil for {poeticsSpent:N0} poetics.");
-        Print($"Bought {shellsBought} Unidentifiable Shell and {topsoilBought} Grade 3 Shroud Topsoil "
-            + $"for {poeticsSpent:N0} poetics.");
+    private bool? ReportCurrencyRun()
+    {
+        var spent = currencyAtStart - CurrencyCount(spentCurrencyId);
+        var gained = Math.Max(CountOf(buyTargetItemId) - targetAtStart, 0);
+        SetStatus($"Seal run done: {gained} x {NameOf(buyTargetItemId)} for {spent:N0}.");
+        Print($"Bought {gained} {NameOf(buyTargetItemId)} for {spent:N0} {NameOf(spentCurrencyId)}s "
+            + $"({CurrencyCount(spentCurrencyId):N0} left).");
         return true;
     }
 
     // ---- NPC interaction --------------------------------------------------------
 
-    private unsafe bool? InteractWith(uint dataId, string npcName)
+    private unsafe bool? InteractWith(uint[] dataIds, string npcName)
     {
         // A shop window already being open means we're there.
         if (ShopIsOpen())
@@ -241,15 +315,15 @@ public sealed class Plugin : IDalamudPlugin
         if (TryGetAddonMaster<AddonMaster.SelectString>("SelectString", out var strings) && strings.IsAddonReady)
             return true;
 
-        var npc = Svc.Objects.FirstOrDefault(o => o.BaseId == dataId);
+        var npc = Svc.Objects.FirstOrDefault(o => dataIds.Contains(o.BaseId));
         if (npc == null)
         {
             SetStatus($"{npcName} isn't nearby.");
-            Print($"{npcName} isn't nearby - stand next to her in Idyllshire and try again.");
+            Print($"{npcName} isn't nearby - stand next to them and try again.");
             return null; // aborts the queue
         }
 
-        if (!EzThrottler.Throttle($"Laziness.Interact.{dataId}", 2000))
+        if (!EzThrottler.Throttle("Laziness.Interact", 2000))
             return false;
 
         SetStatus($"Talking to {npcName}...");
@@ -294,7 +368,7 @@ public sealed class Plugin : IDalamudPlugin
         return false;
     }
 
-    private bool? SelectMenuEntry(string[] entries, string[] keywords, Action<int> select)
+    private static bool? SelectMenuEntry(string[] entries, string[] keywords, Action<int> select)
     {
         if (entries.Length == 0)
             return false;
@@ -336,8 +410,9 @@ public sealed class Plugin : IDalamudPlugin
 
     // ---- Purchasing -------------------------------------------------------------
 
-    /// <summary>Spends poetics on Unidentifiable Shells until they run out.</summary>
-    private unsafe bool? BuyShells()
+    /// <summary>Spends the shop's currency on <see cref="buyTargetItemId"/> until it
+    /// runs out, the bags fill up, or the item can't be found in the window.</summary>
+    private unsafe bool? BuyFromCurrencyShop()
     {
         if (TryGetAddonMaster<AddonMaster.SelectYesno>("SelectYesno", out var yesno) && yesno.IsAddonReady)
         {
@@ -349,11 +424,11 @@ public sealed class Plugin : IDalamudPlugin
         if (!TryGetAddonMaster<AddonMaster.ShopExchangeCurrency>("ShopExchangeCurrency", out var shop) || !shop.IsAddonReady)
             return false;
 
-        var entry = shop.BasicShopItems.FirstOrDefault(x => x.ItemId == UnidentifiableShellId);
+        var entry = shop.BasicShopItems.FirstOrDefault(x => x.ItemId == buyTargetItemId);
         if (entry == null)
         {
-            SetStatus("Unidentifiable Shell isn't in this shop.");
-            Print("This shop doesn't sell Unidentifiable Shell - wrong menu entry?");
+            SetStatus($"{NameOf(buyTargetItemId)} isn't in this shop.");
+            Print($"This shop doesn't sell {NameOf(buyTargetItemId)} - wrong menu entry?");
             return null;
         }
 
@@ -361,22 +436,22 @@ public sealed class Plugin : IDalamudPlugin
         var affordable = (int)shop.CurrencyAmount / cost;
         if (affordable <= 0)
         {
-            SetStatus($"Out of poetics ({shop.CurrencyAmount:N0} left, {cost} each).");
+            SetStatus($"Currency spent ({shop.CurrencyAmount:N0} left, {cost} each).");
             return true;
         }
 
-        if (!HasRoomFor(UnidentifiableShellId))
+        if (!HasRoomFor(buyTargetItemId))
         {
             SetStatus("Inventory full.");
-            Print("No inventory room for more shells - stopping here.");
+            Print($"No inventory room for more {NameOf(buyTargetItemId)} - stopping here.");
             return true;
         }
 
         var amount = Math.Min(affordable, MaxPerPurchase);
-        if (!EzThrottler.Throttle("Laziness.BuyShell", 1000))
+        if (!EzThrottler.Throttle("Laziness.Buy", 1000))
             return false;
 
-        SetStatus($"Buying {amount} shell(s) at {cost} poetics each...");
+        SetStatus($"Buying {amount} x {NameOf(buyTargetItemId)} at {cost} each...");
         entry.Select(amount);
         return false;
     }
@@ -435,5 +510,4 @@ public sealed class Plugin : IDalamudPlugin
         shop.Select(row, amount);
         return false;
     }
-
 }
