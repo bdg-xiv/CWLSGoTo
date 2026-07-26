@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StackSplitter", "StackSplit
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orchestrion", "Orchestrion\Orchestrion.csproj", "{A7D3F821-4C96-4E2B-B1D8-6F0E92C5A734}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExcessEntrust", "ExcessEntrust\ExcessEntrust.csproj", "{D4B8F5E2-7A31-4C89-9E56-1B2C8D94A7F3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -87,6 +89,10 @@ Global
 		{A7D3F821-4C96-4E2B-B1D8-6F0E92C5A734}.Debug|x64.Build.0 = Debug|x64
 		{A7D3F821-4C96-4E2B-B1D8-6F0E92C5A734}.Release|x64.ActiveCfg = Release|x64
 		{A7D3F821-4C96-4E2B-B1D8-6F0E92C5A734}.Release|x64.Build.0 = Release|x64
+		{D4B8F5E2-7A31-4C89-9E56-1B2C8D94A7F3}.Debug|x64.ActiveCfg = Debug|x64
+		{D4B8F5E2-7A31-4C89-9E56-1B2C8D94A7F3}.Debug|x64.Build.0 = Debug|x64
+		{D4B8F5E2-7A31-4C89-9E56-1B2C8D94A7F3}.Release|x64.ActiveCfg = Release|x64
+		{D4B8F5E2-7A31-4C89-9E56-1B2C8D94A7F3}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
