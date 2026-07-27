@@ -545,6 +545,10 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.SetTooltip($"Make \"{plan.ItemName}\" x{GatherPlanner.TargetQuantity:N0} the active\n"
                 + $"auto-gather list in GatherBuddy Reborn.\n\n"
                 + $"Picked from {plan.Reason} ({plan.Nodes} untimed nodes, e.g. {plan.Zone}).\n"
+                + (plan.Exclusive
+                    ? "It comes from nowhere else, so every gather counts for this one.\n"
+                    : "Careful: nothing here drops only from these nodes, so this item\n"
+                      + "also comes from other levels and may credit a different tier.\n")
                 + "Any other active list is switched off. This does not start\nauto-gather - flip that in GatherBuddy Reborn yourself.");
     }
 
@@ -562,6 +566,9 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Chat.Print($"[Gather Tally] GatherBuddy Reborn is now set to gather {plan.ItemName} "
             + $"x{GatherPlanner.TargetQuantity:N0} for \"{achievement.Name}\".");
+        if (!plan.Exclusive)
+            Svc.Chat.PrintError($"[Gather Tally] Nothing drops only from those nodes, so {plan.ItemName} "
+                + "comes from other levels too and may credit a different tier of this series.");
         if (deactivated.Count > 0)
             Svc.Chat.Print($"[Gather Tally] Switched off {deactivated.Count} other active list(s): {string.Join(", ", deactivated)}.");
     }
