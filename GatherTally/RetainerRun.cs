@@ -8,6 +8,7 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 
 namespace GatherTally;
 
@@ -62,6 +63,7 @@ public sealed class RetainerRun
     private bool houseEntryRequested;
     private bool houseEntryFailed;
     private long lastBusyAt;
+    private bool? schedulerWasEnabled;
 
     public RetainerRun(Configuration config) => this.config = config;
 
@@ -154,6 +156,10 @@ public sealed class RetainerRun
         }
 
         resumeGathering = true;
+
+        // Note how AutoRetainer was set before touching it, so the trip can put it back.
+        schedulerWasEnabled = AutoRetainerIpc.SchedulerEnabled();
+
         GatherBuddyIpc.SetAutoGatherEnabled(false);
         Report("A venture is done - pausing the gather run and heading home.");
 
@@ -195,7 +201,8 @@ public sealed class RetainerRun
                     // Arm AutoRetainer before the bell opens. Its scheduler only picks
                     // retainers up while its own enable toggle is on, which is why the
                     // list opening by itself did nothing.
-                    AutoRetainerIpc.EnableScheduler();
+                    if (schedulerWasEnabled != true)
+                        AutoRetainerIpc.EnableScheduler();
                     Enter(Stage.ReachingBell);
                 }
 
@@ -298,6 +305,12 @@ public sealed class RetainerRun
         // AutoRetainer leaves the retainer list up when it finishes, and gathering cannot
         // start again with a window in the way.
         SummoningBell.CloseRetainerList();
+
+        // Put AutoRetainer back the way it was found. Only when it is known to have been
+        // off - an unreadable state is left alone rather than guessed at.
+        if (schedulerWasEnabled == false)
+            AutoRetainerIpc.DisableScheduler();
+        schedulerWasEnabled = null;
         if (resume)
             GatherBuddyIpc.SetAutoGatherEnabled(true);
         Report(message);
@@ -445,6 +458,40 @@ internal static class AutoRetainerIpc
     /// AutoRetainer's whole cross-character system, including relogging between alts and
     /// AFK switching, which is far more than a trip to one's own bell needs.</summary>
     public static bool? MultiModeRunning() => Call<bool>("AutoRetainer.PluginState.GetMultiModeStatus");
+
+    /// <summary>Whether AutoRetainer's enable toggle is currently on, or null if that can't
+    /// be read. Its IPC exposes no getter for this, so the scheduler's own flag is read
+    /// directly; a null answer means the state is unknown and must be left alone rather
+    /// than guessed at.</summary>
+    public static bool? SchedulerEnabled()
+    {
+        try
+        {
+            var assembly = AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a => a.GetName().Name == "AutoRetainer");
+            var field = assembly?.GetType("AutoRetainer.Scheduler.SchedulerMain")
+                ?.GetField("PluginEnabledInternal",
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            return field?.GetValue(null) as bool?;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Reading AutoRetainer's enabled state failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    public static void DisableScheduler()
+    {
+        try
+        {
+            Svc.Commands.ProcessCommand("/autoretainer d");
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Disabling AutoRetainer failed: {ex.Message}");
+        }
+    }
 
     /// <summary>Ticks AutoRetainer's own enable toggle. Its scheduler only acts on an open
     /// retainer list while this is on, which is the difference between opening the bell by
