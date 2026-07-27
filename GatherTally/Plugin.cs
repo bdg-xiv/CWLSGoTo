@@ -55,6 +55,7 @@ public sealed class Plugin : IDalamudPlugin
 
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         windowOpen = config.WindowOpen;
+        GatherPlanner.PreferBestSelling = config.PreferBestSelling;
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo((_, _) => ToggleWindow())
         {
@@ -179,6 +180,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private unsafe void OnFrameworkUpdate(IFramework framework)
     {
+        PumpMarketLookup();
+
         if (!IsRefreshing)
         {
             MaybeAutoRefresh();
@@ -292,6 +295,21 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>With auto-refresh on, re-fetch the sections that are actually expanded
     /// (a collapsed section isn't being watched) once the interval has elapsed.</summary>
+    /// <summary>Drives the Universalis lookups the planner asked for, and re-picks once
+    /// answers arrive so a row can settle on the better-selling item.</summary>
+    private void PumpMarketLookup()
+    {
+        if (!config.PreferBestSelling || !windowOpen)
+            return;
+
+        MarketVelocity.Pump();
+        if (!MarketVelocity.Dirty)
+            return;
+
+        MarketVelocity.ClearDirty();
+        GatherPlanner.ClearCache();
+    }
+
     private void MaybeAutoRefresh()
     {
         if (!config.AutoRefresh || !windowOpen || !Svc.ClientState.IsLoggedIn)
@@ -387,6 +405,22 @@ public sealed class Plugin : IDalamudPlugin
 
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Re-fetches the expanded sections on a timer so counters move\nwhile you gather. Collapsed sections are left alone.");
+
+        ImGui.SameLine();
+        var preferBestSelling = config.PreferBestSelling;
+        if (ImGui.Checkbox("Best selling", ref preferBestSelling))
+        {
+            config.PreferBestSelling = preferBestSelling;
+            config.Save();
+            GatherPlanner.PreferBestSelling = preferBestSelling;
+            GatherPlanner.ClearCache();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Every item that fits an achievement advances it equally, so the\n"
+                + "pick goes to whichever sells fastest on your home world\n"
+                + "(sales per day from Universalis) instead of whichever has the\n"
+                + "most nodes. Looked up in the background as rows are shown.");
 
         if (config.AutoRefresh)
         {
@@ -545,6 +579,9 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.SetTooltip($"Make \"{plan.ItemName}\" x{GatherPlanner.TargetQuantity:N0} the active\n"
                 + $"auto-gather list in GatherBuddy Reborn.\n\n"
                 + $"Picked from {plan.Reason} ({plan.Nodes} untimed nodes, e.g. {plan.Zone}).\n"
+                + (plan.SalesPerDay is { } velocity
+                    ? $"Sells about {velocity:0.#}/day on your world.\n"
+                    : config.PreferBestSelling ? "Sales data still loading.\n" : "")
                 + (plan.Exclusive
                     ? "It comes from nowhere else, so every gather counts for this one.\n"
                     : "Careful: nothing here drops only from these nodes, so this item\n"

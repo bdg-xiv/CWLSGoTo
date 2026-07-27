@@ -40,6 +40,10 @@ public class Configuration : IPluginConfiguration
     public bool AutoRefresh { get; set; } = false;
     public int AutoRefreshSeconds { get; set; } = 60;
 
+    // Among items that advance an achievement equally, prefer the one that sells fastest
+    // on the home world (looked up from Universalis).
+    public bool PreferBestSelling { get; set; } = true;
+
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);

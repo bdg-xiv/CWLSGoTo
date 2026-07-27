@@ -15,7 +15,11 @@ namespace GatherTally;
 /// single item behind them and are left alone.</summary>
 public static class GatherPlanner
 {
-    public sealed record Plan(uint ItemId, string ItemName, string Zone, int Nodes, string Reason, bool Exclusive);
+    public sealed record Plan(uint ItemId, string ItemName, string Zone, int Nodes, string Reason, bool Exclusive, double? SalesPerDay);
+
+    /// <summary>When set, the pick within an equally valid pool goes to whatever sells
+    /// fastest on the home world rather than whatever has the most nodes.</summary>
+    public static bool PreferBestSelling { get; set; } = true;
 
     private sealed class Candidate(uint itemId, string name, int perception, byte level, string zone)
     {
@@ -154,17 +158,35 @@ public static class GatherPlanner
 
     private static Plan? Choose(List<Candidate> candidates, string reason)
     {
-        // Most nodes first, and never something the bags are already full of - the
-        // auto-gather list would count as finished before it started.
-        foreach (var candidate in candidates
-                     .OrderBy(c => c.Perception)
-                     .ThenByDescending(c => c.Nodes)
-                     .ThenByDescending(c => c.Level))
+        if (candidates.Count == 0)
+            return null;
+
+        // Every item in this pool advances the achievement equally, so the tie-break is
+        // free to be about what the haul is worth. Ask about the whole pool, not just
+        // the front-runner, or the ranking can never change.
+        if (PreferBestSelling)
+            MarketVelocity.Want(candidates.Select(c => c.ItemId));
+
+        var ordered = PreferBestSelling
+            ? candidates
+                .OrderBy(c => c.Perception)
+                .ThenByDescending(c => MarketVelocity.For(c.ItemId) ?? -1)
+                .ThenByDescending(c => c.Nodes)
+                .ThenByDescending(c => c.Level)
+            : candidates
+                .OrderBy(c => c.Perception)
+                .ThenByDescending(c => c.Nodes)
+                .ThenByDescending(c => c.Level);
+
+        // Never something the bags are already full of - the auto-gather list would
+        // count as finished before it started.
+        foreach (var candidate in ordered)
         {
             if (HeldCount(candidate.ItemId) >= TargetQuantity)
                 continue;
 
-            return new Plan(candidate.ItemId, candidate.Name, candidate.Zone, candidate.Nodes, reason, candidate.Exclusive);
+            return new Plan(candidate.ItemId, candidate.Name, candidate.Zone, candidate.Nodes, reason,
+                candidate.Exclusive, MarketVelocity.For(candidate.ItemId));
         }
 
         return null;
