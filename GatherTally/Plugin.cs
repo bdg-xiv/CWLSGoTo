@@ -45,6 +45,9 @@ public sealed class Plugin : IDalamudPlugin
     private long lastRequestAt;
     private long lastLoadKickAt;
     private long lastRefreshFinishedAt;
+    private long lastWatchCheckAt;
+
+    private const int WatchCheckIntervalMs = 3000;
     private string statusText = "";
 
     private bool windowOpen;
@@ -184,6 +187,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         PumpMarketLookup();
         retainerRun.Update();
+        CheckWatchedAchievement();
 
         if (!IsRefreshing)
         {
@@ -298,6 +302,53 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>With auto-refresh on, re-fetch the sections that are actually expanded
     /// (a collapsed section isn't being watched) once the interval has elapsed.</summary>
+    /// <summary>Once the achievement a list was built for is earned, there is nothing
+    /// left to gather for, so stop GatherBuddy Reborn rather than let it grind on.</summary>
+    private unsafe void CheckWatchedAchievement()
+    {
+        if (!config.StopWhenAchieved || config.WatchedAchievementId == 0 || !Svc.ClientState.IsLoggedIn)
+            return;
+
+        var now = Environment.TickCount64;
+        if (now - lastWatchCheckAt < WatchCheckIntervalMs)
+            return;
+        lastWatchCheckAt = now;
+
+        var achievements = GameAchievement.Instance();
+        if (achievements == null)
+            return;
+
+        // The completion bitmask has to be loaded before IsComplete means anything, and
+        // it will not be if the window was never opened this session.
+        if (!achievements->IsLoaded())
+        {
+            if (now - lastLoadKickAt > 30_000)
+            {
+                lastLoadKickAt = now;
+                GameMain.ExecuteCommand(1001, 0, 0, 0, 0); // RequestAllAchievement
+            }
+
+            return;
+        }
+
+        if (!achievements->IsComplete((int)config.WatchedAchievementId))
+            return;
+
+        var name = config.WatchedAchievementName;
+        completed.Add(config.WatchedAchievementId);
+        config.WatchedAchievementId = 0;
+        config.WatchedAchievementName = "";
+        config.Save();
+        GatherPlanner.ClearCache();
+
+        // A retainer trip in flight would otherwise switch gathering back on when it ends.
+        retainerRun.CancelResume();
+        if (GatherBuddyIpc.IsAutoGatherEnabled())
+            GatherBuddyIpc.SetAutoGatherEnabled(false);
+
+        Svc.Chat.Print($"[Gather Tally] \"{name}\" is done - stopped GatherBuddy Reborn.");
+    }
+
     /// <summary>Drives the Universalis lookups the planner asked for, and re-picks once
     /// answers arrive so a row can settle on the better-selling item.</summary>
     private void PumpMarketLookup()
@@ -451,10 +502,28 @@ public sealed class Plugin : IDalamudPlugin
                 + "Needs Lifestream and AutoRetainer. Never starts gathering on its\n"
                 + "own - it only interrupts a run that is already going.");
 
+        ImGui.SameLine();
+        var stopWhenAchieved = config.StopWhenAchieved;
+        if (ImGui.Checkbox("Stop when earned", ref stopWhenAchieved))
+        {
+            config.StopWhenAchieved = stopWhenAchieved;
+            config.Save();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Turns GatherBuddy Reborn's auto-gather off once the achievement\n"
+                + "its list was built for is earned, instead of grinding on for\n"
+                + "nothing. The list itself is left alone.");
+
         if (retainerRun.Running)
         {
             ImGui.SameLine();
             ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f), retainerRun.Status);
+        }
+        else if (config.StopWhenAchieved && config.WatchedAchievementId != 0)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($"watching \"{config.WatchedAchievementName}\"");
         }
 
         ImGui.Separator();
@@ -623,6 +692,11 @@ public sealed class Plugin : IDalamudPlugin
             Svc.Chat.PrintError($"[Gather Tally] {error}");
             return;
         }
+
+        // This is the achievement the run is now for, so it is the one worth watching.
+        config.WatchedAchievementId = achievement.Id;
+        config.WatchedAchievementName = achievement.Name;
+        config.Save();
 
         Svc.Chat.Print($"[Gather Tally] GatherBuddy Reborn is now set to gather {plan.ItemName} "
             + $"x{GatherPlanner.TargetQuantity:N0} for \"{achievement.Name}\".");

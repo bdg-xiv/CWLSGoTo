@@ -41,6 +41,10 @@ public sealed class RetainerRun
     public bool Running => stage is not (Stage.Idle or Stage.Done);
     public string Status { get; private set; } = "";
 
+    /// <summary>Stops a trip in flight from switching gathering back on - used when the
+    /// achievement being gathered for finishes mid-trip.</summary>
+    public void CancelResume() => resumeGathering = false;
+
     public void Update()
     {
         if (!config.RetainerRunEnabled)

@@ -48,6 +48,13 @@ public class Configuration : IPluginConfiguration
     // AutoRetainer work, then carry on gathering.
     public bool RetainerRunEnabled { get; set; } = false;
 
+    // Turn GatherBuddy Reborn's auto-gather off once the achievement a list was built for
+    // is earned. The achievement being watched survives a restart, since a long grind
+    // easily outlasts one.
+    public bool StopWhenAchieved { get; set; } = true;
+    public uint WatchedAchievementId { get; set; }
+    public string WatchedAchievementName { get; set; } = "";
+
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);
