@@ -13,6 +13,12 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.18:
+  Dungeon boss detection: the game does not keep the boss theme in the scene a playlist
+  overrides, so watching only that scene reported "no song" and nothing could ever be
+  compared. The zone and boss music are read from wherever the game actually puts them
+  now. Duty pulls also log every scene's song, so a fight that still slips through can
+  be pinned down from /xllog.
   2.3.0.17:
   Dungeon bosses are detected again while a playlist is playing. The scene holding the
   zone/boss BGM is the very one a playlist overrides, so the boss theme was being

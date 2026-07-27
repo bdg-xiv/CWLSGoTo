@@ -86,7 +86,9 @@ public static class CombatMusicManager
 
 		if (inCombat && !_wasInCombat && DalamudApi.Condition[ConditionFlag.BoundByDuty])
 			DalamudApi.PluginLog.Information(
-				$"[CombatMusic] Duty pull: contentType {_contentType}, natural song {naturalSong}, baseline {_peacefulSongId}");
+				$"[CombatMusic] Duty pull: contentType {_contentType}, natural song {naturalSong}, "
+				+ $"baseline {_peacefulSongId}, playing {BGMManager.PlayingSongId} on scene {BGMManager.PlayingScene}, "
+				+ $"scenes {BGMManager.DescribeScenes()}");
 		_wasInCombat = inCombat;
 
 		var triggered = inCombat && (

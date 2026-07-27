@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Dalamud.Hooking;
 using Orchestrion.Game.BGMSystem;
@@ -50,9 +51,42 @@ public class BGMController
     // writes there is overwritten, so this is the only trace of what the game wanted.
     private int _gameRequestedSongId;
 
-    // What the game would be playing if Orchestrion were not: the zone's own BGM, or
-    // the boss theme once a fight starts. Equals CurrentSongId when nothing is forced.
-    public int NaturalSongId => PlayingSongId == 0 ? CurrentSongId : _gameRequestedSongId;
+    // What the game would be playing if Orchestrion were not: the zone's own BGM, or the
+    // boss theme once a fight starts.
+    //
+    // The game does not keep all its BGM in the scene we override, and a dungeon's boss
+    // theme in particular lands somewhere else entirely - so the scan's CurrentSongId,
+    // which already skips our scene, is the answer whenever it has one. The captured
+    // request below only matters when the game's only song is in the scene we took over.
+    public int NaturalSongId
+    {
+        get
+        {
+            if (PlayingSongId == 0) return CurrentSongId;
+            return CurrentSongId != 0 ? CurrentSongId : _gameRequestedSongId;
+        }
+    }
+
+    /// <summary>Every scene's song, for working out where the game actually puts a
+    /// track when the guesswork above turns out to be wrong.</summary>
+    public string DescribeScenes()
+    {
+        if (BGMAddressResolver.BGMSceneList == IntPtr.Zero)
+            return "<no scene list>";
+
+        unsafe
+        {
+            var bgms = (BGMScene*)BGMAddressResolver.BGMSceneList.ToPointer();
+            var parts = new List<string>(SceneCount);
+            for (var i = 0; i < SceneCount; i++)
+            {
+                if (bgms[i].BgmId != 0 || bgms[i].BgmReference != 0)
+                    parts.Add($"{i}:{bgms[i].BgmId}/{bgms[i].BgmReference}");
+            }
+
+            return parts.Count == 0 ? "<all empty>" : string.Join(" ", parts);
+        }
+    }
     
     // The event that fires when the game changes songs.
     public delegate void SongChangedHandler(int oldSong, int currentSong, int oldSecondSong, int secondSong);

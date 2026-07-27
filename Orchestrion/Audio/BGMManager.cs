@@ -46,6 +46,9 @@ public static class BGMManager
     /// is overriding it - the zone's BGM, or a boss theme once one starts.</summary>
     public static int NaturalSongId => _bgmController.NaturalSongId;
 
+    /// <summary>Every BGM scene's current song, for diagnosing where the game puts a track.</summary>
+    public static string DescribeScenes() => _bgmController.DescribeScenes();
+
     static BGMManager()
     {
         _bgmController = new BGMController();
