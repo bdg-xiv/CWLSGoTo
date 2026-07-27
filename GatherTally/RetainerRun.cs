@@ -185,6 +185,11 @@ public sealed class RetainerRun
                     lastBellPokeAt = 0;
                     houseEntryRequested = false;
                     houseEntryFailed = false;
+
+                    // Arm AutoRetainer before the bell opens. Its scheduler only picks
+                    // retainers up while its own enable toggle is on, which is why the
+                    // list opening by itself did nothing.
+                    AutoRetainerIpc.EnableScheduler();
                     Enter(Stage.ReachingBell);
                 }
 
@@ -275,6 +280,10 @@ public sealed class RetainerRun
     {
         stage = Stage.Idle;
         Status = "";
+
+        // AutoRetainer leaves the retainer list up when it finishes, and gathering cannot
+        // start again with a window in the way.
+        SummoningBell.CloseRetainerList();
         if (resume)
             GatherBuddyIpc.SetAutoGatherEnabled(true);
         Report(message);
@@ -354,6 +363,13 @@ internal static class SummoningBell
     public static unsafe bool RetainerListOpen()
         => GenericHelpers.TryGetAddonByName<AtkUnitBase>("RetainerList", out var addon)
            && GenericHelpers.IsAddonReady(addon);
+
+    public static unsafe void CloseRetainerList()
+    {
+        if (GenericHelpers.TryGetAddonByName<AtkUnitBase>("RetainerList", out var addon)
+            && GenericHelpers.IsAddonReady(addon))
+            addon->Close(true);
+    }
 }
 
 /// <summary>Whether any retainer has a venture waiting to be collected, read straight from
@@ -399,6 +415,23 @@ internal static class AutoRetainerIpc
     /// AutoRetainer's whole cross-character system, including relogging between alts and
     /// AFK switching, which is far more than a trip to one's own bell needs.</summary>
     public static bool? MultiModeRunning() => Call<bool>("AutoRetainer.PluginState.GetMultiModeStatus");
+
+    /// <summary>Ticks AutoRetainer's own enable toggle. Its scheduler only acts on an open
+    /// retainer list while this is on, which is the difference between opening the bell by
+    /// hand - where the user has already switched it on - and opening it from here. There
+    /// is no IPC for it, but the command is a supported entry point; AutoRetainer dispatches
+    /// its own commands this way too.</summary>
+    public static void EnableScheduler()
+    {
+        try
+        {
+            Svc.Commands.ProcessCommand("/autoretainer e");
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Enabling AutoRetainer failed: {ex.Message}");
+        }
+    }
 
     /// <summary>Queues AutoRetainer's housing-entrance task, which walks to the plot's
     /// entrance and goes inside. This is the piece multi mode used to contribute, and it
