@@ -85,7 +85,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private volatile bool consultingMarket;
     private volatile bool gcLookupDone;
-    private int gcTabAttempts;
+    private int purchaseUnitCap; // 0 = buy until the currency runs out
     private long gcStallDeadline;
     private int gcSealsAtLastPurchase;
     private GrandCompanyShop.Row? gcTargetRow;
@@ -358,15 +358,31 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        foreach (var candidate in ranked)
-            Print($"  {candidate.Name}: {candidate.Price:N0} gil, {candidate.UnitsPerDay:N0}/day sold "
-                + $"=> {candidate.GilPerUnitCost:N0} gil per tomestone");
+        // Rank by the gil actually collectable: a ware nobody buys looks fine per
+        // tomestone and then sits unsold, so cap each option at what the market takes.
+        var tomes = CurrencyCount(MathsTomeId);
+        var options = ranked
+            .Select(c => (Candidate: c, Units: Math.Min(tomes / MathsUnitCost, MarketAdvisor.AbsorbableUnits(c.UnitsPerDay))))
+            .Where(x => x.Units > 0)
+            .OrderByDescending(x => (long)x.Units * x.Candidate.Price)
+            .ToList();
 
-        var best = ranked[0];
+        if (options.Count == 0)
+        {
+            Print("None of the Mathematics wares sell fast enough to be worth buying right now.");
+            return;
+        }
+
+        foreach (var option in options)
+            Print($"  {option.Candidate.Name}: {option.Candidate.Price:N0} gil, {option.Candidate.UnitsPerDay:N0} sold/day "
+                + $"=> buy {option.Units:N0} for ~{option.Units * option.Candidate.Price * 0.95:N0} gil");
+
+        var best = options[0].Candidate;
         spentCurrencyId = MathsTomeId;
-        currencyAtStart = CurrencyCount(MathsTomeId);
+        currencyAtStart = tomes;
         buyTargetItemId = best.ItemId;
         targetAtStart = CountOf(best.ItemId);
+        purchaseUnitCap = options[0].Units;
 
         Print($"Buying {best.Name}.");
 
@@ -399,15 +415,15 @@ public sealed class Plugin : IDalamudPlugin
         buyTargetItemId = 0;
         gcTargetRow = null;
         gcLookupDone = false;
-        gcTabAttempts = 0;
 
         Print($"{NameOf(sealId)}s: {seals:N0}. Checking the Materials counter...");
 
         Enqueue(() => InteractWith(QuartermasterDataIds, "a quartermaster"), "Interact with the quartermaster");
         Enqueue(() => OpenShopMenu(["purchase", "exchange", "trade"]), "Open the seal exchange");
-        Enqueue(SelectMaterialsTab, "Select the Materials tab", 60000);
+        Enqueue(WaitForMaterialsTab, "Wait for the Materials tab", 120000);
         Enqueue(StartGcMarketLookup, "Read the Materials rows");
-        Enqueue(() => gcLookupDone ? true : null, "Wait for prices", 60000);
+        // false keeps waiting; null would abort the whole queue.
+        Enqueue(() => gcLookupDone, "Wait for prices", 60000);
         Enqueue(BuyGcMaterial, "Buy the best material", 300000);
         Enqueue(CloseGcExchange, "Close the exchange");
         Enqueue(ReportCurrencyRun, "Report");
@@ -416,46 +432,21 @@ public sealed class Plugin : IDalamudPlugin
     private static unsafe bool GcExchangeOpen(out AtkUnitBase* addon)
         => TryGetAddonByName("GrandCompanyExchange", out addon) && IsAddonReady(addon);
 
-    /// <summary>Switches to the Materials category. The tab is a radio button, clicked
-    /// the way a player would; if that doesn't take, the run asks for a click instead
-    /// of hammering the window.</summary>
-    private unsafe bool? SelectMaterialsTab()
+    /// <summary>Waits for the Materials category to be showing. Clicking the tab from
+    /// code doesn't take on this window, so its state is only read, never driven.</summary>
+    private unsafe bool? WaitForMaterialsTab()
     {
         if (!GcExchangeOpen(out var addon))
             return false;
 
         var node = addon->GetNodeById(GcCategoryTabNodeId + GcMaterialsTabIndex);
         var radio = node != null ? node->GetAsAtkComponentRadioButton() : null;
-        if (radio == null)
-            return false;
-
-        if (radio->IsSelected)
+        if (radio != null && radio->IsSelected)
             return true;
 
-        if (gcTabAttempts >= 4)
-        {
-            if (EzThrottler.Throttle("Laziness.GcTabHint", 10000))
-                Print("Couldn't switch to the Materials tab - click it and I'll carry on.");
-            return false;
-        }
+        if (EzThrottler.Throttle("Laziness.GcTabHint", 8000))
+            Print("Click the Materials tab and I'll carry on.");
 
-        if (!EzThrottler.Throttle("Laziness.GcTab", 1000))
-            return false;
-
-        gcTabAttempts++;
-        if (!radio->AtkComponentButton.IsEnabled)
-            return false;
-
-        var owner = radio->AtkComponentButton.AtkComponentBase.OwnerNode;
-        if (owner == null || !owner->AtkResNode.IsVisible())
-            return false;
-
-        var atkEvent = owner->AtkResNode.AtkEventManager.Event;
-        if (atkEvent == null)
-            return false;
-
-        SetStatus($"Selecting the Materials tab (attempt {gcTabAttempts})...");
-        addon->ReceiveEvent(atkEvent->State.EventType, (int)atkEvent->Param, atkEvent);
         return false;
     }
 
@@ -519,26 +510,40 @@ public sealed class Plugin : IDalamudPlugin
 
             await Svc.Framework.RunOnFrameworkThread(() =>
             {
+                var seals = CurrencyCount(spentCurrencyId);
+
+                // Rank by the gil actually collectable, not the rate: a cheap row with
+                // no buyers looks great per seal and then sits in your bags forever.
                 var best = ranked
-                    .Select(c => (Candidate: c, PerSeal: c.GilPerUnitCost / Math.Max(costs[c.ItemId], 1)))
-                    .OrderByDescending(x => x.PerSeal)
+                    .Select(c =>
+                    {
+                        var cost = Math.Max(costs[c.ItemId], 1);
+                        var units = Math.Min(seals / cost, MarketAdvisor.AbsorbableUnits(c.UnitsPerDay));
+                        return (Candidate: c, Cost: cost, Units: units, Gil: units * c.Price * 0.95);
+                    })
+                    .Where(x => x.Units > 0)
+                    .OrderByDescending(x => x.Gil)
                     .ToList();
 
                 if (best.Count == 0)
                 {
-                    Print("No market data for anything on the Materials tab.");
+                    Print("Nothing on the Materials tab sells fast enough to be worth buying.");
                     return;
                 }
 
-                foreach (var (candidate, perSeal) in best.Take(5))
-                    Print($"  {candidate.Name}: {candidate.Price:N0} gil / {costs[candidate.ItemId]:N0} seals, "
-                        + $"{candidate.UnitsPerDay:N0}/day => {perSeal:N1} gil per seal");
+                foreach (var option in best.Take(5))
+                    Print($"  {option.Candidate.Name}: {option.Candidate.Price:N0} gil / {option.Cost:N0} seals, "
+                        + $"{option.Candidate.UnitsPerDay:N0} sold/day => buy {option.Units:N0} for ~{option.Gil:N0} gil");
 
-                var winner = best[0].Candidate;
-                buyTargetItemId = winner.ItemId;
-                targetAtStart = CountOf(winner.ItemId);
-                gcTargetRow = rows.First(r => r.ItemId == winner.ItemId);
-                Print($"Buying {winner.Name}.");
+                var winner = best[0];
+                buyTargetItemId = winner.Candidate.ItemId;
+                targetAtStart = CountOf(winner.Candidate.ItemId);
+                gcTargetRow = rows.First(r => r.ItemId == winner.Candidate.ItemId);
+                purchaseUnitCap = winner.Units;
+
+                var sealsUsed = winner.Units * winner.Cost;
+                Print($"Buying {winner.Units:N0} x {winner.Candidate.Name} ({sealsUsed:N0} seals) - "
+                    + $"that's about a week of sales, so the rest stays as seals.");
                 gcLookupDone = true;
             });
         });
@@ -568,6 +573,13 @@ public sealed class Plugin : IDalamudPlugin
             return true;
         }
 
+        var stillWanted = UnitsLeftToBuy();
+        if (stillWanted <= 0)
+        {
+            SetStatus("Bought what the market can take.");
+            return true;
+        }
+
         if (!HasRoomFor(buyTargetItemId))
         {
             Print($"No inventory room for more {NameOf(buyTargetItemId)} - stopping here.");
@@ -591,11 +603,18 @@ public sealed class Plugin : IDalamudPlugin
         if (!EzThrottler.Throttle("Laziness.BuyGc", 1000))
             return false;
 
-        var amount = Math.Min(affordable, MaxPerPurchase);
+        var amount = Math.Min(Math.Min(affordable, MaxPerPurchase), stillWanted);
         SetStatus($"Buying {amount} x {NameOf(buyTargetItemId)} at {cost} seals...");
         new GrandCompanyShop(addon).Buy(gcTargetRow, amount);
         return false;
     }
+
+    /// <summary>How many more units to buy before the market-absorption cap is hit.
+    /// int.MaxValue when the run isn't capped (ventures, tickets, shells).</summary>
+    private int UnitsLeftToBuy()
+        => purchaseUnitCap <= 0
+            ? int.MaxValue
+            : purchaseUnitCap - Math.Max(CountOf(buyTargetItemId) - targetAtStart, 0);
 
     private static unsafe bool? CloseGcExchange()
     {
@@ -616,6 +635,7 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         EzThrottler.Reset("Laziness.TabHint");
+        purchaseUnitCap = 0;
         return Svc.ClientState.IsLoggedIn;
     }
 
@@ -814,7 +834,14 @@ public sealed class Plugin : IDalamudPlugin
             return true;
         }
 
-        var amount = Math.Min(affordable, MaxPerPurchase);
+        var stillWanted = UnitsLeftToBuy();
+        if (stillWanted <= 0)
+        {
+            SetStatus("Bought what the market can take.");
+            return true;
+        }
+
+        var amount = Math.Min(Math.Min(affordable, MaxPerPurchase), stillWanted);
         if (!EzThrottler.Throttle("Laziness.Buy", 1000))
             return false;
 

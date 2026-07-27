@@ -16,7 +16,18 @@ namespace Laziness;
 internal static class MarketAdvisor
 {
     private const double AfterTax = 0.95; // retainer sales are taxed 5%
+
+    // How much stock is worth buying: a week of that item's sales, halved because
+    // other sellers take their share. Buying past this just parks currency in items
+    // that sit unsold and drag the price down.
+    private const double SellWindowDays = 7;
+    private const double ShareOfMarket = 0.5;
+
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
+
+    /// <summary>Units of an item the market can realistically take off you.</summary>
+    internal static int AbsorbableUnits(double unitsPerDay)
+        => (int)Math.Max(0, Math.Floor(unitsPerDay * SellWindowDays * ShareOfMarket));
 
     internal record Candidate(uint ItemId, string Name, int Price, double UnitsPerDay, double GilPerUnitCost);
 
