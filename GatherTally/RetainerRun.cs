@@ -39,9 +39,13 @@ public sealed class RetainerRun
 
     // Lifestream drops you inside the house; the bell is usually a few steps away, so
     // keep trying while the character settles.
-    private const int BellTimeoutMs = 45_000;
+    private const int BellTimeoutMs = 120_000;
     private const int BellPokeIntervalMs = 1_000;
     private const int IdleGraceMs = 15_000;
+
+    // Try the bell where we stand first - an inn or a plot that drops you inside needs no
+    // entering - and only ask to go in if nothing answers.
+    private const int HouseEntryDelayMs = 4_000;
 
     private readonly Configuration config;
 
@@ -50,6 +54,8 @@ public sealed class RetainerRun
     private bool resumeGathering;
     private bool sawAutoRetainerWork;
     private long lastBellPokeAt;
+    private bool houseEntryRequested;
+    private bool houseEntryFailed;
 
     public RetainerRun(Configuration config) => this.config = config;
 
@@ -177,14 +183,14 @@ public sealed class RetainerRun
                 if (elapsed > StartGraceMs && !LifestreamIpc.IsBusy())
                 {
                     lastBellPokeAt = 0;
+                    houseEntryRequested = false;
+                    houseEntryFailed = false;
                     Enter(Stage.ReachingBell);
                 }
 
                 break;
 
             case Stage.ReachingBell:
-                Status = "Looking for the summoning bell...";
-
                 // Opening the bell is all AutoRetainer needs; its own scheduler takes
                 // the retainers from there.
                 if (SummoningBell.RetainerListOpen())
@@ -195,12 +201,37 @@ public sealed class RetainerRun
                     break;
                 }
 
+                if (houseEntryFailed)
+                {
+                    Finish("Couldn't get into the house; resuming gathering.", resume: true);
+                    break;
+                }
+
                 if (elapsed > BellTimeoutMs)
                 {
                     Finish("Couldn't reach a summoning bell here; resuming gathering.", resume: true);
                     break;
                 }
 
+                // Lifestream drops you at the plot, not inside it. Rather than path to the
+                // door, hand that to AutoRetainer's own housing-entrance task - the same
+                // one multi mode was using to get in before.
+                if (!houseEntryRequested && elapsed > HouseEntryDelayMs)
+                {
+                    houseEntryRequested = true;
+                    Status = "Entering the house...";
+                    if (!AutoRetainerIpc.EnterHouse(() => houseEntryFailed = true))
+                        houseEntryFailed = true;
+                    break;
+                }
+
+                if (houseEntryRequested && AutoRetainerIpc.IsBusy() == true)
+                {
+                    Status = "Entering the house...";
+                    break;
+                }
+
+                Status = "Looking for the summoning bell...";
                 if (Environment.TickCount64 - lastBellPokeAt > BellPokeIntervalMs)
                 {
                     lastBellPokeAt = Environment.TickCount64;
@@ -368,6 +399,25 @@ internal static class AutoRetainerIpc
     /// AutoRetainer's whole cross-character system, including relogging between alts and
     /// AFK switching, which is far more than a trip to one's own bell needs.</summary>
     public static bool? MultiModeRunning() => Call<bool>("AutoRetainer.PluginState.GetMultiModeStatus");
+
+    /// <summary>Queues AutoRetainer's housing-entrance task, which walks to the plot's
+    /// entrance and goes inside. This is the piece multi mode used to contribute, and it
+    /// already knows about private, shared, free company and apartment entrances - worth
+    /// far more than pathing to a door by hand.</summary>
+    public static bool EnterHouse(Action onFailure)
+    {
+        try
+        {
+            Svc.PluginInterface.GetIpcSubscriber<Action, object>("AutoRetainer.PluginState.EnqueueHET")
+                .InvokeAction(onFailure);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"AutoRetainer house entry failed: {ex.Message}");
+            return false;
+        }
+    }
 
     private static T? Call<T>(string name) where T : struct
     {
