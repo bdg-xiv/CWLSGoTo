@@ -1,6 +1,12 @@
+using Dalamud.Game.ClientState.Objects.Enums;
+using ECommons;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
+using System.Linq;
+using System.Numerics;
 
 namespace GatherTally;
 
@@ -19,7 +25,7 @@ public sealed class RetainerRun
         Idle,
         GoingHome,
         WaitingForTravel,
-        StartingRetainers,
+        ReachingBell,
         WaitingForRetainers,
         Done,
     }
@@ -31,11 +37,19 @@ public sealed class RetainerRun
     // AutoRetainer needs a moment to pick the work up before its busy flag means anything.
     private const int StartGraceMs = 5_000;
 
+    // Lifestream drops you inside the house; the bell is usually a few steps away, so
+    // keep trying while the character settles.
+    private const int BellTimeoutMs = 45_000;
+    private const int BellPokeIntervalMs = 1_000;
+    private const int IdleGraceMs = 15_000;
+
     private readonly Configuration config;
 
     private Stage stage = Stage.Idle;
     private long stageSince;
     private bool resumeGathering;
+    private bool sawAutoRetainerWork;
+    private long lastBellPokeAt;
 
     public RetainerRun(Configuration config) => this.config = config;
 
@@ -129,7 +143,13 @@ public sealed class RetainerRun
 
         resumeGathering = true;
         GatherBuddyIpc.SetAutoGatherEnabled(false);
-        Report("Retainers are ready - pausing the gather run and heading home.");
+        Report("A venture is done - pausing the gather run and heading home.");
+
+        // Earlier versions started multi mode to do this. If it is still on it will fight
+        // over where the character should be, and it was never wanted here.
+        if (AutoRetainerIpc.MultiModeRunning() == true)
+            Report("AutoRetainer's multi mode is on - turn it off, this doesn't use it any more.");
+
         Enter(Stage.GoingHome);
     }
 
@@ -155,13 +175,38 @@ public sealed class RetainerRun
                 // The command is queued, so give Lifestream a moment to look busy before
                 // treating "not busy" as "arrived".
                 if (elapsed > StartGraceMs && !LifestreamIpc.IsBusy())
-                    Enter(Stage.StartingRetainers);
+                {
+                    lastBellPokeAt = 0;
+                    Enter(Stage.ReachingBell);
+                }
+
                 break;
 
-            case Stage.StartingRetainers:
-                AutoRetainerIpc.StartSingleCharacter();
-                Status = "AutoRetainer is working...";
-                Enter(Stage.WaitingForRetainers);
+            case Stage.ReachingBell:
+                Status = "Looking for the summoning bell...";
+
+                // Opening the bell is all AutoRetainer needs; its own scheduler takes
+                // the retainers from there.
+                if (SummoningBell.RetainerListOpen())
+                {
+                    sawAutoRetainerWork = false;
+                    Status = "AutoRetainer is working...";
+                    Enter(Stage.WaitingForRetainers);
+                    break;
+                }
+
+                if (elapsed > BellTimeoutMs)
+                {
+                    Finish("Couldn't reach a summoning bell here; resuming gathering.", resume: true);
+                    break;
+                }
+
+                if (Environment.TickCount64 - lastBellPokeAt > BellPokeIntervalMs)
+                {
+                    lastBellPokeAt = Environment.TickCount64;
+                    SummoningBell.TryInteract();
+                }
+
                 break;
 
             case Stage.WaitingForRetainers:
@@ -171,8 +216,20 @@ public sealed class RetainerRun
                     break;
                 }
 
-                if (elapsed > StartGraceMs && AutoRetainerIpc.IsBusy() == false && AutoRetainerIpc.MultiModeRunning() == false)
+                if (AutoRetainerIpc.IsBusy() == true)
+                {
+                    sawAutoRetainerWork = true;
+                    break;
+                }
+
+                // Finished once it has done something and gone quiet again. If it never
+                // stirred at all, it is not switched on - say so rather than wait it out.
+                if (sawAutoRetainerWork && !SummoningBell.RetainerListOpen())
                     Finish("Retainers done - back to gathering.", resume: resumeGathering);
+                else if (!sawAutoRetainerWork && elapsed > IdleGraceMs)
+                    Finish("The bell is open but AutoRetainer isn't running - enable it and it will take over.",
+                        resume: false);
+
                 break;
         }
     }
@@ -227,6 +284,47 @@ internal static class GatherBuddyIpc
     }
 }
 
+/// <summary>Finds and opens a summoning bell.
+///
+/// Bells are matched by object name rather than data id, which is how AutoRetainer does it
+/// too - housing bells, inn bells and the city ones are separate objects that share a
+/// name. Opening the bell is the whole job here: AutoRetainer's own scheduler picks the
+/// retainers up once the list is on screen.</summary>
+internal static class SummoningBell
+{
+    private static readonly string[] Names = ["summoning bell"];
+
+    // Housing bells sit further from their interaction point than city ones.
+    private const float InteractRange = 6f;
+
+    public static unsafe bool TryInteract()
+    {
+        var player = Svc.Objects.LocalPlayer;
+        if (player == null)
+            return false;
+
+        foreach (var obj in Svc.Objects)
+        {
+            if (obj.ObjectKind is not (ObjectKind.EventObj or ObjectKind.HousingEventObject))
+                continue;
+            if (!Names.Contains(obj.Name.TextValue.ToLowerInvariant()))
+                continue;
+            if (Vector3.Distance(player.Position, obj.Position) > InteractRange)
+                continue;
+
+            TargetSystem.Instance()->InteractWithObject(
+                (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address, false);
+            return true;
+        }
+
+        return false;
+    }
+
+    public static unsafe bool RetainerListOpen()
+        => GenericHelpers.TryGetAddonByName<AtkUnitBase>("RetainerList", out var addon)
+           && GenericHelpers.IsAddonReady(addon);
+}
+
 /// <summary>Whether any retainer has a venture waiting to be collected, read straight from
 /// the game's own retainer list.
 ///
@@ -266,22 +364,10 @@ internal static class AutoRetainerIpc
 
     public static bool? IsBusy() => Call<bool>("AutoRetainer.PluginState.IsBusy");
 
+    /// <summary>Whether multi mode is on. Nothing here switches it on any more - it is
+    /// AutoRetainer's whole cross-character system, including relogging between alts and
+    /// AFK switching, which is far more than a trip to one's own bell needs.</summary>
     public static bool? MultiModeRunning() => Call<bool>("AutoRetainer.PluginState.GetMultiModeStatus");
-
-    /// <summary>Single-character multi mode: AutoRetainer walks to the bell and processes
-    /// this character's retainers without relogging anywhere else.</summary>
-    public static void StartSingleCharacter()
-    {
-        try
-        {
-            Svc.PluginInterface.GetIpcSubscriber<object>("AutoRetainer.PluginState.EnableMultiModeSingle")
-                .InvokeAction();
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Warning($"AutoRetainer single multi mode failed: {ex.Message}");
-        }
-    }
 
     private static T? Call<T>(string name) where T : struct
     {
