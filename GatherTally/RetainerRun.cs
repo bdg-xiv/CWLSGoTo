@@ -1,5 +1,6 @@
 using Dalamud.Game.ClientState.Objects.Enums;
 using ECommons;
+using ECommons.Automation;
 using ECommons.DalamudServices;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
@@ -47,6 +48,10 @@ public sealed class RetainerRun
     // entering - and only ask to go in if nothing answers.
     private const int HouseEntryDelayMs = 4_000;
 
+    // How long AutoRetainer has to stay quiet before it counts as finished. Post-venture
+    // work carries on in gaps of several seconds after the last retainer is handled.
+    private const int IdleSettleMs = 12_000;
+
     private readonly Configuration config;
 
     private Stage stage = Stage.Idle;
@@ -56,6 +61,7 @@ public sealed class RetainerRun
     private long lastBellPokeAt;
     private bool houseEntryRequested;
     private bool houseEntryFailed;
+    private long lastBusyAt;
 
     public RetainerRun(Configuration config) => this.config = config;
 
@@ -201,6 +207,7 @@ public sealed class RetainerRun
                 if (SummoningBell.RetainerListOpen())
                 {
                     sawAutoRetainerWork = false;
+                    lastBusyAt = Environment.TickCount64;
                     Status = "AutoRetainer is working...";
                     Enter(Stage.WaitingForRetainers);
                     break;
@@ -255,16 +262,23 @@ public sealed class RetainerRun
                 if (AutoRetainerIpc.IsBusy() == true)
                 {
                     sawAutoRetainerWork = true;
+                    lastBusyAt = Environment.TickCount64;
                     break;
                 }
 
-                // Finished once it has done something and gone quiet again. If it never
-                // stirred at all, it is not switched on - say so rather than wait it out.
-                if (sawAutoRetainerWork && !SummoningBell.RetainerListOpen())
-                    Finish("Retainers done - back to gathering.", resume: resumeGathering);
-                else if (!sawAutoRetainerWork && elapsed > IdleGraceMs)
+                // Busy goes false in the gaps between retainers and while post-venture
+                // work runs, so one quiet reading means nothing - wait for it to stay
+                // quiet. If it never stirred at all, it is not switched on.
+                if (sawAutoRetainerWork)
+                {
+                    if (Environment.TickCount64 - lastBusyAt > IdleSettleMs)
+                        Finish("Retainers done - back to gathering.", resume: resumeGathering);
+                }
+                else if (elapsed > IdleGraceMs)
+                {
                     Finish("The bell is open but AutoRetainer isn't running - enable it and it will take over.",
                         resume: false);
+                }
 
                 break;
         }
@@ -364,11 +378,27 @@ internal static class SummoningBell
         => GenericHelpers.TryGetAddonByName<AtkUnitBase>("RetainerList", out var addon)
            && GenericHelpers.IsAddonReady(addon);
 
+    /// <summary>Dismisses the retainer list. Sends the addon's own cancel first, which is
+    /// what the Escape key does, and only then closes it outright - a bare Close can leave
+    /// the game believing the bell is still being used.</summary>
     public static unsafe void CloseRetainerList()
     {
-        if (GenericHelpers.TryGetAddonByName<AtkUnitBase>("RetainerList", out var addon)
-            && GenericHelpers.IsAddonReady(addon))
-            addon->Close(true);
+        if (!GenericHelpers.TryGetAddonByName<AtkUnitBase>("RetainerList", out var addon)
+            || !GenericHelpers.IsAddonReady(addon))
+            return;
+
+        try
+        {
+            Callback.Fire(addon, true, -1);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"Closing the retainer list failed: {ex.Message}");
+        }
+
+        if (GenericHelpers.TryGetAddonByName<AtkUnitBase>("RetainerList", out var still)
+            && GenericHelpers.IsAddonReady(still))
+            still->Close(true);
     }
 }
 
