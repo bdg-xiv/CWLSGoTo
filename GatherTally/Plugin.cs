@@ -48,6 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     private string statusText = "";
 
     private bool windowOpen;
+    private readonly RetainerRun retainerRun;
 
     public Plugin()
     {
@@ -56,6 +57,7 @@ public sealed class Plugin : IDalamudPlugin
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         windowOpen = config.WindowOpen;
         GatherPlanner.PreferBestSelling = config.PreferBestSelling;
+        retainerRun = new RetainerRun(config);
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo((_, _) => ToggleWindow())
         {
@@ -181,6 +183,7 @@ public sealed class Plugin : IDalamudPlugin
     private unsafe void OnFrameworkUpdate(IFramework framework)
     {
         PumpMarketLookup();
+        retainerRun.Update();
 
         if (!IsRefreshing)
         {
@@ -432,6 +435,26 @@ public sealed class Plugin : IDalamudPlugin
                 config.AutoRefreshSeconds = seconds;
                 config.Save();
             }
+        }
+
+        var retainerTrips = config.RetainerRunEnabled;
+        if (ImGui.Checkbox("Retainer trips", ref retainerTrips))
+        {
+            config.RetainerRunEnabled = retainerTrips;
+            config.Save();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("While GatherBuddy Reborn is auto-gathering, pause when this\n"
+                + "character's retainers come up, travel home with Lifestream, let\n"
+                + "AutoRetainer handle the bell, then carry on gathering.\n\n"
+                + "Needs Lifestream and AutoRetainer. Never starts gathering on its\n"
+                + "own - it only interrupts a run that is already going.");
+
+        if (retainerRun.Running)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f), retainerRun.Status);
         }
 
         ImGui.Separator();

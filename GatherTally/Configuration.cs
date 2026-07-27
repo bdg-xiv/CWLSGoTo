@@ -44,6 +44,10 @@ public class Configuration : IPluginConfiguration
     // on the home world (looked up from Universalis).
     public bool PreferBestSelling { get; set; } = true;
 
+    // Pause an auto-gather run when retainers come up, go home to the summoning bell, let
+    // AutoRetainer work, then carry on gathering.
+    public bool RetainerRunEnabled { get; set; } = false;
+
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);
