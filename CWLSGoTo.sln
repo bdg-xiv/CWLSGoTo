@@ -27,6 +27,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orchestrion", "Orchestrion\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Laziness", "Laziness\Laziness.csproj", "{6C1E9B47-D3A8-4F52-BE71-05A4C8E7D619}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GatherTally", "GatherTally\GatherTally.csproj", "{4B8D2F16-9E37-4A81-B5C0-3D7A6E1F84C2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -81,6 +83,10 @@ Global
 		{6C1E9B47-D3A8-4F52-BE71-05A4C8E7D619}.Debug|x64.Build.0 = Debug|x64
 		{6C1E9B47-D3A8-4F52-BE71-05A4C8E7D619}.Release|x64.ActiveCfg = Release|x64
 		{6C1E9B47-D3A8-4F52-BE71-05A4C8E7D619}.Release|x64.Build.0 = Release|x64
+		{4B8D2F16-9E37-4A81-B5C0-3D7A6E1F84C2}.Debug|x64.ActiveCfg = Debug|x64
+		{4B8D2F16-9E37-4A81-B5C0-3D7A6E1F84C2}.Debug|x64.Build.0 = Debug|x64
+		{4B8D2F16-9E37-4A81-B5C0-3D7A6E1F84C2}.Release|x64.ActiveCfg = Release|x64
+		{4B8D2F16-9E37-4A81-B5C0-3D7A6E1F84C2}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -57,6 +57,7 @@ jobs:
           @{ Project = "StackSplitter"; InternalName = "StackSplitter" },
           @{ Project = "Orchestrion"; InternalName = "OrchestrionLocal" },
           @{ Project = "Laziness"; InternalName = "Laziness" },
+          @{ Project = "GatherTally"; InternalName = "GatherTally" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 
