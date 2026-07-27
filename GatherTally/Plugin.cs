@@ -686,7 +686,7 @@ public sealed class Plugin : IDalamudPlugin
                     ? "It comes from nowhere else, so every gather counts for this one.\n"
                     : "Careful: nothing here drops only from these nodes, so this item\n"
                       + "also comes from other levels and may credit a different tier.\n")
-                + "Any other active list is switched off. This does not start\nauto-gather - flip that in GatherBuddy Reborn yourself.");
+                + "Any other active list is switched off, and auto-gather starts\nstraight away if it isn't already running.");
     }
 
     private void SendToGatherBuddy(GatherAchievement achievement, GatherPlanner.Plan plan)
@@ -708,6 +708,14 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Chat.Print($"[Gather Tally] GatherBuddy Reborn is now set to gather {plan.ItemName} "
             + $"x{GatherPlanner.TargetQuantity:N0} for \"{achievement.Name}\".");
+
+        // The point of the button is to get gathering, so start it rather than leaving
+        // the run one manual toggle away.
+        if (GatherBuddyIpc.IsAutoGatherEnabled() != true)
+        {
+            GatherBuddyIpc.SetAutoGatherEnabled(true);
+            Svc.Chat.Print("[Gather Tally] Auto-gather started.");
+        }
         if (!plan.Exclusive)
             Svc.Chat.PrintError($"[Gather Tally] Nothing drops only from those nodes, so {plan.ItemName} "
                 + "comes from other levels too and may credit a different tier of this series.");
