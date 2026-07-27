@@ -51,7 +51,8 @@ public sealed class Plugin : IDalamudPlugin
     private const uint RyuboolJaDataId = 1048387;
     private const uint SackOfNutsId = 26533;
     private static readonly uint[] CrpFodderIds = [42699, 42700]; // Halberd, Composite Bow
-    private const int MaxCrpCycles = 20;
+    // A round is only one of each weapon now, so the cap has to be generous.
+    private const int MaxCrpCycles = 200;
 
     // Grand Company quartermasters - all three, so it works whichever company you're in.
     private static readonly uint[] QuartermasterDataIds = [1002390, 1002387, 1002393];
@@ -99,6 +100,7 @@ public sealed class Plugin : IDalamudPlugin
     private int crpBoughtTotal;
     private int crpUnitCost = 70;
     private bool crpStop;
+    private bool crpDesynthedThisCycle;
     private long desynthSettleAt;
     private long gcStallDeadline;
     private int gcSealsAtLastPurchase;
@@ -668,6 +670,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         crpCycle++;
         crpBoughtThisCycle = 0;
+        crpDesynthedThisCycle = false;
         desynthSettleAt = 0;
 
         Enqueue(() => InteractWith([RyuboolJaDataId], "Ryubool Ja"), "Interact with Ryubool Ja");
@@ -701,8 +704,18 @@ public sealed class Plugin : IDalamudPlugin
             return false;
         }
 
-        // Buy whichever we hold fewer of so the two stay level.
-        var next = rows.OrderBy(r => CountOf(r.ItemId)).First();
+        // These weapons are unique - the game refuses a second copy - so a round buys
+        // one of each and the desynthesis afterwards makes room for the next pair.
+        var sheet = Svc.Data.GetExcelSheet<Item>();
+        var next = rows.FirstOrDefault(r =>
+            !(sheet.GetRowOrDefault(r.ItemId)?.IsUnique ?? false) || CountOf(r.ItemId) == 0);
+
+        if (next == null)
+        {
+            SetStatus("Holding one of each - time to desynthesize.");
+            return true;
+        }
+
         crpUnitCost = (int)Math.Max(next.CostAmount, 1);
 
         if (shop.CurrencyAmount < next.CostAmount)
@@ -729,7 +742,10 @@ public sealed class Plugin : IDalamudPlugin
 
     private bool? RunDesynthAll()
     {
-        if (crpBoughtThisCycle == 0)
+        // Desynthesize whatever fodder is on hand, including copies bought before the
+        // run started - not only what this round managed to buy.
+        crpDesynthedThisCycle = CrpFodderIds.Sum(CountOf) > 0;
+        if (!crpDesynthedThisCycle)
             return true;
 
         if (!Svc.Commands.Commands.ContainsKey("/desynthall"))
@@ -749,7 +765,7 @@ public sealed class Plugin : IDalamudPlugin
     /// rather than buying another round that would also sit there.</summary>
     private unsafe bool? WaitForDesynth()
     {
-        if (crpBoughtThisCycle == 0 || crpStop)
+        if (!crpDesynthedThisCycle || crpStop)
             return true;
 
         var left = CrpFodderIds.Sum(CountOf);
@@ -785,7 +801,8 @@ public sealed class Plugin : IDalamudPlugin
     private bool? CrpCycleEnd()
     {
         var nuts = CurrencyCount(SackOfNutsId);
-        var more = !crpStop && crpBoughtThisCycle > 0 && nuts >= crpUnitCost && crpCycle < MaxCrpCycles;
+        var progressed = crpBoughtThisCycle > 0 || crpDesynthedThisCycle;
+        var more = !crpStop && progressed && nuts >= crpUnitCost && crpCycle < MaxCrpCycles;
         if (more)
         {
             EnqueueCrpCycle();
@@ -794,7 +811,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var reason = crpStop ? "stopped"
             : nuts < crpUnitCost ? "out of nuts"
-            : crpBoughtThisCycle == 0 ? "nothing more could be bought"
+            : !progressed ? "nothing more could be bought"
             : "round limit reached";
         Print($"Done ({reason}). Bought and desynthesized {crpBoughtTotal} weapon(s) over {crpCycle} round(s); "
             + $"{nuts:N0} Sacks of Nuts left.");

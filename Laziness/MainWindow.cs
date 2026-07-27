@@ -65,9 +65,9 @@ public class MainWindow : Window
 
         ImGui.SameLine();
         Chore("CRP", "Stand near Ryubool Ja.\n"
-            + "Buys Neo Kingdom halberds and bows with Sacks of Nuts until\n"
-            + "the bags are full, desynthesizes them, and repeats until the\n"
-            + "nuts run out.",
+            + "Buys a Neo Kingdom halberd and bow with Sacks of Nuts (they're\n"
+            + "unique, so one of each), desynthesizes them, and repeats until\n"
+            + "the nuts run out.",
             plugin.StartCrp);
 
         ImGui.EndDisabled();
