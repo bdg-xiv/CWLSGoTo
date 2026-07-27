@@ -63,6 +63,13 @@ public class MainWindow : Window
             + "whichever material the market pays best for per seal.",
             plugin.StartSeals);
 
+        ImGui.SameLine();
+        Chore("CRP", "Stand near Ryubool Ja.\n"
+            + "Buys Neo Kingdom halberds and bows with Sacks of Nuts until\n"
+            + "the bags are full, desynthesizes them, and repeats until the\n"
+            + "nuts run out.",
+            plugin.StartCrp);
+
         ImGui.EndDisabled();
 
         if (!plugin.Running)

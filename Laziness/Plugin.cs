@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
@@ -45,6 +46,13 @@ public sealed class Plugin : IDalamudPlugin
     private const uint VentureId = 21072;
     private const uint AetheryteTicketId = 7569;
 
+    // Ryubool Ja trades Sacks of Nuts for Neo Kingdom gear; the halberd and the bow are
+    // both carpentry desynth fodder, so they get bought and broken down in a loop.
+    private const uint RyuboolJaDataId = 1048387;
+    private const uint SackOfNutsId = 26533;
+    private static readonly uint[] CrpFodderIds = [42699, 42700]; // Halberd, Composite Bow
+    private const int MaxCrpCycles = 20;
+
     // Grand Company quartermasters - all three, so it works whichever company you're in.
     private static readonly uint[] QuartermasterDataIds = [1002390, 1002387, 1002393];
     private static readonly uint[] GcSealIds = [22, 20, 21]; // Flame, Storm, Serpent
@@ -86,6 +94,12 @@ public sealed class Plugin : IDalamudPlugin
     private volatile bool consultingMarket;
     private volatile bool gcLookupDone;
     private int purchaseUnitCap; // 0 = buy until the currency runs out
+    private int crpCycle;
+    private int crpBoughtThisCycle;
+    private int crpBoughtTotal;
+    private int crpUnitCost = 70;
+    private bool crpStop;
+    private long desynthSettleAt;
     private long gcStallDeadline;
     private int gcSealsAtLastPurchase;
     private GrandCompanyShop.Row? gcTargetRow;
@@ -624,6 +638,167 @@ public sealed class Plugin : IDalamudPlugin
         if (EzThrottler.Throttle("Laziness.CloseGc", 500))
             addon->Close(true);
         return false;
+    }
+
+    /// <summary>Buys Neo Kingdom halberds and bows until the bags are full, desynthesizes
+    /// the lot, and goes round again until the nuts run out.</summary>
+    internal void StartCrp()
+    {
+        if (!CanStart())
+            return;
+
+        var nuts = CurrencyCount(SackOfNutsId);
+        if (nuts < crpUnitCost)
+        {
+            Print($"Only {nuts:N0} Sacks of Nuts - not enough for a weapon.");
+            return;
+        }
+
+        spentCurrencyId = SackOfNutsId;
+        currencyAtStart = nuts;
+        crpCycle = 0;
+        crpBoughtTotal = 0;
+        crpStop = false;
+
+        Print($"Sacks of Nuts: {nuts:N0}. Buying halberds and bows to desynthesize.");
+        EnqueueCrpCycle();
+    }
+
+    private void EnqueueCrpCycle()
+    {
+        crpCycle++;
+        crpBoughtThisCycle = 0;
+        desynthSettleAt = 0;
+
+        Enqueue(() => InteractWith([RyuboolJaDataId], "Ryubool Ja"), "Interact with Ryubool Ja");
+        Enqueue(() => OpenShopMenu(["neo kingdom+dow", "neo+dow"]), "Open the Neo Kingdom (DoW) counter");
+        Enqueue(BuyCrpFodder, "Buy halberds and bows", 300000);
+        Enqueue(CloseShopWindows, "Close the shop");
+        Enqueue(RunDesynthAll, "Run /desynthall");
+        Enqueue(WaitForDesynth, "Wait for desynthesis", 900000);
+        Enqueue(CrpCycleEnd, "Round finished");
+    }
+
+    /// <summary>Buys the two weapons one at a time, keeping them even, until the nuts or
+    /// the bag space run out. They don't stack, so each one needs its own slot.</summary>
+    private unsafe bool? BuyCrpFodder()
+    {
+        if (TryGetAddonMaster<AddonMaster.SelectYesno>("SelectYesno", out var yesno) && yesno.IsAddonReady)
+        {
+            if (EzThrottler.Throttle("Laziness.Yes", 400))
+                yesno.Yes();
+            return false;
+        }
+
+        if (!TryGetAddonMaster<AddonMaster.ShopExchangeCurrency>("ShopExchangeCurrency", out var shop) || !shop.IsAddonReady)
+            return false;
+
+        var rows = shop.BasicShopItems.Where(x => CrpFodderIds.Contains(x.ItemId)).ToList();
+        if (rows.Count == 0)
+        {
+            if (EzThrottler.Throttle("Laziness.TabHint", 8000))
+                Print("The halberd and bow aren't on the tab that's showing - click the Weapons tab.");
+            return false;
+        }
+
+        // Buy whichever we hold fewer of so the two stay level.
+        var next = rows.OrderBy(r => CountOf(r.ItemId)).First();
+        crpUnitCost = (int)Math.Max(next.CostAmount, 1);
+
+        if (shop.CurrencyAmount < next.CostAmount)
+        {
+            SetStatus($"Nuts spent ({shop.CurrencyAmount:N0} left).");
+            return true;
+        }
+
+        if (!HasRoomFor(next.ItemId))
+        {
+            SetStatus("Bags full - time to desynthesize.");
+            return true;
+        }
+
+        if (!EzThrottler.Throttle("Laziness.BuyCrp", 600))
+            return false;
+
+        crpBoughtThisCycle++;
+        crpBoughtTotal++;
+        SetStatus($"Buying {NameOf(next.ItemId)} ({crpBoughtThisCycle} this round)...");
+        next.Select(1);
+        return false;
+    }
+
+    private bool? RunDesynthAll()
+    {
+        if (crpBoughtThisCycle == 0)
+            return true;
+
+        if (!Svc.Commands.Commands.ContainsKey("/desynthall"))
+        {
+            Print("The DesynthAll plugin isn't installed - stopping with the weapons in your bags.");
+            crpStop = true;
+            return true;
+        }
+
+        Print($"Bought {crpBoughtThisCycle} this round - desynthesizing.");
+        Svc.Commands.ProcessCommand("/desynthall");
+        return true;
+    }
+
+    /// <summary>Waits for the desynthesis run to eat the weapons. If its windows close
+    /// with weapons still in the bags, its own filters skipped them - say so and stop
+    /// rather than buying another round that would also sit there.</summary>
+    private unsafe bool? WaitForDesynth()
+    {
+        if (crpBoughtThisCycle == 0 || crpStop)
+            return true;
+
+        var left = CrpFodderIds.Sum(CountOf);
+        if (left == 0)
+            return true;
+
+        var working = (TryGetAddonByName<AtkUnitBase>("SalvageItemSelector", out var selector) && IsAddonReady(selector))
+            || TryGetAddonByName<AtkUnitBase>("SalvageDialog", out _)
+            || TryGetAddonByName<AtkUnitBase>("SalvageResult", out _)
+            || Svc.Condition[ConditionFlag.Occupied39];
+
+        var now = Environment.TickCount64;
+        if (working)
+        {
+            desynthSettleAt = now + 5000;
+            return false;
+        }
+
+        if (desynthSettleAt == 0)
+        {
+            desynthSettleAt = now + 5000;
+            return false;
+        }
+
+        if (now < desynthSettleAt)
+            return false;
+
+        Print($"{left} weapon(s) weren't desynthesized - check DesynthAll's \"only items that grant skill\" setting.");
+        crpStop = true;
+        return true;
+    }
+
+    private bool? CrpCycleEnd()
+    {
+        var nuts = CurrencyCount(SackOfNutsId);
+        var more = !crpStop && crpBoughtThisCycle > 0 && nuts >= crpUnitCost && crpCycle < MaxCrpCycles;
+        if (more)
+        {
+            EnqueueCrpCycle();
+            return true;
+        }
+
+        var reason = crpStop ? "stopped"
+            : nuts < crpUnitCost ? "out of nuts"
+            : crpBoughtThisCycle == 0 ? "nothing more could be bought"
+            : "round limit reached";
+        Print($"Done ({reason}). Bought and desynthesized {crpBoughtTotal} weapon(s) over {crpCycle} round(s); "
+            + $"{nuts:N0} Sacks of Nuts left.");
+        return true;
     }
 
     private bool CanStart()
