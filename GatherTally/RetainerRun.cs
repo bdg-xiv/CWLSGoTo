@@ -1,4 +1,5 @@
 using ECommons.DalamudServices;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using System;
 
 namespace GatherTally;
@@ -78,13 +79,13 @@ public sealed class RetainerRun
         if (gathering == false)
             return "waiting - auto-gather is off";
 
-        var ready = AutoRetainerIpc.RetainersReady();
+        var ready = RetainerVentures.AnyComplete();
         if (ready == null)
-            return "AutoRetainer is not answering";
+            return "waiting - retainer list not loaded yet";
         if (ready == false)
-            return "gathering - no retainers due yet";
+            return "gathering - no venture finished yet";
 
-        return "retainers due - starting the trip";
+        return "venture done - starting the trip";
     }
 
     public void Update()
@@ -110,7 +111,7 @@ public sealed class RetainerRun
 
         // Only interrupt something that is actually running - this is a detour from
         // gathering, not a way to start retainers on its own.
-        if (GatherBuddyIpc.IsAutoGatherEnabled() != true || AutoRetainerIpc.RetainersReady() != true)
+        if (GatherBuddyIpc.IsAutoGatherEnabled() != true || RetainerVentures.AnyComplete() != true)
             return;
 
         Begin();
@@ -226,15 +227,42 @@ internal static class GatherBuddyIpc
     }
 }
 
+/// <summary>Whether any retainer has a venture waiting to be collected, read straight from
+/// the game's own retainer list.
+///
+/// This deliberately does not ask AutoRetainer. Its
+/// AreAnyRetainersAvailableForCurrentChara means "does AutoRetainer consider this character
+/// actionable", which additionally requires offline data recorded for the character and
+/// retainers enabled for it in AutoRetainer's config - conditions that have nothing to do
+/// with whether a venture is done.</summary>
+internal static class RetainerVentures
+{
+    /// <summary>True when a venture has come back, false when none has, null while the
+    /// game has not populated the retainer list yet.</summary>
+    public static unsafe bool? AnyComplete()
+    {
+        var manager = RetainerManager.Instance();
+        if (manager == null || !manager->IsReady)
+            return null;
+
+        var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var count = manager->GetRetainerCount();
+        for (uint i = 0; i < count; i++)
+        {
+            var retainer = manager->GetRetainerBySortedIndex(i);
+            if (retainer == null || retainer->VentureId == 0 || retainer->VentureComplete == 0)
+                continue;
+            if (retainer->VentureComplete <= now)
+                return true;
+        }
+
+        return false;
+    }
+}
+
 internal static class AutoRetainerIpc
 {
     public static bool Available => IsBusy() != null;
-
-    /// <summary>True once a venture on an enabled retainer of this character has come up.
-    /// AutoRetainer answers false unless it has offline data for the character and that
-    /// character has retainers enabled in its own config.</summary>
-    public static bool? RetainersReady()
-        => Call<bool>("AutoRetainer.PluginState.AreAnyRetainersAvailableForCurrentChara");
 
     public static bool? IsBusy() => Call<bool>("AutoRetainer.PluginState.IsBusy");
 
