@@ -282,6 +282,9 @@ public sealed class Plugin : IDalamudPlugin
     private void FinishRefresh()
     {
         statusText = $"Updated {DateTime.Now:HH:mm}.";
+        // Item choices depend on job level and on what the bags already hold, so let a
+        // refresh re-decide rather than scanning the node sheets every frame.
+        GatherPlanner.ClearCache();
         lastRefreshFinishedAt = Environment.TickCount64;
         refreshingSections.Clear();
         config.Save();
@@ -464,6 +467,9 @@ public sealed class Plugin : IDalamudPlugin
         // can show the goal even with no counter behind it.
         var max = hasData && progress!.Max > 0 ? progress.Max : achievement.SheetTarget;
 
+        DrawGatherButton(achievement, done);
+        ImGui.SameLine();
+
         ImGui.BeginGroup();
         if (done)
         {
@@ -472,7 +478,7 @@ public sealed class Plugin : IDalamudPlugin
         else
         {
             ImGui.TextUnformatted(achievement.Name);
-            ImGui.SameLine(300);
+            ImGui.SameLine(340);
 
             if (achievement.IsMeta)
             {
@@ -508,6 +514,56 @@ public sealed class Plugin : IDalamudPlugin
 
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(achievement.Description);
+    }
+
+    /// <summary>Sends the achievement's item to GatherBuddy Reborn as a fresh, active
+    /// auto-gather list. Greyed out when the achievement has no single item behind it,
+    /// or when GBR isn't installed.</summary>
+    private void DrawGatherButton(GatherAchievement achievement, bool done)
+    {
+        var plan = done ? null : GatherPlanner.For(achievement.Id, achievement.Section, achievement.Description);
+        var gbrLoaded = GatherBuddyBridge.Available;
+        var usable = plan != null && gbrLoaded;
+
+        if (!usable)
+            ImGui.BeginDisabled();
+        if (ImGui.SmallButton($"Gather###gtgather{achievement.Id}") && plan != null)
+            SendToGatherBuddy(achievement, plan);
+        if (!usable)
+            ImGui.EndDisabled();
+
+        if (!ImGui.IsItemHovered())
+            return;
+
+        if (done)
+            ImGui.SetTooltip("Already complete.");
+        else if (!gbrLoaded)
+            ImGui.SetTooltip("GatherBuddy Reborn isn't loaded.");
+        else if (plan == null)
+            ImGui.SetTooltip(GatherPlanner.Explain(achievement.Description));
+        else
+            ImGui.SetTooltip($"Make \"{plan.ItemName}\" x{GatherPlanner.TargetQuantity:N0} the active\n"
+                + $"auto-gather list in GatherBuddy Reborn.\n\n"
+                + $"Picked from {plan.Reason} ({plan.Nodes} untimed nodes, e.g. {plan.Zone}).\n"
+                + "Any other active list is switched off. This does not start\nauto-gather - flip that in GatherBuddy Reborn yourself.");
+    }
+
+    private void SendToGatherBuddy(GatherAchievement achievement, GatherPlanner.Plan plan)
+    {
+        var error = GatherBuddyBridge.CreateAndActivate(
+            $"GT: {achievement.Name}", achievement.Description, plan.ItemId, GatherPlanner.TargetQuantity,
+            out var deactivated);
+
+        if (error != null)
+        {
+            Svc.Chat.PrintError($"[Gather Tally] {error}");
+            return;
+        }
+
+        Svc.Chat.Print($"[Gather Tally] GatherBuddy Reborn is now set to gather {plan.ItemName} "
+            + $"x{GatherPlanner.TargetQuantity:N0} for \"{achievement.Name}\".");
+        if (deactivated.Count > 0)
+            Svc.Chat.Print($"[Gather Tally] Switched off {deactivated.Count} other active list(s): {string.Join(", ", deactivated)}.");
     }
 
     #endregion
