@@ -160,18 +160,6 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
-            // Windows are served to anonymous sessions too; a login only adds the
-            // account-gated extras, so credentials are optional.
-            var loginNote = "";
-            if (!client.IsLoggedIn
-                && !string.IsNullOrWhiteSpace(config.FaloopUsername)
-                && !string.IsNullOrWhiteSpace(config.FaloopPassword))
-            {
-                statusText = "Logging in to Faloop...";
-                if (!await client.LoginAsync(config.FaloopUsername, config.FaloopPassword).ConfigureAwait(false))
-                    loginNote = " (login failed - showing public data; check Settings)";
-            }
-
             using var doc = await client.GetDataCenterAsync("crystal").ConfigureAwait(false);
             if (doc == null)
             {
@@ -208,7 +196,7 @@ public sealed class Plugin : IDalamudPlugin
             }
 
             entries = ParseStatus(status, restarts, globalRestart);
-            statusText = $"Updated {DateTime.Now:HH:mm:ss} - {entries.Count} tracked windows{loginNote}.";
+            statusText = $"Updated {DateTime.Now:HH:mm:ss} - {entries.Count} tracked windows.";
         }
         catch (Exception ex)
         {
@@ -406,7 +394,6 @@ public sealed class Plugin : IDalamudPlugin
             DrawLeveSpawnerSection();
             DrawSonarRingSection();
             DrawFilterSection();
-            DrawSettingsSection();
         }
 
         ImGui.End();
@@ -742,31 +729,6 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.TextDisabled("Nothing hidden. Use the Hide button on a row or pick a zone above.");
     }
 
-    private void DrawSettingsSection()
-    {
-        if (!ImGui.CollapsingHeader("Settings (Faloop account)"))
-            return;
-
-        var username = config.FaloopUsername;
-        ImGui.SetNextItemWidth(220);
-        if (ImGui.InputText("Username", ref username, 128))
-            config.FaloopUsername = username;
-
-        var password = config.FaloopPassword;
-        ImGui.SetNextItemWidth(220);
-        if (ImGui.InputText("Password", ref password, 128, ImGuiInputTextFlags.Password))
-            config.FaloopPassword = password;
-
-        if (ImGui.Button("Save & Login"))
-        {
-            config.Save();
-            client.ResetAuth();
-            lastFetchAt = DateTime.MinValue;
-            StartFetch();
-        }
-
-        ImGui.TextDisabled("Optional - the windows are public. Same account as the Faloop\nwebsite / Faloop Integration; stored in the plugin config on this PC.");
-    }
 
     /// <summary>Mirrors faloop.app's condition column: green "For x" while the spawn
     /// condition holds, muted "In x" until it next comes round.</summary>

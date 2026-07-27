@@ -11,11 +11,6 @@ public class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 0;
 
-    // Faloop account (required - window data is only served to logged-in accounts).
-    // Stored in plain text in the plugin config, same as Faloop Integration.
-    public string FaloopUsername { get; set; } = "";
-    public string FaloopPassword { get; set; } = "";
-
     // Worlds shown in the table. Defaults to all of Crystal.
     public HashSet<string> EnabledWorlds { get; set; } = FaloopData.CrystalWorlds.ToHashSet();
 

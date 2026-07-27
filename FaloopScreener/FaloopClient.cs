@@ -8,10 +8,11 @@ using System.Threading.Tasks;
 
 namespace FaloopScreener;
 
-/// <summary>Minimal client for faloop.app's internal API, mirroring the flow the website
-/// itself (and the Divination Faloop Integration plugin) uses: an anonymous refresh hands
-/// out a session id + short-lived JWT, login upgrades the session, and GET /api/app
-/// returns the tracker's bootstrap state (windows included for accounts with access).</summary>
+/// <summary>Minimal client for faloop.app's internal API. The API rejects requests with no
+/// Authorization header, so an anonymous refresh hands out a session id and a short-lived
+/// JWT; that is all this needs. There is deliberately no account login - the spawn windows
+/// are served to anonymous sessions, and signing in from here would take over the account's
+/// session and sign the user out of the website.</summary>
 internal sealed class FaloopClient : IDisposable
 {
     private const string BaseUrl = "https://faloop.app/api";
@@ -20,7 +21,6 @@ internal sealed class FaloopClient : IDisposable
 
     public string? SessionId { get; private set; }
     public string? Token { get; private set; }
-    public bool IsLoggedIn { get; private set; }
 
     public FaloopClient()
     {
@@ -51,44 +51,11 @@ internal sealed class FaloopClient : IDisposable
         return SessionId != null && Token != null;
     }
 
-    public async Task<bool> LoginAsync(string username, string password)
-    {
-        if (Token == null && !await RefreshAsync().ConfigureAwait(false))
-            return false;
-
-        var body = JsonSerializer.Serialize(new { username, password, rememberMe = false, sessionId = SessionId });
-        using var response = await PostAsync("/auth/user/login", body, withAuth: true).ConfigureAwait(false);
-        if (response == null)
-            return false;
-
-        var data = await ParseDataAsync(response).ConfigureAwait(false);
-        if (data == null)
-            return false;
-
-        SessionId = GetString(data.Value, "sessionId") ?? SessionId;
-        Token = GetString(data.Value, "token") ?? Token;
-        IsLoggedIn = true;
-
-        // The login response's token can be pre-upgrade; a refresh against the
-        // logged-in session hands out a JWT carrying the account's access.
-        await RefreshAsync().ConfigureAwait(false);
-        return true;
-    }
-
-    /// <summary>Drops the current session so the next fetch authenticates from scratch
-    /// (used when the user changes credentials).</summary>
-    public void ResetAuth()
-    {
-        SessionId = null;
-        Token = null;
-        IsLoggedIn = false;
-    }
-
     /// <summary>Fetches the app bootstrap state (maintenance/restart timeline).</summary>
     public Task<JsonDocument?> GetAppAsync() => GetAsync($"{BaseUrl}/app?sessionId=");
 
-    /// <summary>Fetches a data center's tracker state - the spawn windows live here.
-    /// Served to anonymous sessions too; login only adds the account-gated extras.</summary>
+    /// <summary>Fetches a data center's tracker state - the spawn windows live here, and
+    /// are served to anonymous sessions.</summary>
     public Task<JsonDocument?> GetDataCenterAsync(string dataCenter)
         => GetAsync($"{BaseUrl}/app/data-center/{dataCenter}?sessionId=");
 
@@ -122,7 +89,6 @@ internal sealed class FaloopClient : IDisposable
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
                     Token = null;
-                    IsLoggedIn = false;
                     continue;
                 }
 
