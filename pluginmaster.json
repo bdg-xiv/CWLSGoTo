@@ -152,7 +152,7 @@
     "Author": "bdg",
     "Name": "Faloop Screener",
     "InternalName": "FaloopScreener",
-    "AssemblyVersion": "0.0.0.12",
+    "AssemblyVersion": "0.0.0.13",
     "Description": "Logs into your Faloop account and shows the current S/SS-rank spawn windows in a table (/windows): world, hunt, zone, time open, window progress and cap time, computed from Faloop's live tracker state - accurate even for kills that happened while you were offline. Filter by world (Crystal data center), hide zones or specific hunts you don't care about, and click Spawn on any row to see that hunt's spawn trigger. Requires a Faloop account with tracker access; credentials are stored in the plugin config like Faloop Integration does.",
     "ApplicableVersion": "any",
     "Tags": [
@@ -298,7 +298,7 @@
     "Author": "bdg",
     "Name": "Gather Tally",
     "InternalName": "GatherTally",
-    "AssemblyVersion": "0.0.0.3",
+    "AssemblyVersion": "0.0.0.5",
     "Description": "Shows the game's Miner, Botanist and Fisher achievement categories in three collapsible sections, each with a progress bar and how much is left. Progress is fetched from the server (the same request the achievement window makes) on demand with the Refresh button, per section or all at once, and an optional auto-refresh keeps the expanded sections ticking while you gather. Recent gains are marked so you can watch counters move. Cached per character. Open with /gathertally.",
     "ApplicableVersion": "any",
     "Tags": [
