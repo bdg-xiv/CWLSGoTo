@@ -298,7 +298,7 @@
     "Author": "bdg",
     "Name": "Gather Tally",
     "InternalName": "GatherTally",
-    "AssemblyVersion": "0.0.0.14",
+    "AssemblyVersion": "0.0.0.15",
     "Description": "Shows the game's Miner, Botanist and Fisher achievement categories in three collapsible sections, each with a progress bar and how much is left. Progress is fetched from the server (the same request the achievement window makes) on demand with the Refresh button, per section or all at once, and an optional auto-refresh keeps the expanded sections ticking while you gather. Recent gains are marked so you can watch counters move. Cached per character. Open with /gathertally.",
     "ApplicableVersion": "any",
     "Tags": [
