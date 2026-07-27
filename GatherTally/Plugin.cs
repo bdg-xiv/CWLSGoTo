@@ -343,7 +343,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // A retainer trip in flight would otherwise switch gathering back on when it ends.
         retainerRun.CancelResume();
-        if (GatherBuddyIpc.IsAutoGatherEnabled())
+        if (GatherBuddyIpc.IsAutoGatherEnabled() == true)
             GatherBuddyIpc.SetAutoGatherEnabled(false);
 
         Svc.Chat.Print($"[Gather Tally] \"{name}\" is done - stopped GatherBuddy Reborn.");
@@ -515,12 +515,20 @@ public sealed class Plugin : IDalamudPlugin
                 + "its list was built for is earned, instead of grinding on for\n"
                 + "nothing. The list itself is left alone.");
 
-        if (retainerRun.Running)
+        if (config.RetainerRunEnabled)
         {
-            ImGui.SameLine();
-            ImGui.TextColored(new Vector4(0.4f, 0.9f, 0.4f, 1f), retainerRun.Status);
+            var explanation = retainerRun.Explain();
+            if (explanation.Length > 0)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(retainerRun.Running
+                        ? new Vector4(0.4f, 0.9f, 0.4f, 1f)
+                        : new Vector4(0.7f, 0.7f, 0.7f, 1f),
+                    explanation);
+            }
         }
-        else if (config.StopWhenAchieved && config.WatchedAchievementId != 0)
+
+        if (config.StopWhenAchieved && config.WatchedAchievementId != 0)
         {
             ImGui.SameLine();
             ImGui.TextDisabled($"watching \"{config.WatchedAchievementName}\"");

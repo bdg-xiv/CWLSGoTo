@@ -45,6 +45,48 @@ public sealed class RetainerRun
     /// achievement being gathered for finishes mid-trip.</summary>
     public void CancelResume() => resumeGathering = false;
 
+    private string explanation = "";
+    private long explainedAt;
+
+    /// <summary>Why nothing is happening. Each preconditon fails silently on its own -
+    /// a missing plugin and a plugin answering "no" look identical from an IPC call - so
+    /// say which one is holding things up rather than leaving it a mystery. Throttled,
+    /// since probing absent IPC throws.</summary>
+    public string Explain()
+    {
+        if (Running)
+            return Status;
+
+        var now = Environment.TickCount64;
+        if (now - explainedAt < 1000)
+            return explanation;
+        explainedAt = now;
+
+        return explanation = Probe();
+    }
+
+    private static string Probe()
+    {
+        if (!AutoRetainerIpc.Available)
+            return "AutoRetainer not found";
+        if (!LifestreamIpc.Available)
+            return "Lifestream not found";
+
+        var gathering = GatherBuddyIpc.IsAutoGatherEnabled();
+        if (gathering == null)
+            return "GatherBuddy Reborn not found";
+        if (gathering == false)
+            return "waiting - auto-gather is off";
+
+        var ready = AutoRetainerIpc.RetainersReady();
+        if (ready == null)
+            return "AutoRetainer is not answering";
+        if (ready == false)
+            return "gathering - no retainers due yet";
+
+        return "retainers due - starting the trip";
+    }
+
     public void Update()
     {
         if (!config.RetainerRunEnabled)
@@ -68,7 +110,7 @@ public sealed class RetainerRun
 
         // Only interrupt something that is actually running - this is a detour from
         // gathering, not a way to start retainers on its own.
-        if (!GatherBuddyIpc.IsAutoGatherEnabled() || !AutoRetainerIpc.RetainersReady())
+        if (GatherBuddyIpc.IsAutoGatherEnabled() != true || AutoRetainerIpc.RetainersReady() != true)
             return;
 
         Begin();
@@ -128,7 +170,7 @@ public sealed class RetainerRun
                     break;
                 }
 
-                if (elapsed > StartGraceMs && !AutoRetainerIpc.IsBusy() && !AutoRetainerIpc.MultiModeRunning())
+                if (elapsed > StartGraceMs && AutoRetainerIpc.IsBusy() == false && AutoRetainerIpc.MultiModeRunning() == false)
                     Finish("Retainers done - back to gathering.", resume: resumeGathering);
                 break;
         }
@@ -154,7 +196,9 @@ public sealed class RetainerRun
 
 internal static class GatherBuddyIpc
 {
-    public static bool IsAutoGatherEnabled() => Call<bool>("GatherBuddyReborn.IsAutoGatherEnabled");
+    /// <summary>Null when GatherBuddy Reborn isn't there to ask - which is a different
+    /// thing from it answering "no".</summary>
+    public static bool? IsAutoGatherEnabled() => Call<bool>("GatherBuddyReborn.IsAutoGatherEnabled");
 
     public static void SetAutoGatherEnabled(bool enabled)
     {
@@ -169,7 +213,7 @@ internal static class GatherBuddyIpc
         }
     }
 
-    private static T? Call<T>(string name)
+    private static T? Call<T>(string name) where T : struct
     {
         try
         {
@@ -177,21 +221,24 @@ internal static class GatherBuddyIpc
         }
         catch
         {
-            return default;
+            return null;
         }
     }
 }
 
 internal static class AutoRetainerIpc
 {
-    public static bool Available => Probe("AutoRetainer.PluginState.IsBusy");
+    public static bool Available => IsBusy() != null;
 
-    public static bool RetainersReady()
+    /// <summary>True once a venture on an enabled retainer of this character has come up.
+    /// AutoRetainer answers false unless it has offline data for the character and that
+    /// character has retainers enabled in its own config.</summary>
+    public static bool? RetainersReady()
         => Call<bool>("AutoRetainer.PluginState.AreAnyRetainersAvailableForCurrentChara");
 
-    public static bool IsBusy() => Call<bool>("AutoRetainer.PluginState.IsBusy");
+    public static bool? IsBusy() => Call<bool>("AutoRetainer.PluginState.IsBusy");
 
-    public static bool MultiModeRunning() => Call<bool>("AutoRetainer.PluginState.GetMultiModeStatus");
+    public static bool? MultiModeRunning() => Call<bool>("AutoRetainer.PluginState.GetMultiModeStatus");
 
     /// <summary>Single-character multi mode: AutoRetainer walks to the bell and processes
     /// this character's retainers without relogging anywhere else.</summary>
@@ -208,20 +255,7 @@ internal static class AutoRetainerIpc
         }
     }
 
-    private static bool Probe(string name)
-    {
-        try
-        {
-            Svc.PluginInterface.GetIpcSubscriber<bool>(name).InvokeFunc();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static T? Call<T>(string name)
+    private static T? Call<T>(string name) where T : struct
     {
         try
         {
@@ -229,7 +263,7 @@ internal static class AutoRetainerIpc
         }
         catch
         {
-            return default;
+            return null;
         }
     }
 }
