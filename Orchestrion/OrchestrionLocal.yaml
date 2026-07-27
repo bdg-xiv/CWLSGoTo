@@ -13,6 +13,11 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.17:
+  Dungeon bosses are detected again while a playlist is playing. The scene holding the
+  zone/boss BGM is the very one a playlist overrides, so the boss theme was being
+  overwritten before anything could see it; what the game asks for is now recorded
+  before it gets replaced.
   2.3.0.16:
   Fixed dungeon boss detection: boss themes that start moments before the pull (door
   seal, intro, cutscene) were poisoning the zone-music baseline, so the "music changed"

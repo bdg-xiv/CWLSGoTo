@@ -62,13 +62,14 @@ public static class CombatMusicManager
 
 		var now = Environment.TickCount64;
 		var inCombat = DalamudApi.Condition[ConditionFlag.InCombat];
-		var naturalSong = BGMManager.CurrentSongId;
+		// Not CurrentSongId: while a playlist plays, the scene holding the zone/boss
+		// BGM is the one being overridden, so its song never reaches CurrentSongId.
+		var naturalSong = BGMManager.NaturalSongId;
 
 		// Track the game's own BGM as the "roaming" baseline, but only adopt a song
 		// after it has played for a while out of combat: dungeon boss themes often
 		// start seconds before the combat flag (door seal, intro, post-cutscene) and
-		// must not become the baseline. The BGM controller reports the natural song
-		// even while a forced playlist plays.
+		// must not become the baseline.
 		if (!inCombat && naturalSong != 0 && naturalSong != _peacefulSongId)
 		{
 			if (naturalSong != _candidateSongId)
@@ -193,9 +194,8 @@ public static class CombatMusicManager
 
 		// Dungeons (and other content): the game swapping its own BGM mid-combat is
 		// the boss theme starting.
-		return _peacefulSongId != 0
-		       && BGMManager.CurrentSongId != 0
-		       && BGMManager.CurrentSongId != _peacefulSongId;
+		var natural = BGMManager.NaturalSongId;
+		return _peacefulSongId != 0 && natural != 0 && natural != _peacefulSongId;
 	}
 
 	private static uint LookupContentType(uint territory)

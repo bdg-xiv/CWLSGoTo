@@ -42,6 +42,10 @@ public static class BGMManager
     
     public static int CurrentAudibleSong => LocalPlayer.IsPlaying ? LocalPlayer.CurrentTrackId : _bgmController.CurrentAudibleSong;
 
+    /// <summary>What the game itself would be playing right now, even while a playlist
+    /// is overriding it - the zone's BGM, or a boss theme once one starts.</summary>
+    public static int NaturalSongId => _bgmController.NaturalSongId;
+
     static BGMManager()
     {
         _bgmController = new BGMController();

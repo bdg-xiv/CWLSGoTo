@@ -44,6 +44,15 @@ public class BGMController
     
     // CurrentSongId if PlayingSongId is 0, otherwise PlayingSongId.
     public int CurrentAudibleSong => PlayingSongId == 0 ? CurrentSongId : PlayingSongId;
+
+    // The last song the game tried to put in the scene we are overriding. While
+    // Orchestrion plays, that scene is skipped by the scan below and whatever the game
+    // writes there is overwritten, so this is the only trace of what the game wanted.
+    private int _gameRequestedSongId;
+
+    // What the game would be playing if Orchestrion were not: the zone's own BGM, or
+    // the boss theme once a fight starts. Equals CurrentSongId when nothing is forced.
+    public int NaturalSongId => PlayingSongId == 0 ? CurrentSongId : _gameRequestedSongId;
     
     // The event that fires when the game changes songs.
     public delegate void SongChangedHandler(int oldSong, int currentSong, int oldSecondSong, int secondSong);
@@ -94,9 +103,16 @@ public class BGMController
                     // Ignore the PlayingScene scene
                     if (PlayingSongId != 0 && sceneIdx == PlayingScene)
                     {
-                        // If the game overwrote our song, play it again
+                        // If the game overwrote our song, play it again - but note what
+                        // it wanted first, otherwise that information is lost for good.
                         if (bgms[PlayingScene].BgmId != PlayingSongId)
+                        {
+                            var wanted = bgms[PlayingScene].BgmId;
+                            if (wanted != 0 && wanted != 9999)
+                                _gameRequestedSongId = wanted;
                             SetSong((ushort)PlayingSongId, PlayingScene);
+                        }
+
                         continue;
                     }
                     
