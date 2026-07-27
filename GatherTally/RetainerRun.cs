@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Enums;
 using ECommons;
 using ECommons.Automation;
@@ -94,6 +95,24 @@ public sealed class RetainerRun
         return explanation = Probe();
     }
 
+    /// <summary>True while a node is open or being worked. The gathering window stays up
+    /// between swings, so the condition flag alone would still let a trip start between
+    /// two items of the same node.</summary>
+    private static unsafe bool MidGather()
+    {
+        if (Svc.Condition[ConditionFlag.Gathering] || Svc.Condition[ConditionFlag.ExecutingGatheringAction])
+            return true;
+
+        foreach (var addon in (string[])["Gathering", "GatheringMasterpiece"])
+        {
+            if (GenericHelpers.TryGetAddonByName<AtkUnitBase>(addon, out var unit)
+                && GenericHelpers.IsAddonReady(unit))
+                return true;
+        }
+
+        return false;
+    }
+
     private static string Probe()
     {
         if (!AutoRetainerIpc.Available)
@@ -112,6 +131,8 @@ public sealed class RetainerRun
             return "waiting - retainer list not loaded yet";
         if (ready == false)
             return "gathering - no venture finished yet";
+        if (MidGather())
+            return "venture done - finishing this node first";
 
         return "venture done - starting the trip";
     }
@@ -140,6 +161,11 @@ public sealed class RetainerRun
         // Only interrupt something that is actually running - this is a detour from
         // gathering, not a way to start retainers on its own.
         if (GatherBuddyIpc.IsAutoGatherEnabled() != true || RetainerVentures.AnyComplete() != true)
+            return;
+
+        // A venture does not stop being done in thirty seconds. Leaving mid-node throws
+        // away the node, so let the current one finish first.
+        if (MidGather())
             return;
 
         Begin();
