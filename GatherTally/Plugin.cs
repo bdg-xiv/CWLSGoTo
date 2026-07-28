@@ -302,6 +302,30 @@ public sealed class Plugin : IDalamudPlugin
 
     /// <summary>With auto-refresh on, re-fetch the sections that are actually expanded
     /// (a collapsed section isn't being watched) once the interval has elapsed.</summary>
+    /// <summary>Stops the run and clears away the lists this plugin made.</summary>
+    private void StopGathering()
+    {
+        if (GatherBuddyIpc.IsAutoGatherEnabled() == true)
+            GatherBuddyIpc.SetAutoGatherEnabled(false);
+
+        // Nothing is being gathered for any more, so stop watching for it.
+        retainerRun.CancelResume();
+        config.WatchedAchievementId = 0;
+        config.WatchedAchievementName = "";
+        config.Save();
+
+        var removed = GatherBuddyBridge.DeleteOwnLists();
+        if (removed < 0)
+        {
+            Svc.Chat.PrintError("[Gather Tally] Stopped, but couldn't reach GatherBuddy Reborn to tidy the lists.");
+            return;
+        }
+
+        Svc.Chat.Print(removed == 0
+            ? "[Gather Tally] Stopped GatherBuddy Reborn."
+            : $"[Gather Tally] Stopped GatherBuddy Reborn and removed {removed} list(s).");
+    }
+
     /// <summary>Once the achievement a list was built for is earned, there is nothing
     /// left to gather for, so stop GatherBuddy Reborn rather than let it grind on.</summary>
     private unsafe void CheckWatchedAchievement()
@@ -346,7 +370,10 @@ public sealed class Plugin : IDalamudPlugin
         if (GatherBuddyIpc.IsAutoGatherEnabled() == true)
             GatherBuddyIpc.SetAutoGatherEnabled(false);
 
-        Svc.Chat.Print($"[Gather Tally] \"{name}\" is done - stopped GatherBuddy Reborn.");
+        // The list has nothing left to gather for, so it would only sit there.
+        var removed = GatherBuddyBridge.DeleteOwnLists();
+        Svc.Chat.Print($"[Gather Tally] \"{name}\" is done - stopped GatherBuddy Reborn"
+            + (removed > 0 ? $" and removed {removed} list(s)." : "."));
     }
 
     /// <summary>Drives the Universalis lookups the planner asked for, and re-picks once
@@ -421,7 +448,14 @@ public sealed class Plugin : IDalamudPlugin
         else
             ImGui.TextDisabled("No data yet - hit Refresh.");
 
-        ImGui.SameLine(ImGui.GetContentRegionAvail().X - 50);
+        ImGui.SameLine(ImGui.GetContentRegionAvail().X - 95);
+        if (ImGui.SmallButton("Stop"))
+            StopGathering();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Stops GatherBuddy Reborn and deletes every auto-gather list\n"
+                + "this plugin made, so they don't pile up. Your own lists are\nleft alone.");
+
+        ImGui.SameLine();
         if (refreshing)
             ImGui.BeginDisabled();
         if (ImGui.SmallButton("Refresh"))
@@ -691,8 +725,13 @@ public sealed class Plugin : IDalamudPlugin
 
     private void SendToGatherBuddy(GatherAchievement achievement, GatherPlanner.Plan plan)
     {
+        // Clear out anything left from an earlier click, or GatherBuddy Reborn ends up
+        // with one dead list per press.
+        GatherBuddyBridge.DeleteOwnLists();
+
         var error = GatherBuddyBridge.CreateAndActivate(
-            $"GT: {achievement.Name}", achievement.Description, plan.ItemId, GatherPlanner.TargetQuantity,
+            GatherBuddyBridge.ListPrefix + achievement.Name, achievement.Description,
+            plan.ItemId, GatherPlanner.TargetQuantity,
             out var deactivated);
 
         if (error != null)

@@ -22,7 +22,51 @@ public static class GatherBuddyBridge
     private const string PluginTypeName = "GatherBuddy.GatherBuddy";
     private const string ListTypeName = "GatherBuddy.AutoGather.Lists.AutoGatherList";
 
+    /// <summary>Every list this plugin makes is named with this, so they can be told apart
+    /// from the user's own and cleared out again.</summary>
+    public const string ListPrefix = "GT: ";
+
     public static bool Available => FindAssembly() != null;
+
+    /// <summary>Deletes every list this plugin created. Returns how many went, or -1 if
+    /// GatherBuddy Reborn couldn't be reached.</summary>
+    public static int DeleteOwnLists()
+    {
+        try
+        {
+            var assembly = FindAssembly();
+            var listType = assembly?.GetType(ListTypeName);
+            var manager = assembly == null ? null : FindListsManager(assembly);
+            if (listType == null || manager == null)
+                return -1;
+
+            var nameProperty = listType.GetProperty("Name", BindingFlags.Public | BindingFlags.Instance);
+            var deleteList = manager.GetType().GetMethod("DeleteList", BindingFlags.Public | BindingFlags.Instance);
+            if (nameProperty == null || deleteList == null)
+                return -1;
+
+            if (manager.GetType().GetProperty("Lists", BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(manager) is not IEnumerable lists)
+                return -1;
+
+            // Materialise first - deleting walks the same collection.
+            var doomed = lists.Cast<object>()
+                .Where(l => l != null
+                    && nameProperty.GetValue(l) is string name
+                    && name.StartsWith(ListPrefix, StringComparison.Ordinal))
+                .ToList();
+
+            foreach (var list in doomed)
+                deleteList.Invoke(manager, [list]);
+
+            return doomed.Count;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Error(ex, "Failed to delete GatherBuddy Reborn lists");
+            return -1;
+        }
+    }
 
     private static Assembly? FindAssembly()
         => AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == AssemblyName);
