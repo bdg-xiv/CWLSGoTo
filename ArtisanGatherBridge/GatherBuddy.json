@@ -1,0 +1,14 @@
+{
+  "Author": "bdg",
+  "Name": "Artisan GBR Bridge",
+  "Punchline": "Sends Artisan's \"Gather Item\" into a GatherBuddy Reborn list.",
+  "Description": "Artisan only knows how to talk to the original GatherBuddy, and its check is simply whether a plugin called GatherBuddy is loaded - so this one carries that name to switch the greyed-out \"Gather Item\" entry back on. Clicking it now files the ingredient into a GatherBuddy Reborn auto-gather list named after the crafting list it came from, with the amount you are still missing; click more ingredients and they join the same list. Typing /gather or /gatherfish yourself is untouched and still goes straight to GatherBuddy Reborn. Requires Artisan and GatherBuddy Reborn; the original GatherBuddy must not be running.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "artisan",
+    "gatherbuddy",
+    "gathering",
+    "crafting",
+    "bridge"
+  ]
+}

@@ -58,6 +58,7 @@ jobs:
           @{ Project = "Orchestrion"; InternalName = "OrchestrionLocal" },
           @{ Project = "Laziness"; InternalName = "Laziness" },
           @{ Project = "GatherTally"; InternalName = "GatherTally" },
+          @{ Project = "ArtisanGatherBridge"; InternalName = "GatherBuddy" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 

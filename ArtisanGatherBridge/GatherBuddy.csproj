@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <!-- The assembly, and therefore the internal name, has to be exactly "GatherBuddy":
+         that is the string Artisan looks up before it enables "Gather Item". The version
+         is deliberately far ahead of the real GatherBuddy so Dalamud never offers the
+         official plugin as an update to this one and replaces it. -->
+    <Version>99.0.0.1</Version>
+    <RootNamespace>ArtisanGatherBridge</RootNamespace>
+    <PackageProjectUrl>https://github.com/bdg-xiv/CWLSGoTo</PackageProjectUrl>
+    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ECommons" Version="3.2.1.15" />
+  </ItemGroup>
+</Project>
