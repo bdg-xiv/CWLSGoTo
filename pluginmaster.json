@@ -323,6 +323,32 @@
   },
   {
     "Author": "bdg",
+    "Name": "Artisan GBR Bridge",
+    "InternalName": "GatherBuddy",
+    "AssemblyVersion": "99.0.0.1",
+    "Description": "Artisan only knows how to talk to the original GatherBuddy, and its check is simply whether a plugin called GatherBuddy is loaded - so this one carries that name to switch the greyed-out \"Gather Item\" entry back on. Clicking it now files the ingredient into a GatherBuddy Reborn auto-gather list named after the crafting list it came from, with the amount you are still missing; click more ingredients and they join the same list. Typing /gather or /gatherfish yourself is untouched and still goes straight to GatherBuddy Reborn. Requires Artisan and GatherBuddy Reborn; the original GatherBuddy must not be running.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "artisan",
+      "gatherbuddy",
+      "gathering",
+      "crafting",
+      "bridge"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Sends Artisan's \"Gather Item\" into a GatherBuddy Reborn list.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/GatherBuddy.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/GatherBuddy.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/GatherBuddy.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.25",
