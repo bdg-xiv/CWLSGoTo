@@ -1,6 +1,6 @@
-<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+﻿<Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <PluginVersion>2.3.0.18</PluginVersion>
+    <PluginVersion>2.3.0.19</PluginVersion>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -8,7 +8,7 @@
     <AssemblyTitle>OrchestrionLocal</AssemblyTitle>
     <Product>OrchestrionLocal</Product>
     <Authors>Meli, perchbird, bdg</Authors>
-    <Copyright>Copyright ©  2021</Copyright>
+    <Copyright>Copyright Â©  2021</Copyright>
     <Version>$(PluginVersion)</Version>
     <FileVersion>$(PluginVersion)</FileVersion>
     <AssemblyVersion>$(PluginVersion)</AssemblyVersion>

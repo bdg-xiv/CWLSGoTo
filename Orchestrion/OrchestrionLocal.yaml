@@ -13,6 +13,13 @@ tags:
   - bgm
   - music
 changelog: |-
+  2.3.0.19:
+  Dungeon bosses were still slipping through: the roaming baseline was re-adopted from
+  any song that played five seconds out of combat, so the boss theme - which starts on
+  entering the arena, well before the pull - became the baseline itself and left nothing
+  to compare against. Inside a duty the baseline is now taken once, from the first
+  settled song, and frozen until the instance is left.
+
   2.3.0.18:
   Dungeon boss detection: the game does not keep the boss theme in the scene a playlist
   overrides, so watching only that scene reported "no song" and nothing could ever be

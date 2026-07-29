@@ -70,7 +70,15 @@ public static class CombatMusicManager
 		// after it has played for a while out of combat: dungeon boss themes often
 		// start seconds before the combat flag (door seal, intro, post-cutscene) and
 		// must not become the baseline.
-		if (!inCombat && naturalSong != 0 && naturalSong != _peacefulSongId)
+		//
+		// Inside a duty the first settled song is the roaming theme and the baseline
+		// is then frozen for the rest of the instance. Waiting out the timer is not
+		// enough on its own: the boss theme starts on entering the arena, so buffing
+		// or waiting for the party before pulling would otherwise let it be adopted,
+		// after which the fight can never be told apart from roaming again.
+		var baselineLocked = _peacefulSongId != 0 && DalamudApi.Condition[ConditionFlag.BoundByDuty];
+
+		if (!inCombat && !baselineLocked && naturalSong != 0 && naturalSong != _peacefulSongId)
 		{
 			if (naturalSong != _candidateSongId)
 			{
