@@ -375,23 +375,31 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         // Rank by the gil actually collectable: a ware nobody buys looks fine per
-        // tomestone and then sits unsold, so cap each option at what the market takes.
+        // tomestone and then sits unsold, so cap each option at what the market takes -
+        // less whatever is already in your bags, retainers or listings, which is
+        // competing for exactly the same buyers.
         var tomes = CurrencyCount(MathsTomeId);
         var options = ranked
-            .Select(c => (Candidate: c, Units: Math.Min(tomes / MathsUnitCost, MarketAdvisor.AbsorbableUnits(c.UnitsPerDay))))
+            .Select(c =>
+            {
+                var held = Holdings.Owned(c.ItemId);
+                var room = Math.Max(0, MarketAdvisor.AbsorbableUnits(c.UnitsPerDay) - held);
+                return (Candidate: c, Held: held, Units: Math.Min(tomes / MathsUnitCost, room));
+            })
             .Where(x => x.Units > 0)
             .OrderByDescending(x => (long)x.Units * x.Candidate.Price)
             .ToList();
 
         if (options.Count == 0)
         {
-            Print("None of the Mathematics wares sell fast enough to be worth buying right now.");
+            Print("None of the Mathematics wares are worth buying right now - either they "
+                + "don't sell fast enough, or you already hold a week of them.");
             return;
         }
 
         foreach (var option in options)
-            Print($"  {option.Candidate.Name}: {option.Candidate.Price:N0} gil, {option.Candidate.UnitsPerDay:N0} sold/day "
-                + $"=> buy {option.Units:N0} for ~{option.Units * option.Candidate.Price * 0.95:N0} gil");
+            Print($"  {option.Candidate.Name}: {option.Candidate.Price:N0} gil, {option.Candidate.UnitsPerDay:N0} sold/day, "
+                + $"holding {option.Held:N0} => buy {option.Units:N0} for ~{option.Units * option.Candidate.Price * 0.95:N0} gil");
 
         var best = options[0].Candidate;
         spentCurrencyId = MathsTomeId;
@@ -534,8 +542,12 @@ public sealed class Plugin : IDalamudPlugin
                     .Select(c =>
                     {
                         var cost = Math.Max(costs[c.ItemId], 1);
-                        var units = Math.Min(seals / cost, MarketAdvisor.AbsorbableUnits(c.UnitsPerDay));
-                        return (Candidate: c, Cost: cost, Units: units, Gil: units * c.Price * 0.95);
+                        // Stock already held - bags, retainers, and anything still sitting
+                        // on the board - eats into the same week of demand.
+                        var held = Holdings.Owned(c.ItemId);
+                        var room = Math.Max(0, MarketAdvisor.AbsorbableUnits(c.UnitsPerDay) - held);
+                        var units = Math.Min(seals / cost, room);
+                        return (Candidate: c, Cost: cost, Held: held, Units: units, Gil: units * c.Price * 0.95);
                     })
                     .Where(x => x.Units > 0)
                     .OrderByDescending(x => x.Gil)
@@ -543,13 +555,15 @@ public sealed class Plugin : IDalamudPlugin
 
                 if (best.Count == 0)
                 {
-                    Print("Nothing on the Materials tab sells fast enough to be worth buying.");
+                    Print("Nothing on the Materials tab is worth buying - either it doesn't "
+                        + "sell fast enough, or you already hold a week of it.");
                     return;
                 }
 
                 foreach (var option in best.Take(5))
                     Print($"  {option.Candidate.Name}: {option.Candidate.Price:N0} gil / {option.Cost:N0} seals, "
-                        + $"{option.Candidate.UnitsPerDay:N0} sold/day => buy {option.Units:N0} for ~{option.Gil:N0} gil");
+                        + $"{option.Candidate.UnitsPerDay:N0} sold/day, holding {option.Held:N0} "
+                        + $"=> buy {option.Units:N0} for ~{option.Gil:N0} gil");
 
                 var winner = best[0];
                 buyTargetItemId = winner.Candidate.ItemId;
