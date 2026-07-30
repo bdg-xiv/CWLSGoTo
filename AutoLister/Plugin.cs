@@ -156,6 +156,10 @@ public sealed class Plugin : IDalamudPlugin
     private bool useHq;
     private int lastRequestId = -1;
     private int? newPrice;
+
+    /// <summary>Set when the only listings at or under the chosen price belonged to our
+    /// own retainers, so "no price found" can say which of the two it was.</summary>
+    private bool sawOwnListings;
     private int pendingNoMatchRequestId = -1;
     private long pendingNoMatchTimeoutAt;
     private long pendingNoOfferingsTimeoutAt;
@@ -243,7 +247,7 @@ public sealed class Plugin : IDalamudPlugin
             if (ImGui.Button("Auto List"))
                 StartListing();
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Puts every sellable item from the bottom-right inventory quarter up for sale,\nundercutting the cheapest matching HQ/NQ listing by 1 gil.\nPlease do not interact with the game while this runs.");
+                ImGui.SetTooltip("Puts every sellable item from the bottom-right inventory quarter up for sale,\nundercutting the cheapest matching HQ/NQ listing by 1 gil.\nYour own retainers' listings are never undercut.\nPlease do not interact with the game while this runs.");
             ImGui.SameLine();
             if (ImGui.Button("Pinch & Cull"))
                 StartPinch(allRetainersRun: false);
@@ -444,6 +448,7 @@ public sealed class Plugin : IDalamudPlugin
         crashedReport.Clear();
         newRequest = false;
         newPrice = null;
+        sawOwnListings = false;
         lastRequestId = -1;
         pendingNoMatchRequestId = -1;
         pendingNoMatchTimeoutAt = 0;
@@ -577,6 +582,7 @@ public sealed class Plugin : IDalamudPlugin
         mergeCompleted = false;
         mergePending = false;
         newPrice = null;
+        sawOwnListings = false;
         compareOpenAt = 0;
         currentContainer = itemContainer;
         currentSlot = slot;
@@ -963,6 +969,7 @@ public sealed class Plugin : IDalamudPlugin
         crashKeepItem = false;
         vendorCurrentItem = false;
         newPrice = null;
+        sawOwnListings = false;
         compareOpenAt = 0;
         currentItemId = 0;
         currentItemName = "";
@@ -1046,7 +1053,9 @@ public sealed class Plugin : IDalamudPlugin
         var itemName = GetRetainerSellItemName(addon);
         if (newPrice.Value <= 0)
         {
-            Svc.Chat.Print($"[AutoLister] {itemName}: no market listings found, keeping the current price.");
+            Svc.Chat.Print(sawOwnListings
+                ? $"[AutoLister] {itemName}: only your own retainers are selling this - keeping the current price."
+                : $"[AutoLister] {itemName}: no market listings found, keeping the current price.");
             skippedCount++;
             Callback.Fire(&addon->AtkUnitBase, true, RetainerSellCancelEvent);
             addon->AtkUnitBase.Close(true);
@@ -1483,7 +1492,9 @@ public sealed class Plugin : IDalamudPlugin
         var itemName = GetRetainerSellItemName(addon);
         if (newPrice.Value <= 0)
         {
-            Svc.Chat.Print($"[AutoLister] {itemName}: no market listings found, skipping.");
+            Svc.Chat.Print(sawOwnListings
+                ? $"[AutoLister] {itemName}: only your own retainers are selling this - price it yourself."
+                : $"[AutoLister] {itemName}: no market listings found, skipping.");
             skippedCount++;
             manualPricingReport.Add(itemName);
             Callback.Fire(&addon->AtkUnitBase, true, RetainerSellCancelEvent);
@@ -1628,6 +1639,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         newRequest = false;
         newPrice = null;
+        sawOwnListings = false;
 
         if (TryGetAddonByName<AtkUnitBase>("ItemSearchResult", out var searchResult) && searchResult->IsVisible)
         {
@@ -2013,9 +2025,25 @@ public sealed class Plugin : IDalamudPlugin
         var wantHq = useHq
                      && (Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(offerings.ItemListings[0].ItemId)?.CanBeHq ?? false);
 
+        // Our own retainers are not competition. Undercutting one of them takes a gil
+        // off our own price every run, which walks the item down to nothing over a few
+        // passes without another seller ever being involved.
+        var mine = OwnRetainerIds();
+
         var index = 0;
-        while (wantHq && index < offerings.ItemListings.Count && !offerings.ItemListings[index].IsHq)
+        while (index < offerings.ItemListings.Count)
+        {
+            var listing = offerings.ItemListings[index];
+            if (!wantHq || listing.IsHq)
+            {
+                if (!mine.Contains(listing.RetainerId))
+                    break;
+
+                sawOwnListings = true;
+            }
+
             index++;
+        }
 
         if (index >= offerings.ItemListings.Count)
         {
@@ -2054,6 +2082,29 @@ public sealed class Plugin : IDalamudPlugin
             Svc.Log.Debug("No market board offerings received before timeout");
             CompletePriceRequest(-1, -1);
         }
+    }
+
+    /// <summary>Retainer ids belonging to the player. The summoned character's retainers
+    /// come straight from the game; ids saved from previous visits carry the ones on
+    /// other characters, which the game will not list while they are not logged in.</summary>
+    private unsafe HashSet<ulong> OwnRetainerIds()
+    {
+        // Every id here was written by opening that retainer's own sell list, so the
+        // saved set can only ever contain retainers belonging to this account.
+        var ids = new HashSet<ulong>(config.RetainerListings.Keys);
+
+        var manager = RetainerManager.Instance();
+        if (manager == null)
+            return ids;
+
+        for (var i = 0u; i < manager->GetRetainerCount(); i++)
+        {
+            var retainer = manager->GetRetainerBySortedIndex(i);
+            if (retainer != null && retainer->RetainerId != 0)
+                ids.Add(retainer->RetainerId);
+        }
+
+        return ids;
     }
 
     private void CompletePriceRequest(int price, int requestId)
