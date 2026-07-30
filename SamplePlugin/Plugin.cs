@@ -63,6 +63,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ICallGateSubscriber<string, bool, string?, bool, int?, bool?, bool?, object> lifestreamTpAndChangeWorldIpc;
     private readonly ICallGateSubscriber<bool> lifestreamIsBusyIpc;
     private readonly ICallGateProvider<uint, string, object?> goToAetheryteIpc;
+    private readonly PlayerContextMenu playerContextMenu;
     private readonly List<(uint Id, Aetheryte Aetheryte, MapLinkPayload MapLink, World? World)> goToLinks = [];
     private uint nextGoToLinkId;
     private sealed class WorldTeleportTask
@@ -121,6 +122,8 @@ public sealed class Plugin : IDalamudPlugin
         // world hop if needed, teleport, then the arrival follow-ups.
         goToAetheryteIpc = PluginInterface.GetIpcProvider<uint, string, object?>("CWLSGoTo.GoToAetheryte");
         goToAetheryteIpc.RegisterAction(OnGoToAetheryteIpc);
+
+        playerContextMenu = new PlayerContextMenu(this);
 
         // Subscribe to the handleable chat message event (matches IChatGui.OnHandleableChatMessageDelegate)
         Svc.Chat.CheckMessageHandled += OnChatMessage;
@@ -868,6 +871,7 @@ public sealed class Plugin : IDalamudPlugin
     public void Dispose()
     {
         goToAetheryteIpc?.UnregisterAction();
+        playerContextMenu.Dispose();
         Svc.Chat.CheckMessageHandled -= OnChatMessage;
         Svc.Chat.RemoveChatLinkHandler();
         Svc.Framework.Update -= OnFrameworkUpdate;

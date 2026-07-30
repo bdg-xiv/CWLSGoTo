@@ -53,7 +53,9 @@ internal static class MapManager
         return FindNearestInTerritory(territoryId, mapLink) ?? GetTerritoryAetheryte(territoryId);
     }
 
-    private static Aetheryte? GetTerritoryAetheryte(uint territoryId)
+    /// <summary>The aetheryte a territory names as its own travel destination. Null for
+    /// anywhere you cannot teleport to - duties, housing wards, instanced content.</summary>
+    internal static Aetheryte? GetTerritoryAetheryte(uint territoryId)
     {
         var aetheryte = Svc.Data.GetExcelSheet<TerritoryType>().GetRowOrDefault(territoryId)?.Aetheryte.ValueNullable;
         if (aetheryte is not { IsAetheryte: true })
