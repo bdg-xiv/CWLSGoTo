@@ -23,6 +23,10 @@ public class Configuration : IPluginConfiguration
 
     public Dictionary<ulong, RetainerSnapshot> RetainerListings { get; set; } = [];
 
+    /// <summary>When each retainer was last taken through Pinch &amp; Cull, so the button
+    /// can say how stale their prices have got.</summary>
+    public Dictionary<ulong, DateTime> LastPinch { get; set; } = [];
+
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);

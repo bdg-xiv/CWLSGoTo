@@ -248,7 +248,8 @@ public sealed class Plugin : IDalamudPlugin
             if (ImGui.Button("Pinch & Cull"))
                 StartPinch(allRetainersRun: false);
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Reprices this retainer's listings like Auto Pinch, but items whose new\nprice totals under 2,000 gil (or that the vendor pays more for) are\ndelisted and sold to the vendor instead.\nPlease do not interact with the game while this runs.");
+                ImGui.SetTooltip("Reprices this retainer's listings like Auto Pinch, but items whose new\nprice totals under 2,000 gil (or that the vendor pays more for) are\ndelisted and sold to the vendor instead.\nPlease do not interact with the game while this runs.\n\n"
+                    + LastPinchLine());
         }
 
         ImGui.End();
@@ -933,6 +934,11 @@ public sealed class Plugin : IDalamudPlugin
 
         if (pendingListingIndexes.Count == 0)
         {
+            // Recorded here rather than in FinishRun: this retainer is still the
+            // summoned one, and an all-retainers run only finishes once, long after
+            // the earlier retainers have been dismissed.
+            RecordPinchCompleted();
+
             if (allRetainersMode)
             {
                 taskManager.Enqueue(CloseSellList, "CloseSellList", new TaskManagerConfiguration { TimeLimitMS = 5000, AbortOnTimeout = false, TimeoutSilently = true });
@@ -1659,6 +1665,41 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>Records what the summoned retainer has on the market. Runs whenever a
     /// sell list opens (and when a run finishes), keeping the cross-retainer lookup
     /// fresh through normal play.</summary>
+    /// <summary>Stamps the summoned retainer as pinched. Called once that retainer's
+    /// listings are exhausted, whether it was run on its own or as part of the whole
+    /// bell.</summary>
+    private unsafe void RecordPinchCompleted()
+    {
+        var manager = RetainerManager.Instance();
+        var retainer = manager != null ? manager->GetActiveRetainer() : null;
+        if (retainer == null || retainer->RetainerId == 0)
+            return;
+
+        config.LastPinch[retainer->RetainerId] = DateTime.UtcNow;
+        config.Save();
+    }
+
+    /// <summary>How long ago the summoned retainer was last pinched, for the button's
+    /// tooltip.</summary>
+    private unsafe string LastPinchLine()
+    {
+        var manager = RetainerManager.Instance();
+        var retainer = manager != null ? manager->GetActiveRetainer() : null;
+        if (retainer == null || retainer->RetainerId == 0)
+            return "Last Pinch & Cull: unknown.";
+
+        if (!config.LastPinch.TryGetValue(retainer->RetainerId, out var at))
+            return "Last Pinch & Cull: never.";
+
+        var days = (int)(DateTime.UtcNow - at).TotalDays;
+        return days switch
+        {
+            <= 0 => "Last Pinch & Cull: today.",
+            1 => "Last Pinch & Cull: 1 day ago.",
+            _ => $"Last Pinch & Cull: {days} days ago.",
+        };
+    }
+
     private unsafe void RefreshActiveRetainerSnapshot()
     {
         var manager = RetainerManager.Instance();
