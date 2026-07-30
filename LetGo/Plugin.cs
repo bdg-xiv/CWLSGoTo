@@ -24,8 +24,10 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
     private const string CommandName = "/letgo";
+    private const string ShortCommandName = "/lg";
 
     private readonly Configuration config;
+    private readonly bool shortCommandRegistered;
 
     private bool held;
 
@@ -42,10 +44,20 @@ public sealed class Plugin : IDalamudPlugin
 
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        Svc.Commands.AddHandler(CommandName, new CommandInfo((_, _) => windowOpen = !windowOpen)
+        Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Settings for dropping your target while a key is held.",
+            HelpMessage = "Settings for dropping your target while a key is held. "
+                + "Add on, off or toggle to switch it without opening the window.",
         });
+
+        shortCommandRegistered = Svc.Commands.AddHandler(ShortCommandName, new CommandInfo(OnToggle)
+        {
+            HelpMessage = "Turns Let Go on or off.",
+        });
+
+        if (!shortCommandRegistered)
+            Svc.Log.Warning($"{ShortCommandName} is already registered by another plugin; "
+                + $"use '{CommandName} toggle' instead.");
 
         PluginInterface.UiBuilder.Draw += Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleWindow;
@@ -58,6 +70,8 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleWindow;
         PluginInterface.UiBuilder.Draw -= Draw;
 
+        if (shortCommandRegistered)
+            Svc.Commands.RemoveHandler(ShortCommandName);
         Svc.Commands.RemoveHandler(CommandName);
 
         // Leaving mid-hold shouldn't cost the target.
@@ -67,6 +81,45 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private void ToggleWindow() => windowOpen = !windowOpen;
+
+    /// <summary>Bare /letgo opens the window; with an argument it behaves like /lg, so the
+    /// switch is still reachable when another plugin already owns the short command.</summary>
+    private void OnCommand(string command, string arguments)
+    {
+        if (arguments.Trim().Length == 0)
+            windowOpen = !windowOpen;
+        else
+            OnToggle(command, arguments);
+    }
+
+    private void OnToggle(string command, string arguments)
+    {
+        // Spelling it out as well as toggling keeps it usable from a macro, where a
+        // blind toggle can end up backwards.
+        var wanted = arguments.Trim().ToLowerInvariant() switch
+        {
+            "on" or "1" or "true" or "enable" => true,
+            "off" or "0" or "false" or "disable" => false,
+            _ => !config.Enabled,
+        };
+
+        if (wanted != config.Enabled)
+        {
+            config.Enabled = wanted;
+            config.Save();
+
+            // Switching off mid-hold would otherwise strand the target.
+            if (!config.Enabled && held)
+            {
+                Restore();
+                held = false;
+            }
+        }
+
+        Svc.Chat.Print(config.Enabled
+            ? $"[Let Go] On - holding {config.Key} clears your target."
+            : "[Let Go] Off.");
+    }
 
     private void Draw()
     {
@@ -164,6 +217,11 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.TextWrapped("Hold the key to clear your target; release it to get the same "
                 + "target back. Target something else while the key is down and that choice "
                 + "is kept instead.");
+
+            ImGui.Spacing();
+            ImGui.TextDisabled(shortCommandRegistered
+                ? "/lg switches this on and off. /lg on and /lg off set it outright."
+                : "/lg was taken by another plugin - use /letgo toggle, /letgo on, /letgo off.");
 
             if (config.Key == Modifier.Shift)
             {
