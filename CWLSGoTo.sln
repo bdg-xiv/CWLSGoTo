@@ -31,6 +31,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GatherTally", "GatherTally\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ArtisanGatherBridge", "ArtisanGatherBridge\GatherBuddy.csproj", "{8F42C7A5-1D6E-4B93-A07C-52E8B1D9F634}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LetGo", "LetGo\LetGo.csproj", "{D5A61B34-8E72-4C09-9F13-6B0E4A7C82D5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -93,6 +95,10 @@ Global
 		{8F42C7A5-1D6E-4B93-A07C-52E8B1D9F634}.Debug|x64.Build.0 = Debug|x64
 		{8F42C7A5-1D6E-4B93-A07C-52E8B1D9F634}.Release|x64.ActiveCfg = Release|x64
 		{8F42C7A5-1D6E-4B93-A07C-52E8B1D9F634}.Release|x64.Build.0 = Release|x64
+		{D5A61B34-8E72-4C09-9F13-6B0E4A7C82D5}.Debug|x64.ActiveCfg = Debug|x64
+		{D5A61B34-8E72-4C09-9F13-6B0E4A7C82D5}.Debug|x64.Build.0 = Debug|x64
+		{D5A61B34-8E72-4C09-9F13-6B0E4A7C82D5}.Release|x64.ActiveCfg = Release|x64
+		{D5A61B34-8E72-4C09-9F13-6B0E4A7C82D5}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

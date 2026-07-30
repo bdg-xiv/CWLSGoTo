@@ -59,6 +59,7 @@ jobs:
           @{ Project = "Laziness"; InternalName = "Laziness" },
           @{ Project = "GatherTally"; InternalName = "GatherTally" },
           @{ Project = "ArtisanGatherBridge"; InternalName = "GatherBuddy" },
+          @{ Project = "LetGo"; InternalName = "LetGo" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 
