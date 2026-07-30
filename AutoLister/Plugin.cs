@@ -288,7 +288,8 @@ public sealed class Plugin : IDalamudPlugin
             if (ImGui.Button("Pinch & Cull All"))
                 StartPinch(allRetainersRun: true);
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Opens every retainer with market listings in turn and runs Pinch & Cull\non each: repricing healthy listings, delisting + vendoring the ones under\nthe thresholds. Please do not interact with the game while this runs.");
+                ImGui.SetTooltip("Opens every retainer with market listings in turn and runs Pinch & Cull\non each: repricing healthy listings, delisting + vendoring the ones under\nthe thresholds. Please do not interact with the game while this runs."
+                    + AllRetainersPinchLines());
         }
 
         ImGui.End();
@@ -1688,15 +1689,42 @@ public sealed class Plugin : IDalamudPlugin
         if (retainer == null || retainer->RetainerId == 0)
             return "Last Pinch & Cull: unknown.";
 
-        if (!config.LastPinch.TryGetValue(retainer->RetainerId, out var at))
-            return "Last Pinch & Cull: never.";
+        return $"Last Pinch & Cull: {AgeOf(retainer->RetainerId)}.";
+    }
+
+    /// <summary>One line per retainer the All run would visit. Built from the same
+    /// "has market listings" test the run itself uses, so the list is exactly the set
+    /// of retainers the button is about to work through.</summary>
+    private unsafe string AllRetainersPinchLines()
+    {
+        var manager = RetainerManager.Instance();
+        if (manager == null)
+            return "";
+
+        var lines = new List<string>();
+        for (var i = 0u; i < manager->GetRetainerCount(); i++)
+        {
+            var retainer = manager->GetRetainerBySortedIndex(i);
+            if (retainer == null || retainer->RetainerId == 0 || retainer->MarketItemCount == 0)
+                continue;
+
+            lines.Add($"{retainer->NameString} - {AgeOf(retainer->RetainerId)}");
+        }
+
+        return lines.Count == 0 ? "" : "\n\n" + string.Join('\n', lines);
+    }
+
+    private string AgeOf(ulong retainerId)
+    {
+        if (!config.LastPinch.TryGetValue(retainerId, out var at))
+            return "never";
 
         var days = (int)(DateTime.UtcNow - at).TotalDays;
         return days switch
         {
-            <= 0 => "Last Pinch & Cull: today.",
-            1 => "Last Pinch & Cull: 1 day ago.",
-            _ => $"Last Pinch & Cull: {days} days ago.",
+            <= 0 => "today",
+            1 => "1 day ago",
+            _ => $"{days} days ago",
         };
     }
 
