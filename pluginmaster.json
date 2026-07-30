@@ -349,6 +349,31 @@
   },
   {
     "Author": "bdg",
+    "Name": "Let Go",
+    "InternalName": "LetGo",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Hold Shift and your current target is cleared; release it and the same target comes back. Useful when having something targeted gets in the way - placing a ground-targeted action freely, or keeping the camera and character from being pulled around - without losing your place in the fight. If you pick a new target while the key is down that choice is kept instead, and nothing happens while you are typing, so capital letters in chat leave your target alone. The key can be changed to Ctrl or Alt in the settings, which is worth doing if you use Shift as a hotbar modifier. Open with /letgo.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "target",
+      "targeting",
+      "quality of life",
+      "keybind"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Drop your target while a key is held, take it back when you let go.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/LetGo.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/LetGo.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/LetGo.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.25",
