@@ -1,10 +1,13 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Fates;
 using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.DalamudServices;
+using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Lumina.Excel.Sheets;
 using System;
@@ -92,6 +95,7 @@ public sealed class Plugin : IDalamudPlugin
         });
 
         Svc.ClientState.TerritoryChanged += OnTerritoryChanged;
+        Svc.Framework.Update += OnFrameworkUpdate;
         PluginInterface.UiBuilder.Draw += Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleWindow;
         PluginInterface.UiBuilder.OpenMainUi += ToggleWindow;
@@ -104,6 +108,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= ToggleWindow;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleWindow;
         PluginInterface.UiBuilder.Draw -= Draw;
+        Svc.Framework.Update -= OnFrameworkUpdate;
         Svc.ClientState.TerritoryChanged -= OnTerritoryChanged;
         Svc.Commands.RemoveHandler(CommandName);
         ECommonsMain.Dispose();
@@ -219,18 +224,198 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.End();
     }
 
-    /// <summary>Two fixed buttons for camping the pot FATEs ahead of their spawn - one
-    /// per spawn point, north and south.</summary>
-    private void DrawPotButtons(Shard[] shards)
+    // ---- Freelancer buff run ----------------------------------------------------
+    //
+    // Freelancer's Inquiring Mind applies every phantom buff in one press, so the whole
+    // errand is: remember the current phantom job, swap to Freelancer, press it, swap
+    // back. Each step is a server round-trip, so this runs as a little state machine on
+    // the framework tick rather than a blocking loop.
+
+    private enum BuffStep { Idle, Dismounting, SwappingIn, UsingAction, WaitingBuffs, SwappingBack }
+
+    private const byte FreelancerJobId = 0;
+    private const uint InquiringMindActionId = 46606;
+    private const uint DismountGeneralActionId = 23;
+
+    /// <summary>The statuses Inquiring Mind grants (Enduring Fortitude, Fleetfooted,
+    /// Romeo's Ballad, Quick Step) - seeing any of them land is the proof the press
+    /// worked before the job is swapped away again.</summary>
+    private static readonly uint[] PhantomBuffStatusIds = [4233, 4239, 4244, 4799];
+
+    private BuffStep buffStep = BuffStep.Idle;
+    private byte buffReturnJob;
+    private long buffDeadline;
+
+    private unsafe void StartBuffs()
     {
-        if (!ZonePots.TryGetValue(Svc.ClientState.TerritoryType, out var pots))
+        if (buffStep != BuffStep.Idle)
             return;
 
-        ImGui.TextDisabled("Camp a pot:");
-        ImGui.SameLine();
-        PotButton(shards, "North", pots.North);
-        ImGui.SameLine();
-        PotButton(shards, "South", pots.South);
+        var state = PublicContentOccultCrescent.GetState();
+        if (state == null)
+            return;
+
+        if (Svc.Condition[ConditionFlag.InCombat])
+        {
+            Svc.Chat.Print("[FateHopper] Not in combat - the buff swap needs a calm moment.");
+            return;
+        }
+
+        buffReturnJob = state->CurrentSupportJob;
+        buffStep = Svc.Condition[ConditionFlag.Mounted] ? BuffStep.Dismounting : BuffStep.SwappingIn;
+        buffDeadline = Environment.TickCount64 + 8000;
+        Svc.Chat.Print("[FateHopper] Swapping to Freelancer for buffs...");
+    }
+
+    private void FailBuffs(string reason)
+    {
+        Svc.Chat.PrintError($"[FateHopper] {reason}");
+
+        // Never leave the character stranded on Freelancer: if the swap in happened,
+        // queue the swap back rather than giving up outright.
+        if (buffStep is BuffStep.UsingAction or BuffStep.WaitingBuffs && buffReturnJob != FreelancerJobId)
+        {
+            buffStep = BuffStep.SwappingBack;
+            buffDeadline = Environment.TickCount64 + 8000;
+            return;
+        }
+
+        buffStep = BuffStep.Idle;
+    }
+
+    private unsafe void OnFrameworkUpdate(IFramework framework)
+    {
+        if (buffStep == BuffStep.Idle)
+            return;
+
+        var state = PublicContentOccultCrescent.GetState();
+        if (state == null)
+        {
+            buffStep = BuffStep.Idle;
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (now > buffDeadline)
+        {
+            switch (buffStep)
+            {
+                case BuffStep.SwappingIn:
+                    FailBuffs("Couldn't swap to Freelancer - stand near the knowledge crystal and try again.");
+                    break;
+                case BuffStep.SwappingBack:
+                    Svc.Chat.PrintError("[FateHopper] Couldn't swap back - change your phantom job at the crystal yourself.");
+                    buffStep = BuffStep.Idle;
+                    break;
+                default:
+                    FailBuffs("The buff run timed out.");
+                    break;
+            }
+            return;
+        }
+
+        var actionManager = ActionManager.Instance();
+
+        switch (buffStep)
+        {
+            case BuffStep.Dismounting:
+                if (!Svc.Condition[ConditionFlag.Mounted])
+                {
+                    buffStep = BuffStep.SwappingIn;
+                    buffDeadline = now + 8000;
+                }
+                else if (EzThrottle("dismount"))
+                    actionManager->UseAction(ActionType.GeneralAction, DismountGeneralActionId);
+                break;
+
+            case BuffStep.SwappingIn:
+                if (state->CurrentSupportJob == FreelancerJobId)
+                {
+                    buffStep = BuffStep.UsingAction;
+                    buffDeadline = now + 6000;
+                }
+                else if (EzThrottle("swapin"))
+                    PublicContentOccultCrescent.ChangeSupportJob(FreelancerJobId);
+                break;
+
+            case BuffStep.UsingAction:
+                // The action needs a beat after the job change before the game accepts it.
+                if (actionManager->GetActionStatus(ActionType.Action, InquiringMindActionId) == 0
+                    && EzThrottle("action")
+                    && actionManager->UseAction(ActionType.Action, InquiringMindActionId))
+                {
+                    buffStep = BuffStep.WaitingBuffs;
+                    buffDeadline = now + 5000;
+                }
+                break;
+
+            case BuffStep.WaitingBuffs:
+                if (HasAnyPhantomBuff())
+                {
+                    if (buffReturnJob == FreelancerJobId)
+                    {
+                        Svc.Chat.Print("[FateHopper] Buffs up.");
+                        buffStep = BuffStep.Idle;
+                    }
+                    else
+                    {
+                        Svc.Chat.Print("[FateHopper] Buffs up - swapping back.");
+                        buffStep = BuffStep.SwappingBack;
+                        buffDeadline = now + 8000;
+                    }
+                }
+                break;
+
+            case BuffStep.SwappingBack:
+                if (state->CurrentSupportJob == buffReturnJob)
+                {
+                    Svc.Chat.Print("[FateHopper] Back on your phantom job.");
+                    buffStep = BuffStep.Idle;
+                }
+                else if (EzThrottle("swapback"))
+                    PublicContentOccultCrescent.ChangeSupportJob(buffReturnJob);
+                break;
+        }
+    }
+
+    private static bool HasAnyPhantomBuff()
+        => Svc.Objects.LocalPlayer?.StatusList.Any(s => PhantomBuffStatusIds.Contains(s.StatusId)) == true;
+
+    private long lastBuffAttemptAt;
+
+    /// <summary>One attempt per second within a state, so a slow server answer isn't
+    /// spammed with repeats.</summary>
+    private bool EzThrottle(string _)
+    {
+        var now = Environment.TickCount64;
+        if (now - lastBuffAttemptAt < 1000)
+            return false;
+        lastBuffAttemptAt = now;
+        return true;
+    }
+
+    /// <summary>Two fixed buttons for camping the pot FATEs ahead of their spawn - one
+    /// per spawn point, north and south - plus the Freelancer buff errand.</summary>
+    private void DrawPotButtons(Shard[] shards)
+    {
+        if (ZonePots.TryGetValue(Svc.ClientState.TerritoryType, out var pots))
+        {
+            ImGui.TextDisabled("Camp a pot:");
+            ImGui.SameLine();
+            PotButton(shards, "North", pots.North);
+            ImGui.SameLine();
+            PotButton(shards, "South", pots.South);
+            ImGui.SameLine();
+        }
+
+        ImGui.BeginDisabled(buffStep != BuffStep.Idle);
+        if (ImGui.SmallButton(buffStep == BuffStep.Idle ? "Buffs" : "Buffs..."))
+            StartBuffs();
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Swaps to Freelancer, uses Inquiring Mind (every phantom buff in one press),\n"
+                + "and swaps back to the phantom job you were on.\n"
+                + "Phantom jobs can only be changed near the knowledge crystal.");
     }
 
     private void PotButton(Shard[] shards, string direction, Pot pot)
