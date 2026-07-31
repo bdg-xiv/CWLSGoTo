@@ -64,10 +64,11 @@ public class MainWindow : Window
             plugin.StartSeals);
 
         ImGui.SameLine();
-        Chore("CRP", "Stand near Ryubool Ja.\n"
-            + "Buys a Neo Kingdom halberd and bow with Sacks of Nuts (they're\n"
-            + "unique, so one of each), desynthesizes them, and repeats until\n"
-            + "the nuts run out.",
+        Chore("Desynth", "Stand near Ryubool Ja.\n"
+            + "Opens the Quetzalli gear exchange (DoW, IL 720) and spends Sacks of\n"
+            + "Nuts on every piece that would still raise a desynthesis level\n"
+            + "(they're unique, so one of each), desynthesizes the lot, and repeats\n"
+            + "until the nuts run out or nothing grants skill any more.",
             plugin.StartCrp);
 
         ImGui.EndDisabled();

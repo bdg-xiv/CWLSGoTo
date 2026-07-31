@@ -12,6 +12,7 @@ using ECommons.Throttlers;
 using ECommons.UIHelpers.AddonMasterImplementations;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using Lumina.Excel.Sheets;
 using System;
@@ -46,12 +47,13 @@ public sealed class Plugin : IDalamudPlugin
     private const uint VentureId = 21072;
     private const uint AetheryteTicketId = 7569;
 
-    // Ryubool Ja trades Sacks of Nuts for Neo Kingdom gear; the halberd and the bow are
-    // both carpentry desynth fodder, so they get bought and broken down in a loop.
+    // Ryubool Ja trades Sacks of Nuts for gear that exists to be desynthesized. Which
+    // pieces are worth buying depends on the player's per-class desynthesis levels, so
+    // the fodder list is discovered from the shop at run time rather than hardcoded.
     private const uint RyuboolJaDataId = 1048387;
     private const uint SackOfNutsId = 26533;
-    private static readonly uint[] CrpFodderIds = [42699, 42700]; // Halberd, Composite Bow
-    // A round is only one of each weapon now, so the cap has to be generous.
+    private readonly HashSet<uint> crpFodderIds = [];
+    // A round is only one of each piece, so the cap has to be generous.
     private const int MaxCrpCycles = 200;
 
     // Grand Company quartermasters - all three, so it works whichever company you're in.
@@ -95,10 +97,11 @@ public sealed class Plugin : IDalamudPlugin
     private volatile bool consultingMarket;
     private volatile bool gcLookupDone;
     private int purchaseUnitCap; // 0 = buy until the currency runs out
+    private uint maxDesynthLevel;
     private int crpCycle;
     private int crpBoughtThisCycle;
     private int crpBoughtTotal;
-    private int crpUnitCost = 70;
+    private int crpUnitCost = 140;
     private bool crpStop;
     private bool crpDesynthedThisCycle;
     private long desynthSettleAt;
@@ -656,8 +659,9 @@ public sealed class Plugin : IDalamudPlugin
         return false;
     }
 
-    /// <summary>Buys Neo Kingdom halberds and bows until the bags are full, desynthesizes
-    /// the lot, and goes round again until the nuts run out.</summary>
+    /// <summary>Buys every Quetzalli piece whose desynthesis would still raise a class's
+    /// level, desynthesizes the lot, and goes round again until the nuts run out or
+    /// nothing on the counter grants skill any more.</summary>
     internal void StartCrp()
     {
         if (!CanStart())
@@ -666,7 +670,7 @@ public sealed class Plugin : IDalamudPlugin
         var nuts = CurrencyCount(SackOfNutsId);
         if (nuts < crpUnitCost)
         {
-            Print($"Only {nuts:N0} Sacks of Nuts - not enough for a weapon.");
+            Print($"Only {nuts:N0} Sacks of Nuts - not enough for a piece of gear.");
             return;
         }
 
@@ -675,8 +679,9 @@ public sealed class Plugin : IDalamudPlugin
         crpCycle = 0;
         crpBoughtTotal = 0;
         crpStop = false;
+        crpFodderIds.Clear();
 
-        Print($"Sacks of Nuts: {nuts:N0}. Buying halberds and bows to desynthesize.");
+        Print($"Sacks of Nuts: {nuts:N0}. Buying Quetzalli gear to desynthesize.");
         EnqueueCrpCycle();
     }
 
@@ -688,16 +693,49 @@ public sealed class Plugin : IDalamudPlugin
         desynthSettleAt = 0;
 
         Enqueue(() => InteractWith([RyuboolJaDataId], "Ryubool Ja"), "Interact with Ryubool Ja");
-        Enqueue(() => OpenShopMenu(["neo kingdom+dow", "neo+dow"]), "Open the Neo Kingdom (DoW) counter");
-        Enqueue(BuyCrpFodder, "Buy halberds and bows", 300000);
+        Enqueue(() => OpenShopMenu(["quetzalli+dow", "quetzalli"]), "Open the Quetzalli (DoW) counter");
+        Enqueue(BuyCrpFodder, "Buy desynthesis fodder", 300000);
         Enqueue(CloseShopWindows, "Close the shop");
         Enqueue(RunDesynthAll, "Run /desynthall");
         Enqueue(WaitForDesynth, "Wait for desynthesis", 900000);
         Enqueue(CrpCycleEnd, "Round finished");
     }
 
-    /// <summary>Buys the two weapons one at a time, keeping them even, until the nuts or
-    /// the bag space run out. They don't stack, so each one needs its own slot.</summary>
+    /// <summary>Whether desynthesizing this item still raises its class's desynthesis
+    /// level. The same rule DesynthAll uses to decide what to break down, so everything
+    /// bought here is guaranteed to get eaten by the desynthesis step afterwards.</summary>
+    private unsafe bool RaisesDesynthLevel(uint itemId)
+    {
+        var item = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId);
+        if (item == null || item.Value.Desynth == 0)
+            return false;
+
+        var level = PlayerState.Instance()->GetDesynthesisLevel(item.Value.ClassJobRepair.RowId);
+        var cap = MaxDesynthLevel;
+        return (cap == 0 || level < cap) && level < item.Value.LevelItem.RowId + 50;
+    }
+
+    /// <summary>The game-wide desynthesis level ceiling: the highest item level anything
+    /// desynthesizable has. At that level no item grants skill any more.</summary>
+    private uint MaxDesynthLevel
+    {
+        get
+        {
+            if (maxDesynthLevel == 0)
+            {
+                foreach (var item in Svc.Data.GetExcelSheet<Item>())
+                {
+                    if (item.Desynth > 0 && item.LevelItem.RowId > maxDesynthLevel)
+                        maxDesynthLevel = item.LevelItem.RowId;
+                }
+            }
+
+            return maxDesynthLevel;
+        }
+    }
+
+    /// <summary>Buys the qualifying pieces one at a time until the nuts or the bag space
+    /// run out. They don't stack, so each one needs its own slot.</summary>
     private unsafe bool? BuyCrpFodder()
     {
         if (TryGetAddonMaster<AddonMaster.SelectYesno>("SelectYesno", out var yesno) && yesno.IsAddonReady)
@@ -710,16 +748,25 @@ public sealed class Plugin : IDalamudPlugin
         if (!TryGetAddonMaster<AddonMaster.ShopExchangeCurrency>("ShopExchangeCurrency", out var shop) || !shop.IsAddonReady)
             return false;
 
-        var rows = shop.BasicShopItems.Where(x => CrpFodderIds.Contains(x.ItemId)).ToList();
+        var all = shop.BasicShopItems.ToList();
+        if (all.Count == 0)
+            return false; // The list hasn't populated yet.
+
+        // Anything on the visible tab that would still raise a desynthesis level is
+        // fodder - the per-class levels decide, not a fixed item list.
+        var rows = all.Where(x => RaisesDesynthLevel(x.ItemId)).ToList();
         if (rows.Count == 0)
         {
-            if (EzThrottler.Throttle("Laziness.TabHint", 8000))
-                Print("The halberd and bow aren't on the tab that's showing - click the Weapons tab.");
-            return false;
+            Print("Nothing on this tab would raise a desynthesis level any more - check the other tabs.");
+            return true;
         }
 
-        // These weapons are unique - the game refuses a second copy - so a round buys
-        // one of each and the desynthesis afterwards makes room for the next pair.
+        // Remembered for the desynthesis step, which needs to know what to wait on.
+        foreach (var row in rows)
+            crpFodderIds.Add(row.ItemId);
+
+        // These pieces are unique - the game refuses a second copy - so a round buys
+        // one of each and the desynthesis afterwards makes room for the next set.
         var sheet = Svc.Data.GetExcelSheet<Item>();
         var next = rows.FirstOrDefault(r =>
             !(sheet.GetRowOrDefault(r.ItemId)?.IsUnique ?? false) || CountOf(r.ItemId) == 0);
@@ -758,7 +805,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         // Desynthesize whatever fodder is on hand, including copies bought before the
         // run started - not only what this round managed to buy.
-        crpDesynthedThisCycle = CrpFodderIds.Sum(CountOf) > 0;
+        crpDesynthedThisCycle = crpFodderIds.Sum(id => CountOf(id)) > 0;
         if (!crpDesynthedThisCycle)
             return true;
 
@@ -782,7 +829,7 @@ public sealed class Plugin : IDalamudPlugin
         if (!crpDesynthedThisCycle || crpStop)
             return true;
 
-        var left = CrpFodderIds.Sum(CountOf);
+        var left = crpFodderIds.Sum(id => CountOf(id));
         if (left == 0)
             return true;
 
@@ -807,7 +854,7 @@ public sealed class Plugin : IDalamudPlugin
         if (now < desynthSettleAt)
             return false;
 
-        Print($"{left} weapon(s) weren't desynthesized - check DesynthAll's \"only items that grant skill\" setting.");
+        Print($"{left} piece(s) weren't desynthesized - check DesynthAll's \"only items that grant skill\" setting.");
         crpStop = true;
         return true;
     }
@@ -827,7 +874,7 @@ public sealed class Plugin : IDalamudPlugin
             : nuts < crpUnitCost ? "out of nuts"
             : !progressed ? "nothing more could be bought"
             : "round limit reached";
-        Print($"Done ({reason}). Bought and desynthesized {crpBoughtTotal} weapon(s) over {crpCycle} round(s); "
+        Print($"Done ({reason}). Bought and desynthesized {crpBoughtTotal} piece(s) over {crpCycle} round(s); "
             + $"{nuts:N0} Sacks of Nuts left.");
         return true;
     }
