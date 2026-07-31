@@ -118,6 +118,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Chat.Print(config.Enabled
             ? $"[Let Go] On - holding {config.Key} clears your target."
+              + (config.HealersOnly && !OnHealer ? " (Waiting for a healer job.)" : "")
             : "[Let Go] Off.");
     }
 
@@ -127,11 +128,16 @@ public sealed class Plugin : IDalamudPlugin
         DrawWindow();
     }
 
+    /// <summary>Role 4 in the ClassJob sheet is the healer role (CNJ, WHM, SCH, AST, SGE).</summary>
+    private static bool OnHealer
+        => Svc.Objects.LocalPlayer?.ClassJob.ValueNullable?.Role == 4;
+
     private void Tick()
     {
-        if (!config.Enabled || !Svc.ClientState.IsLoggedIn)
+        if (!config.Enabled || !Svc.ClientState.IsLoggedIn || (config.HealersOnly && !OnHealer))
         {
-            // Don't strand a target if the plugin is switched off mid-hold.
+            // Don't strand a target if the plugin is switched off - or the job swapped
+            // away from healer - mid-hold.
             if (held) Restore();
             held = false;
             return;
@@ -205,6 +211,14 @@ public sealed class Plugin : IDalamudPlugin
         {
             if (ImGui.Checkbox("Enabled", ref config.Enabled))
                 config.Save();
+
+            if (ImGui.Checkbox("Only on healers", ref config.HealersOnly))
+                config.Save();
+            if (config.HealersOnly && config.Enabled && Svc.ClientState.IsLoggedIn && !OnHealer)
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled("(inactive on this job)");
+            }
 
             var key = (int)config.Key;
             if (ImGui.Combo("Key", ref key, "Shift\0Ctrl\0Alt\0"))

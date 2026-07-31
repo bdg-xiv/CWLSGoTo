@@ -2,7 +2,7 @@
   "Author": "bdg",
   "Name": "Let Go",
   "Punchline": "Drop your target while a key is held, take it back when you let go.",
-  "Description": "Hold Shift and your current target is cleared; release it and the same target comes back. Useful when having something targeted gets in the way - placing a ground-targeted action freely, or keeping the camera and character from being pulled around - without losing your place in the fight. If you pick a new target while the key is down that choice is kept instead, and nothing happens while you are typing, so capital letters in chat leave your target alone. The key can be changed to Ctrl or Alt in the settings, which is worth doing if you use Shift as a hotbar modifier. Open the settings with /letgo, and switch the whole thing on or off with /lg - or /lg on and /lg off to set it outright from a macro.",
+  "Description": "Hold Shift and your current target is cleared; release it and the same target comes back. Useful when having something targeted gets in the way - placing a ground-targeted action freely, or keeping the camera and character from being pulled around - without losing your place in the fight. If you pick a new target while the key is down that choice is kept instead, and nothing happens while you are typing, so capital letters in chat leave your target alone. By default it only acts while playing a healer - the settings can open it up to every job. The key can be changed to Ctrl or Alt in the settings, which is worth doing if you use Shift as a hotbar modifier. Open the settings with /letgo, and switch the whole thing on or off with /lg - or /lg on and /lg off to set it outright from a macro.",
   "ApplicableVersion": "any",
   "Tags": [
     "target",
