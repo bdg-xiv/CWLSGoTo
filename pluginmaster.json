@@ -374,6 +374,32 @@
   },
   {
     "Author": "bdg",
+    "Name": "FATE Hopper",
+    "InternalName": "FateHopper",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Shows the active FATEs in the Occult Crescent (South Horn) as a clickable list, like the one Vanilla Plus draws. Clicking a FATE teleports you to the aetheryte shard nearest to it, through the Lifestream plugin - you have to be standing within range of any shard already, the same as using one by hand; the plugin picks the destination and does the clicking. The window opens by itself when you enter South Horn and can be toggled with /fatehopper.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "fate",
+      "occult crescent",
+      "south horn",
+      "teleport",
+      "aetheryte shard"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Click an Occult Crescent FATE to shard-hop toward it.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/FateHopper.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/FateHopper.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/FateHopper.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.25",
