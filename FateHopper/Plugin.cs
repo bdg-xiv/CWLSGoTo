@@ -5,15 +5,17 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using ECommons;
 using ECommons.DalamudServices;
+using Lumina.Excel.Sheets;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
 namespace FateHopper;
 
 /// <summary>
-/// A clickable list of the active FATEs in the Occult Crescent's South Horn. Clicking one
-/// teleports to the aetheryte shard nearest to that FATE, through Lifestream.
+/// A clickable list of the active FATEs in the Occult Crescent. Clicking one teleports to
+/// the aetheryte shard nearest to that FATE, through Lifestream.
 ///
 /// The shard network only works from within range of a shard - the same rule as using one
 /// by hand - so this doesn't move the character to a shard first; it just does the
@@ -26,24 +28,39 @@ public sealed class Plugin : IDalamudPlugin
 
     private const string CommandName = "/fatehopper";
 
-    private const ushort SouthHornTerritory = 1252;
-
     /// <summary>How close counts as "standing at" a shard - the interaction range the
     /// aethernet itself uses.</summary>
     private const float ShardRange = 4.5f;
 
-    private sealed record Shard(string Name, uint PlaceNameId, Vector3 Position);
+    /// <summary>A shard's map position (X and Z; the network doesn't care about height)
+    /// and the PlaceName row Lifestream's aethernet teleport takes. The display name
+    /// comes from that same row, so it can't drift from what Lifestream matches on.</summary>
+    private sealed record Shard(uint PlaceNameId, Vector2 Position);
 
-    // South Horn's aethernet, keyed by PlaceName row id - the id Lifestream's aethernet
-    // teleport takes. Positions verified against BOCCHI's zone data.
-    private static readonly Shard[] Shards =
-    [
-        new("Base Camp", 4944, new Vector3(830.75f, 72.98f, -695.98f)),
-        new("The Wanderer's Haven", 4936, new Vector3(-173.02f, 8.19f, -611.14f)),
-        new("Crystallized Caverns", 4929, new Vector3(-358.14f, 101.98f, -120.96f)),
-        new("Eldergrowth", 4930, new Vector3(306.94f, 105.18f, 305.65f)),
-        new("Stonemarsh", 4942, new Vector3(-384.12f, 99.2f, 281.42f)),
-    ];
+    // Positions and PlaceName ids lifted from Lifestream's own custom-aethernet registry
+    // - it is the thing executing the teleport, so its table is the one that counts.
+    private static readonly Dictionary<uint, Shard[]> ZoneShards = new()
+    {
+        // South Horn
+        [1252] =
+        [
+            new(4944, new Vector2(830.7f, -696.0f)),  // Expedition Base Camp
+            new(4928, new Vector2(-173.0f, -611.1f)), // The Wanderer's Haven
+            new(4929, new Vector2(-358.1f, -121.0f)), // Crystallized Caverns
+            new(4930, new Vector2(306.9f, 305.7f)),   // Eldergrowth
+            new(4947, new Vector2(-384.1f, 281.4f)),  // Stonemarsh
+        ],
+        // North Horn
+        [1346] =
+        [
+            new(5571, new Vector2(880.0f, 880.1f)),   // North Horn Base Camp
+            new(5576, new Vector2(451.7f, 528.8f)),   // The Crown of Karnak
+            new(5572, new Vector2(357.7f, -554.3f)),  // Sinking Sanctuary
+            new(5573, new Vector2(-547.2f, 594.4f)),  // Suspended Masonry
+            new(5574, new Vector2(-388.6f, -440.5f)), // Moldering Outskirts
+            new(5575, new Vector2(-13.7f, -40.5f)),   // Unhallowed Hamlet
+        ],
+    };
 
     private readonly Configuration config;
     private bool windowOpen;
@@ -56,7 +73,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo((_, _) => windowOpen = !windowOpen)
         {
-            HelpMessage = "Shows the South Horn FATE list; click a FATE to shard-hop toward it.",
+            HelpMessage = "Shows the Occult Crescent FATE list; click a FATE to shard-hop toward it.",
         });
 
         Svc.ClientState.TerritoryChanged += OnTerritoryChanged;
@@ -64,7 +81,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += ToggleWindow;
         PluginInterface.UiBuilder.OpenMainUi += ToggleWindow;
 
-        windowOpen = config.AutoOpen && InSouthHorn;
+        windowOpen = config.AutoOpen && CurrentShards != null;
     }
 
     public void Dispose()
@@ -77,31 +94,41 @@ public sealed class Plugin : IDalamudPlugin
         ECommonsMain.Dispose();
     }
 
-    private static bool InSouthHorn => Svc.ClientState.TerritoryType == SouthHornTerritory;
+    /// <summary>The current zone's shards, or null anywhere outside the Occult Crescent.</summary>
+    private static Shard[]? CurrentShards
+        => ZoneShards.GetValueOrDefault(Svc.ClientState.TerritoryType);
 
     private void ToggleWindow() => windowOpen = !windowOpen;
 
     private void OnTerritoryChanged(uint territory)
     {
         if (config.AutoOpen)
-            windowOpen = territory == SouthHornTerritory;
+            windowOpen = ZoneShards.ContainsKey(territory);
     }
 
-    private static Shard NearestShardTo(Vector3 position)
-        => Shards.OrderBy(s => Vector3.Distance(s.Position, position)).First();
+    private static string NameOf(Shard shard)
+        => Svc.Data.GetExcelSheet<PlaceName>().GetRowOrDefault(shard.PlaceNameId)?.Name.ExtractText() ?? "?";
 
-    private void Hop(IFate fate)
+    /// <summary>Horizontal distance - the network and the map both ignore height.</summary>
+    private static float Distance(Vector2 shardPosition, Vector3 worldPosition)
+        => Vector2.Distance(shardPosition, new Vector2(worldPosition.X, worldPosition.Z));
+
+    private static Shard NearestShardTo(Shard[] shards, Vector3 position)
+        => shards.OrderBy(s => Distance(s.Position, position)).First();
+
+    private void Hop(Shard[] shards, IFate fate)
     {
-        var destination = NearestShardTo(fate.Position);
+        var destination = NearestShardTo(shards, fate.Position);
+        var destinationName = NameOf(destination);
         var name = fate.Name.TextValue;
 
         var player = Svc.Objects.LocalPlayer;
         if (player == null)
             return;
 
-        if (Vector3.Distance(player.Position, destination.Position) <= ShardRange)
+        if (Distance(destination.Position, player.Position) <= ShardRange)
         {
-            Svc.Chat.Print($"[FateHopper] You're already at {destination.Name} - it's the shard nearest to {name}.");
+            Svc.Chat.Print($"[FateHopper] You're already at {destinationName} - it's the shard nearest to {name}.");
             return;
         }
 
@@ -126,20 +153,20 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         if (LifestreamIpc.AethernetTeleport(destination.PlaceNameId) == true)
-            Svc.Chat.Print($"[FateHopper] Teleporting to {destination.Name} for {name}.");
+            Svc.Chat.Print($"[FateHopper] Teleporting to {destinationName} for {name}.");
         else
-            Svc.Chat.PrintError($"[FateHopper] Lifestream refused the teleport to {destination.Name}.");
+            Svc.Chat.PrintError($"[FateHopper] Lifestream refused the teleport to {destinationName}.");
     }
 
     private void Draw()
     {
-        if (!windowOpen || !InSouthHorn)
+        if (!windowOpen || CurrentShards is not { } shards)
             return;
 
         ImGui.SetNextWindowSize(new Vector2(430, 320), ImGuiCond.FirstUseEver);
         if (ImGui.Begin("FATE Hopper###FateHopper", ref windowOpen))
         {
-            DrawFateList();
+            DrawFateList(shards);
             ImGui.Separator();
             DrawFooter();
         }
@@ -147,7 +174,7 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.End();
     }
 
-    private void DrawFateList()
+    private void DrawFateList(Shard[] shards)
     {
         // Running FATEs first, most urgent at the top; the ones still preparing follow.
         var fates = Svc.Fates
@@ -173,17 +200,18 @@ public sealed class Plugin : IDalamudPlugin
 
         foreach (var fate in fates)
         {
-            var shard = NearestShardTo(fate.Position);
-            var run = Vector3.Distance(shard.Position, fate.Position);
+            var shard = NearestShardTo(shards, fate.Position);
+            var shardName = NameOf(shard);
+            var run = Distance(shard.Position, fate.Position);
 
             ImGui.TableNextRow();
             ImGui.TableNextColumn();
 
             var label = fate.HasBonus ? $"{fate.Name.TextValue} ★" : fate.Name.TextValue;
             if (ImGui.Selectable($"{label}###fate{fate.FateId}", false, ImGuiSelectableFlags.SpanAllColumns))
-                Hop(fate);
+                Hop(shards, fate);
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip($"Teleport to {shard.Name}, {run:0} yalms from the FATE."
+                ImGui.SetTooltip($"Teleport to {shardName}, {run:0} yalms from the FATE."
                     + (fate.HasBonus ? "\n★ bonus FATE" : ""));
 
             ImGui.TableNextColumn();
@@ -198,7 +226,7 @@ public sealed class Plugin : IDalamudPlugin
                 ImGui.Text(FormatTime(fate.TimeRemaining));
 
             ImGui.TableNextColumn();
-            ImGui.TextDisabled($"{shard.Name} ({run:0}y)");
+            ImGui.TextDisabled($"{shardName} ({run:0}y)");
         }
 
         ImGui.EndTable();
@@ -218,7 +246,7 @@ public sealed class Plugin : IDalamudPlugin
             config.Save();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Open this window on entering South Horn, close it on leaving.");
+            ImGui.SetTooltip("Open this window on entering the Occult Crescent, close it on leaving.");
     }
 
     private static string FormatTime(long seconds)

@@ -2,12 +2,13 @@
   "Author": "bdg",
   "Name": "FATE Hopper",
   "Punchline": "Click an Occult Crescent FATE to shard-hop toward it.",
-  "Description": "Shows the active FATEs in the Occult Crescent (South Horn) as a clickable list, like the one Vanilla Plus draws. Clicking a FATE teleports you to the aetheryte shard nearest to it, through the Lifestream plugin - you have to be standing within range of any shard already, the same as using one by hand; the plugin picks the destination and does the clicking. The window opens by itself when you enter South Horn and can be toggled with /fatehopper.",
+  "Description": "Shows the active FATEs in the Occult Crescent - South Horn and North Horn - as a clickable list, like the one Vanilla Plus draws. Clicking a FATE teleports you to the aetheryte shard nearest to it, through the Lifestream plugin - you have to be standing within range of any shard already, the same as using one by hand; the plugin picks the destination and does the clicking. The window opens by itself when you enter the zone and can be toggled with /fatehopper.",
   "ApplicableVersion": "any",
   "Tags": [
     "fate",
     "occult crescent",
     "south horn",
+    "north horn",
     "teleport",
     "aetheryte shard"
   ]
