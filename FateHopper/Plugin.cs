@@ -136,6 +136,27 @@ public sealed class Plugin : IDalamudPlugin
     private static Shard NearestShardTo(Shard[] shards, Vector3 position)
         => shards.OrderBy(s => Distance(s.Position, position)).First();
 
+    /// <summary>Straight-line nearest is wrong where the geography disagrees: Eye to
+    /// Eye's spawn is closest to Unhallowed Hamlet as the crow flies, but that shard
+    /// stands on the lake island, so the run is longer than from Sinking Sanctuary on
+    /// the shore. These pins come from AOCCH's fate data (the South Horn pair matches
+    /// BOCCHI's), keyed by fate id to the shard's PlaceName row.</summary>
+    private static readonly Dictionary<uint, uint> FateShardOverrides = new()
+    {
+        [1965] = 4928, // The Winged Terror -> The Wanderer's Haven
+        [1967] = 4929, // Brain Drain -> Crystallized Caverns
+        [2075] = 5572, // Eye to Eye -> Sinking Sanctuary; the middle shard is on the island
+    };
+
+    private static Shard DestinationFor(Shard[] shards, uint? fateId, Vector3 position)
+    {
+        if (fateId is { } id && FateShardOverrides.TryGetValue(id, out var placeName)
+            && shards.FirstOrDefault(s => s.PlaceNameId == placeName) is { } pinned)
+            return pinned;
+
+        return NearestShardTo(shards, position);
+    }
+
     /// <summary>A critical encounter, snapshotted out of the game's dynamic-event
     /// container so no pointer outlives the read.</summary>
     private sealed record Ce(ushort Id, string Name, DynamicEventState State, byte Progress, uint SecondsLeft, Vector3 Position);
@@ -156,6 +177,12 @@ public sealed class Plugin : IDalamudPlugin
             if (ev.State == DynamicEventState.Inactive)
                 continue;
 
+            // The Forked Tower's event sits in the container permanently, cycle after
+            // cycle, and would show as a ghost row. Ordinary critical encounters have
+            // EventType below 4 - the same cut BOCCHI makes.
+            if (ev.EventType >= 4)
+                continue;
+
             var name = ev.Name.ToString();
             if (name.Length == 0)
                 continue;
@@ -166,9 +193,8 @@ public sealed class Plugin : IDalamudPlugin
         return list;
     }
 
-    private void Hop(Shard[] shards, string name, Vector3 position)
+    private void Hop(Shard destination, string name)
     {
-        var destination = NearestShardTo(shards, position);
         var destinationName = NameOf(destination);
 
         var player = Svc.Objects.LocalPlayer;
@@ -421,7 +447,7 @@ public sealed class Plugin : IDalamudPlugin
     private void PotButton(Shard[] shards, string direction, Pot pot)
     {
         if (ImGui.SmallButton($"{direction}###pot{direction}"))
-            Hop(shards, $"{pot.Label} ({direction.ToLowerInvariant()} pot)", pot.Position);
+            Hop(NearestShardTo(shards, pot.Position), $"{pot.Label} ({direction.ToLowerInvariant()} pot)");
 
         if (ImGui.IsItemHovered())
         {
@@ -470,7 +496,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawRow(Shard[] shards, string id, string name, Vector3 position, IFate? fate = null, Ce? ceState = null)
     {
-        var shard = NearestShardTo(shards, position);
+        var pinned = fate != null && FateShardOverrides.ContainsKey(fate.FateId);
+        var shard = DestinationFor(shards, fate?.FateId, position);
         var shardName = NameOf(shard);
         var run = Distance(shard.Position, position);
 
@@ -484,9 +511,10 @@ public sealed class Plugin : IDalamudPlugin
         if (ceState != null)
             ImGui.PopStyleColor();
         if (clicked)
-            Hop(shards, name, position);
+            Hop(shard, name);
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip($"Teleport to {shardName}, {run:0} yalms away."
+                + (pinned ? "\nFixed route - the closer shard is cut off by terrain." : "")
                 + (ceState != null ? "\nCritical encounter" : "")
                 + (fate is { HasBonus: true } ? "\n★ bonus FATE" : ""));
 
@@ -509,14 +537,14 @@ public sealed class Plugin : IDalamudPlugin
                     ImGui.TextDisabled("soon");
                     break;
                 default:
-                    ImGui.Text(ceState.Progress > 0 ? $"{ceState.Progress}%%" : FormatTime(ceState.SecondsLeft));
+                    ImGui.Text(ceState.Progress > 0 ? $"{ceState.Progress}%" : FormatTime(ceState.SecondsLeft));
                     break;
             }
         }
         else if (fate!.State == FateState.Preparing)
             ImGui.TextDisabled("soon");
         else if (fate.Progress > 0)
-            ImGui.Text($"{fate.Progress}%%");
+            ImGui.Text($"{fate.Progress}%");
         else
             ImGui.Text(FormatTime(fate.TimeRemaining));
 
