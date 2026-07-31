@@ -5,6 +5,7 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using ECommons;
 using ECommons.DalamudServices;
+using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
@@ -116,11 +117,40 @@ public sealed class Plugin : IDalamudPlugin
     private static Shard NearestShardTo(Shard[] shards, Vector3 position)
         => shards.OrderBy(s => Distance(s.Position, position)).First();
 
-    private void Hop(Shard[] shards, IFate fate)
+    /// <summary>A critical encounter, snapshotted out of the game's dynamic-event
+    /// container so no pointer outlives the read.</summary>
+    private sealed record Ce(ushort Id, string Name, DynamicEventState State, byte Progress, uint SecondsLeft, Vector3 Position);
+
+    /// <summary>The zone's critical encounters. They live in the Occult Crescent's
+    /// content director, not the FATE table, which is why the FATE list alone misses
+    /// them.</summary>
+    private static unsafe List<Ce> ReadCriticalEncounters()
     {
-        var destination = NearestShardTo(shards, fate.Position);
+        var list = new List<Ce>();
+
+        var director = PublicContentOccultCrescent.GetInstance();
+        if (director == null)
+            return list;
+
+        foreach (ref var ev in director->DynamicEventContainer.Events)
+        {
+            if (ev.State == DynamicEventState.Inactive)
+                continue;
+
+            var name = ev.Name.ToString();
+            if (name.Length == 0)
+                continue;
+
+            list.Add(new Ce(ev.DynamicEventId, name, ev.State, ev.Progress, ev.SecondsLeft, ev.MapMarker.Position));
+        }
+
+        return list;
+    }
+
+    private void Hop(Shard[] shards, string name, Vector3 position)
+    {
+        var destination = NearestShardTo(shards, position);
         var destinationName = NameOf(destination);
-        var name = fate.Name.TextValue;
 
         var player = Svc.Objects.LocalPlayer;
         if (player == null)
@@ -174,62 +204,97 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.End();
     }
 
+    private static readonly Vector4 CeColor = new(1f, 0.85f, 0.4f, 1f);
+
     private void DrawFateList(Shard[] shards)
     {
-        // Running FATEs first, most urgent at the top; the ones still preparing follow.
+        // Critical encounters on top - they're rarer and on a recruitment timer - then
+        // running FATEs, most urgent first; the ones still preparing follow.
+        var encounters = ReadCriticalEncounters();
         var fates = Svc.Fates
             .Where(f => f is { } && f.State is FateState.Running or FateState.Preparing)
             .OrderBy(f => f.State == FateState.Running ? 0 : 1)
             .ThenBy(f => f.TimeRemaining)
             .ToList();
 
-        if (fates.Count == 0)
+        if (encounters.Count == 0 && fates.Count == 0)
         {
-            ImGui.TextDisabled("No FATEs up right now.");
+            ImGui.TextDisabled("No FATEs or critical encounters up right now.");
             return;
         }
 
         if (!ImGui.BeginTable("###FateTable", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.SizingStretchProp))
             return;
 
-        ImGui.TableSetupColumn("FATE", ImGuiTableColumnFlags.WidthStretch);
+        ImGui.TableSetupColumn("FATE / CE", ImGuiTableColumnFlags.WidthStretch);
         ImGui.TableSetupColumn("Lv", ImGuiTableColumnFlags.WidthFixed, 46);
         ImGui.TableSetupColumn("Left", ImGuiTableColumnFlags.WidthFixed, 52);
         ImGui.TableSetupColumn("Shard", ImGuiTableColumnFlags.WidthFixed, 150);
         ImGui.TableHeadersRow();
 
+        foreach (var ce in encounters)
+            DrawRow(shards, $"ce{ce.Id}", ce.Name, ce.Position, ceState: ce);
+
         foreach (var fate in fates)
-        {
-            var shard = NearestShardTo(shards, fate.Position);
-            var shardName = NameOf(shard);
-            var run = Distance(shard.Position, fate.Position);
-
-            ImGui.TableNextRow();
-            ImGui.TableNextColumn();
-
-            var label = fate.HasBonus ? $"{fate.Name.TextValue} ★" : fate.Name.TextValue;
-            if (ImGui.Selectable($"{label}###fate{fate.FateId}", false, ImGuiSelectableFlags.SpanAllColumns))
-                Hop(shards, fate);
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip($"Teleport to {shardName}, {run:0} yalms from the FATE."
-                    + (fate.HasBonus ? "\n★ bonus FATE" : ""));
-
-            ImGui.TableNextColumn();
-            ImGui.Text($"{fate.Level}");
-
-            ImGui.TableNextColumn();
-            if (fate.State == FateState.Preparing)
-                ImGui.TextDisabled("soon");
-            else if (fate.Progress > 0)
-                ImGui.Text($"{fate.Progress}%%");
-            else
-                ImGui.Text(FormatTime(fate.TimeRemaining));
-
-            ImGui.TableNextColumn();
-            ImGui.TextDisabled($"{shardName} ({run:0}y)");
-        }
+            DrawRow(shards, $"fate{fate.FateId}", fate.Name.TextValue, fate.Position, fate: fate);
 
         ImGui.EndTable();
+    }
+
+    private void DrawRow(Shard[] shards, string id, string name, Vector3 position, IFate? fate = null, Ce? ceState = null)
+    {
+        var shard = NearestShardTo(shards, position);
+        var shardName = NameOf(shard);
+        var run = Distance(shard.Position, position);
+
+        ImGui.TableNextRow();
+        ImGui.TableNextColumn();
+
+        var label = fate is { HasBonus: true } ? $"{name} ★" : name;
+        if (ceState != null)
+            ImGui.PushStyleColor(ImGuiCol.Text, CeColor);
+        var clicked = ImGui.Selectable($"{label}###{id}", false, ImGuiSelectableFlags.SpanAllColumns);
+        if (ceState != null)
+            ImGui.PopStyleColor();
+        if (clicked)
+            Hop(shards, name, position);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip($"Teleport to {shardName}, {run:0} yalms away."
+                + (ceState != null ? "\nCritical encounter" : "")
+                + (fate is { HasBonus: true } ? "\n★ bonus FATE" : ""));
+
+        ImGui.TableNextColumn();
+        if (ceState != null)
+            ImGui.TextColored(CeColor, "CE");
+        else
+            ImGui.Text($"{fate!.Level}");
+
+        ImGui.TableNextColumn();
+        if (ceState != null)
+        {
+            // Register is the window that matters: it's how long is left to sign up.
+            switch (ceState.State)
+            {
+                case DynamicEventState.Register:
+                    ImGui.TextColored(CeColor, FormatTime(ceState.SecondsLeft));
+                    break;
+                case DynamicEventState.Warmup:
+                    ImGui.TextDisabled("soon");
+                    break;
+                default:
+                    ImGui.Text(ceState.Progress > 0 ? $"{ceState.Progress}%%" : FormatTime(ceState.SecondsLeft));
+                    break;
+            }
+        }
+        else if (fate!.State == FateState.Preparing)
+            ImGui.TextDisabled("soon");
+        else if (fate.Progress > 0)
+            ImGui.Text($"{fate.Progress}%%");
+        else
+            ImGui.Text(FormatTime(fate.TimeRemaining));
+
+        ImGui.TableNextColumn();
+        ImGui.TextDisabled($"{shardName} ({run:0}y)");
     }
 
     private void DrawFooter()
@@ -256,6 +321,8 @@ public sealed class Plugin : IDalamudPlugin
         var span = TimeSpan.FromSeconds(seconds);
         return span.TotalMinutes >= 1 ? $"{(int)span.TotalMinutes}m{span.Seconds:00}" : $"{span.Seconds}s";
     }
+
+    private static string FormatTime(uint seconds) => FormatTime((long)seconds);
 }
 
 /// <summary>Lifestream's aethernet IPC. Null means Lifestream couldn't be reached, which
