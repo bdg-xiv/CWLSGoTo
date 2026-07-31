@@ -144,6 +144,10 @@ public sealed class Plugin : IDalamudPlugin
     private bool listRemainder;
     private int quantityBeforeListing;
     private int marketCountBeforeReturn;
+
+    /// <summary>A reprice that has been confirmed but whose window hasn't closed yet.
+    /// Held back so it is only reported once the game has actually taken it.</summary>
+    private (string Name, int Price, string Change)? pendingReprice;
     private int repricedCount;
     private readonly List<string> culledReport = [];
     private readonly List<string> returnedReport = [];
@@ -449,6 +453,7 @@ public sealed class Plugin : IDalamudPlugin
         newRequest = false;
         newPrice = null;
         sawOwnListings = false;
+        pendingReprice = null;
         lastRequestId = -1;
         pendingNoMatchRequestId = -1;
         pendingNoMatchTimeoutAt = 0;
@@ -583,6 +588,7 @@ public sealed class Plugin : IDalamudPlugin
         mergePending = false;
         newPrice = null;
         sawOwnListings = false;
+        pendingReprice = null;
         compareOpenAt = 0;
         currentContainer = itemContainer;
         currentSlot = slot;
@@ -931,6 +937,15 @@ public sealed class Plugin : IDalamudPlugin
             Svc.Chat.Print($"[AutoLister] {unreturned}: could not be pulled back - it is still listed at its old price.");
         }
 
+        // A confirm whose window never closed: the price did not go through. Saying it
+        // did is how this went unnoticed in the first place.
+        if (pendingReprice is { } stalled)
+        {
+            pendingReprice = null;
+            crashedReport.Add((stalled.Name, "reprice did NOT go through - still at its old price"));
+            Svc.Chat.Print($"[AutoLister] {stalled.Name}: the reprice didn't go through - it is still at its old price.");
+        }
+
         if (!TryGetAddonByName<AtkUnitBase>("RetainerSellList", out _))
         {
             Svc.Chat.Print("[AutoLister] Sell list closed, stopping.");
@@ -970,6 +985,7 @@ public sealed class Plugin : IDalamudPlugin
         vendorCurrentItem = false;
         newPrice = null;
         sawOwnListings = false;
+        pendingReprice = null;
         compareOpenAt = 0;
         currentItemId = 0;
         currentItemName = "";
@@ -1107,13 +1123,28 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         addon->AskingPrice->SetValue(newPrice.Value);
-        var change = DescribeChange(oldPrice, newPrice.Value);
-        Svc.Chat.Print($"[AutoLister] {itemName}: repriced to {newPrice.Value:N0} gil ({change}).");
-        repricedCount++;
-        listedReport.Add((itemName, newPrice.Value, $"({change})"));
+
+        // Confirm, then leave the window alone: it closes itself when the server takes
+        // the price. Closing it here (the way the cancel paths do) raced that answer,
+        // and Cleanup would then find it still open and cancel it - throwing the new
+        // price away. Reporting waits for the close too, so the log can't claim a
+        // reprice that never landed.
+        pendingReprice = (itemName, newPrice.Value, DescribeChange(oldPrice, newPrice.Value));
         Callback.Fire(&addon->AtkUnitBase, true, RetainerSellConfirmEvent);
-        addon->AtkUnitBase.Close(true);
         return true;
+    }
+
+    /// <summary>The price window closed on our confirm, so the new price is in - only
+    /// now is it honest to report it.</summary>
+    private void CommitReprice()
+    {
+        if (pendingReprice is not { } done)
+            return;
+
+        pendingReprice = null;
+        Svc.Chat.Print($"[AutoLister] {done.Name}: repriced to {done.Price:N0} gil ({done.Change}).");
+        repricedCount++;
+        listedReport.Add((done.Name, done.Price, $"({done.Change})"));
     }
 
     /// <summary>Returns a culled listing (which the game puts into the RETAINER's
@@ -1637,6 +1668,8 @@ public sealed class Plugin : IDalamudPlugin
     /// On the happy path everything is already closed and this is an immediate no-op.</summary>
     private unsafe bool? Cleanup()
     {
+        // Deliberately not clearing pendingReprice here: this is the step that decides
+        // whether that reprice landed.
         newRequest = false;
         newPrice = null;
         sawOwnListings = false;
@@ -1649,10 +1682,18 @@ public sealed class Plugin : IDalamudPlugin
 
         if (TryGetAddonByName<AddonRetainerSell>("RetainerSell", out var retainerSell) && retainerSell->AtkUnitBase.IsVisible)
         {
+            // Wait one out: cancelling a window that is mid-confirm is exactly how a
+            // repriced item used to end up back at its old price.
+            if (pendingReprice != null)
+                return false;
+
             Callback.Fire(&retainerSell->AtkUnitBase, true, RetainerSellCancelEvent);
             retainerSell->AtkUnitBase.Close(true);
             return false;
         }
+
+        // Window gone after a confirm - the price is in.
+        CommitReprice();
 
         if (TryGetAddonByName<AtkUnitBase>("ContextMenu", out var contextMenu) && contextMenu->IsVisible)
         {
