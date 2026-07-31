@@ -63,6 +63,20 @@ public sealed class Plugin : IDalamudPlugin
         ],
     };
 
+    /// <summary>A pot FATE's fixed spawn point. The point of the buttons is going there
+    /// BEFORE the FATE exists, when there is nothing live to click in the list.</summary>
+    private sealed record Pot(string Label, Vector3 Position);
+
+    // Spawn points captured by the community occult trackers (AOCCH's data, matching
+    // BOCCHI's for South Horn); the north/south split is the one the trackers use.
+    private static readonly Dictionary<uint, (Pot North, Pot South)> ZonePots = new()
+    {
+        [1252] = (new Pot("Persistent Pots", new Vector3(200.0f, 111.7f, -215.0f)),
+                  new Pot("Pleading Pots", new Vector3(-481.0f, 75.0f, 528.0f))),
+        [1346] = (new Pot("Daylight Pottery", new Vector3(233.0f, 7.7f, -470.0f)),
+                  new Pot("In a Pot of Bother", new Vector3(-505.3f, 53.1f, 244.0f))),
+    };
+
     private readonly Configuration config;
     private bool windowOpen;
 
@@ -198,10 +212,38 @@ public sealed class Plugin : IDalamudPlugin
         {
             DrawFateList(shards);
             ImGui.Separator();
+            DrawPotButtons(shards);
             DrawFooter();
         }
 
         ImGui.End();
+    }
+
+    /// <summary>Two fixed buttons for camping the pot FATEs ahead of their spawn - one
+    /// per spawn point, north and south.</summary>
+    private void DrawPotButtons(Shard[] shards)
+    {
+        if (!ZonePots.TryGetValue(Svc.ClientState.TerritoryType, out var pots))
+            return;
+
+        ImGui.TextDisabled("Camp a pot:");
+        ImGui.SameLine();
+        PotButton(shards, "North", pots.North);
+        ImGui.SameLine();
+        PotButton(shards, "South", pots.South);
+    }
+
+    private void PotButton(Shard[] shards, string direction, Pot pot)
+    {
+        if (ImGui.SmallButton($"{direction}###pot{direction}"))
+            Hop(shards, $"{pot.Label} ({direction.ToLowerInvariant()} pot)", pot.Position);
+
+        if (ImGui.IsItemHovered())
+        {
+            var shard = NearestShardTo(shards, pot.Position);
+            ImGui.SetTooltip($"{pot.Label} spawns here.\nTeleport to {NameOf(shard)}, "
+                + $"{Distance(shard.Position, pot.Position):0} yalms from the spawn point.");
+        }
     }
 
     private static readonly Vector4 CeColor = new(1f, 0.85f, 0.4f, 1f);
