@@ -92,9 +92,11 @@ public sealed class Plugin : IDalamudPlugin
 
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        Svc.Commands.AddHandler(CommandName, new CommandInfo((_, _) => windowOpen = !windowOpen)
+        Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Shows the Occult Crescent FATE list; click a FATE to shard-hop toward it.",
+            HelpMessage = "Shows the Occult Crescent FATE list; click a FATE to shard-hop toward it. "
+                + "\"/fatehopper return\" presses Return and accepts its confirmation, "
+                + "\"/fatehopper buffs\" runs the Freelancer buff errand - both macro-friendly.",
         });
 
         Svc.ClientState.TerritoryChanged += OnTerritoryChanged;
@@ -122,6 +124,28 @@ public sealed class Plugin : IDalamudPlugin
         => ZoneShards.GetValueOrDefault(Svc.ClientState.TerritoryType);
 
     private void ToggleWindow() => windowOpen = !windowOpen;
+
+    /// <summary>Bare /fatehopper toggles the window; the arguments exist so the two
+    /// errands can live on a hotbar as game macros.</summary>
+    private void OnCommand(string command, string arguments)
+    {
+        switch (arguments.Trim().ToLowerInvariant())
+        {
+            case "return":
+                StartReturn();
+                break;
+            case "buffs":
+                StartBuffs();
+                break;
+            default:
+                windowOpen = !windowOpen;
+                break;
+        }
+    }
+
+    /// <summary>The errands only mean anything inside the Occult Crescent - and outside
+    /// it, Return is the ordinary teleport home, which a macro must never press.</summary>
+    private static bool InOccultCrescent => ZoneShards.ContainsKey(Svc.ClientState.TerritoryType);
 
     private void OnTerritoryChanged(uint territory)
     {
@@ -282,7 +306,10 @@ public sealed class Plugin : IDalamudPlugin
 
         var state = PublicContentOccultCrescent.GetState();
         if (state == null)
+        {
+            Svc.Chat.Print("[FateHopper] Only inside the Occult Crescent.");
             return;
+        }
 
         if (Svc.Condition[ConditionFlag.InCombat])
         {
@@ -327,6 +354,12 @@ public sealed class Plugin : IDalamudPlugin
 
     private unsafe void StartReturn()
     {
+        if (!InOccultCrescent)
+        {
+            Svc.Chat.Print("[FateHopper] Only inside the Occult Crescent - out here Return would teleport you home.");
+            return;
+        }
+
         var player = Svc.Objects.LocalPlayer;
         if (player == null || player.IsDead)
         {
