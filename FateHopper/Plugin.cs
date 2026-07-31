@@ -7,6 +7,8 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using ECommons;
 using ECommons.DalamudServices;
+using ECommons.Throttlers;
+using ECommons.UIHelpers.AddonMasterImplementations;
 using FFXIVClientStructs.FFXIV.Client.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.InstanceContent;
 using Lumina.Excel.Sheets;
@@ -14,6 +16,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using static ECommons.GenericHelpers;
 
 namespace FateHopper;
 
@@ -309,8 +312,67 @@ public sealed class Plugin : IDalamudPlugin
         buffStep = BuffStep.Idle;
     }
 
+    // ---- Return -----------------------------------------------------------------
+    //
+    // The plain Return action, plus a one-shot accept for its confirmation. YesAlready
+    // can't be used for this: it would also accept the release prompt on death. Here
+    // nothing is armed unless the button was just pressed, the arming lasts ten
+    // seconds, and even then only a dialog carrying the "starting point" wording is
+    // answered - a death release inside the window is left alone.
+
+    private const uint ReturnGeneralActionId = 8;
+    private const string ReturnPromptFragment = "starting point";
+
+    private long returnArmedUntil;
+
+    private unsafe void StartReturn()
+    {
+        var player = Svc.Objects.LocalPlayer;
+        if (player == null || player.IsDead)
+        {
+            Svc.Chat.Print("[FateHopper] Not while dead - the release prompt stays yours to answer.");
+            return;
+        }
+
+        var actionManager = ActionManager.Instance();
+        if (actionManager->GetActionStatus(ActionType.GeneralAction, ReturnGeneralActionId) != 0
+            || !actionManager->UseAction(ActionType.GeneralAction, ReturnGeneralActionId))
+        {
+            Svc.Chat.Print("[FateHopper] Return isn't available right now (combat or cooldown).");
+            return;
+        }
+
+        returnArmedUntil = Environment.TickCount64 + 10000;
+        Svc.Chat.Print("[FateHopper] Returning to the starting point...");
+    }
+
+    private void TickReturn()
+    {
+        if (returnArmedUntil == 0)
+            return;
+
+        if (Environment.TickCount64 > returnArmedUntil)
+        {
+            returnArmedUntil = 0;
+            return;
+        }
+
+        // Only the return confirmation; any other dialog that pops inside the window
+        // is somebody else's business.
+        if (TryGetAddonMaster<AddonMaster.SelectYesno>("SelectYesno", out var yesno)
+            && yesno.IsAddonReady
+            && yesno.Text.Contains(ReturnPromptFragment, StringComparison.OrdinalIgnoreCase)
+            && EzThrottler.Throttle("FateHopper.ReturnYes", 500))
+        {
+            yesno.Yes();
+            returnArmedUntil = 0;
+        }
+    }
+
     private unsafe void OnFrameworkUpdate(IFramework framework)
     {
+        TickReturn();
+
         if (buffStep == BuffStep.Idle)
             return;
 
@@ -442,6 +504,14 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.SetTooltip("Swaps to Freelancer, uses Inquiring Mind (every phantom buff in one press),\n"
                 + "and swaps back to the phantom job you were on.\n"
                 + "Phantom jobs can only be changed near the knowledge crystal.");
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Return"))
+            StartReturn();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Presses Return and accepts its confirmation - and only that one.\n"
+                + "Nothing is armed unless this button was just pressed, so the\n"
+                + "release prompt when you die is never touched.");
     }
 
     private void PotButton(Shard[] shards, string direction, Pot pot)
