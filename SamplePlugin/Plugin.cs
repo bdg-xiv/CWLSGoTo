@@ -43,7 +43,6 @@ public sealed class Plugin : IDalamudPlugin
     private const string BusyCheckThrottleName = "CWLSGoToLifestreamBusyCheck";
     private const string MountCheckThrottleName = "CWLSGoToMountCheck";
     private const string MountSummonThrottleName = "CWLSGoToMountSummon";
-    private const string WorldHopStartThrottleName = "CWLSGoToWorldHopStart";
 
     public Configuration Configuration { get; }
 
@@ -73,9 +72,7 @@ public sealed class Plugin : IDalamudPlugin
         public required string WorldName;
         public required bool CrossDc;
         public DateTime Deadline;
-        public int StartAttempts;
-        public bool Started; // a transfer visibly began; don't re-issue while it shows progress
-        public DateTime LastProgressAt; // last time the hop was visibly doing something
+        public bool Issued; // handed to Lifestream; the transfer is only ever issued once
     }
 
     private WorldTeleportTask? pendingWorldTeleport;
@@ -497,8 +494,8 @@ public sealed class Plugin : IDalamudPlugin
             }
 
             // Don't drop the click when Lifestream happens to be busy right now - queue
-            // the hop; the framework watcher issues (and retries) the transfer once
-            // Lifestream is free and the player is ready.
+            // the hop; the framework watcher issues the transfer once Lifestream is free
+            // and the player is ready.
             pendingWorldTeleport = new WorldTeleportTask
             {
                 Aetheryte = aetheryte,
@@ -506,10 +503,8 @@ public sealed class Plugin : IDalamudPlugin
                 WorldName = worldName,
                 CrossDc = !sameDc,
                 Deadline = DateTime.UtcNow.AddSeconds(30),
-                LastProgressAt = DateTime.UtcNow,
             };
             EzThrottler.Reset(TeleportThrottleName);
-            EzThrottler.Reset(WorldHopStartThrottleName);
             Svc.Framework.Update -= OnFrameworkUpdate;
             Svc.Framework.Update += OnFrameworkUpdate;
             Svc.Log.Information($"Queued world hop to {worldName} (world id {world.RowId}, crossDc={!sameDc}) then teleport to aetheryte {aetheryte.RowId} ({aetheryte.PlaceName.ValueNullable?.Name.ExtractText()})");
@@ -558,9 +553,9 @@ public sealed class Plugin : IDalamudPlugin
             // still visibly in progress; the deadline only counts down once nothing is
             // happening anymore.
             // The world-visit queue (Readying/WaitingToVisitOtherWorld) counts as in
-            // progress: re-issuing the transfer while queued resets the queue position,
-            // and giving up abandons a transfer that will still happen. This mirrors
-            // Hunt Train Assistant, which issues the transfer once and then only waits.
+            // progress: giving up there abandons a transfer that will still happen. This
+            // mirrors Hunt Train Assistant, which issues the transfer once and then only
+            // waits.
             var hopInProgress = !IsScreenReady()
                 || Svc.Condition[ConditionFlag.BetweenAreas]
                 || Svc.Condition[ConditionFlag.BetweenAreas51]
@@ -569,39 +564,16 @@ public sealed class Plugin : IDalamudPlugin
                 || (EzThrottler.Throttle(BusyCheckThrottleName, 1000) && LifestreamIsBusy());
             if (hopInProgress)
             {
-                if (pending.StartAttempts > 0)
-                    pending.Started = true;
-                pending.LastProgressAt = DateTime.UtcNow;
                 pending.Deadline = DateTime.UtcNow.AddSeconds(30);
             }
-            else if (pending.Started && DateTime.UtcNow - pending.LastProgressAt > TimeSpan.FromSeconds(10))
+            else if (!pending.Issued && Player.Available && !Player.IsBusy && !Svc.Condition[ConditionFlag.InCombat])
             {
-                // The transfer visibly began but has now been idle for a sustained
-                // stretch with the world unchanged: the attempt died mid-way (e.g.
-                // another plugin's navigation hijacked Lifestream's pathing). The
-                // world-visit queue can't get us here - its conditions keep
-                // hopInProgress true - so re-issuing is safe.
-                Svc.Log.Warning($"World transfer to {pending.WorldName} stalled with no progress for 10s, allowing a retry");
-                pending.Started = false;
-                EzThrottler.Reset(WorldHopStartThrottleName);
-            }
-            else if (!pending.Started && Player.Available && !Player.IsBusy && !Svc.Condition[ConditionFlag.InCombat]
-                && EzThrottler.Throttle(WorldHopStartThrottleName, 5000))
-            {
-                // Nothing is happening - issue (or re-issue) the world change instead
-                // of waiting for a transfer that never started: Lifestream may have
-                // been busy at click time, or the attempt was cancelled by combat,
-                // movement, or a failed gateway teleport.
-                if (pending.StartAttempts >= 3)
-                {
-                    NotifyChat($"Could not start the world transfer to {pending.WorldName} after {pending.StartAttempts} attempts, giving up.");
-                    pendingWorldTeleport = null;
-                    return;
-                }
-
-                pending.StartAttempts++;
+                // Nothing is happening yet - hand the world change to Lifestream, once
+                // and only once. Waiting for a good moment is the only thing this branch
+                // does; it never re-issues a transfer that failed to take.
+                pending.Issued = true;
                 pending.Deadline = DateTime.UtcNow.AddSeconds(30);
-                Svc.Log.Information($"Starting world transfer to {pending.WorldName} (attempt {pending.StartAttempts}, crossDc={pending.CrossDc})");
+                Svc.Log.Information($"Starting world transfer to {pending.WorldName} (crossDc={pending.CrossDc})");
                 try
                 {
                     lifestreamTpAndChangeWorldIpc.InvokeAction(pending.WorldName, pending.CrossDc, null, false, null, null, null);
@@ -621,7 +593,7 @@ public sealed class Plugin : IDalamudPlugin
             }
 
             if (loggingNow)
-                Svc.Log.Information($"Waiting for world hop to land: playerAvailable={Player.Available}, currentWorld={Svc.PlayerState.CurrentWorld.RowId}, targetWorld={pending.WorldId}, hopInProgress={hopInProgress}, attempts={pending.StartAttempts}");
+                Svc.Log.Information($"Waiting for world hop to land: playerAvailable={Player.Available}, currentWorld={Svc.PlayerState.CurrentWorld.RowId}, targetWorld={pending.WorldId}, hopInProgress={hopInProgress}, issued={pending.Issued}");
             return;
         }
 
