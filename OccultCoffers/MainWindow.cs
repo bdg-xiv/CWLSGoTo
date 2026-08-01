@@ -172,14 +172,44 @@ internal sealed class MainWindow : Window
             config.Save();
         }
 
-        var radius = config.CheckRadius;
-        if (ImGui.SliderFloat("Swept radius (yalms)", ref radius, 5f, 60f, "%.0f"))
+        var auto = config.AutoDetectionRange;
+        if (ImGui.Checkbox("Measure the swept radius from the game", ref auto))
         {
-            config.CheckRadius = radius;
+            config.AutoDetectionRange = auto;
             config.Save();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("How close you have to pass a spot for it to count as checked.");
+            ImGui.SetTooltip("A coffer is detected the moment the game streams it into the object table -\n" +
+                             "there is no radius to copy. So this measures one instead: the furthest a\n" +
+                             "coffer has actually appeared this visit, which is a lower bound on how far\n" +
+                             "you can trust an empty spot to really be empty.");
+
+        if (config.AutoDetectionRange)
+        {
+            ImGui.Indent();
+            ImGui.TextColored(Dim, tracker.RangeMeasured
+                ? $"Measured {tracker.ObservedRange:F0}y, using {tracker.EffectiveRange:F0}y."
+                : $"No coffer seen yet - holding at the {tracker.EffectiveRange:F0}y floor.");
+
+            var floor = config.MinDetectionRange;
+            if (ImGui.SliderFloat("Floor (yalms)", ref floor, 5f, 60f, "%.0f"))
+            {
+                config.MinDetectionRange = floor;
+                config.Save();
+            }
+            ImGui.Unindent();
+        }
+        else
+        {
+            var radius = config.CheckRadius;
+            if (ImGui.SliderFloat("Swept radius (yalms)", ref radius, 5f, 100f, "%.0f"))
+            {
+                config.CheckRadius = radius;
+                config.Save();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("How close you have to pass a spot for it to count as checked.");
+        }
 
         if (tracker.Zone is { HasSubterrane: true })
         {

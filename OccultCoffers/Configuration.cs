@@ -19,8 +19,20 @@ public class Configuration : IPluginConfiguration
 
     public bool OpenWindowOnSight { get; set; } = true;
 
-    /// <summary>How close counts as having checked a spot. Coffers stream in well before
-    /// this, but the eye needs a moment, so the default is deliberately conservative.</summary>
+    /// <summary>
+    /// Work the check radius out from what the game actually streams in rather than from a
+    /// number someone made up. BOCCHI has no radius at all - a coffer counts as detected the
+    /// moment it lands in the object table - so the honest equivalent here is to measure how
+    /// far away coffers have really been showing up and trust nothing beyond that.
+    /// </summary>
+    public bool AutoDetectionRange { get; set; } = true;
+
+    /// <summary>Used until a coffer has actually been seen, and as the floor thereafter.
+    /// Deliberately short: a spot wrongly called checked can be ruled out while a coffer is
+    /// still sitting on it, and that is the one error that produces a wrong answer.</summary>
+    public float MinDetectionRange { get; set; } = 15f;
+
+    /// <summary>The radius when the automatic one is turned off.</summary>
     public float CheckRadius { get; set; } = 25f;
 
     /// <summary>Anything below this altitude is taken to be on the Subterrane floor rather

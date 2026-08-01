@@ -27,6 +27,9 @@ internal sealed class Tracker(Configuration config)
     /// <summary>How near a coffer object has to be to a spot to count as standing on it.</summary>
     private const float SpotOccupiedRadius = 5f;
 
+    /// <summary>Past this the measurement is more likely to be a bug than a real sighting.</summary>
+    private const float MaxSaneRange = 200f;
+
     public Zones.ZoneInfo? Zone { get; private set; }
     public List<CofferSpot> Spots { get; } = [];
     public bool SpotsLoaded { get; private set; }
@@ -35,6 +38,18 @@ internal sealed class Tracker(Configuration config)
     public int ReportedBronze { get; private set; }
     public DateTime? SightAt { get; private set; }
     public uint CurrentMapId { get; private set; }
+
+    /// <summary>The furthest a coffer has actually turned up in the object table this visit.
+    /// Only ever grows, which keeps it a lower bound on what the game will stream - erring on
+    /// the short side, where the mistake costs a slower answer rather than a wrong one.</summary>
+    public float ObservedRange { get; private set; }
+
+    public bool RangeMeasured => ObservedRange > 0f;
+
+    /// <summary>The radius a spot has to fall inside before we claim to have checked it.</summary>
+    public float EffectiveRange => config.AutoDetectionRange
+        ? Math.Clamp(ObservedRange, config.MinDetectionRange, MaxSaneRange)
+        : config.CheckRadius;
 
     public int Reported(CofferKind kind) => kind == CofferKind.Silver ? ReportedSilver : ReportedBronze;
 
@@ -72,6 +87,7 @@ internal sealed class Tracker(Configuration config)
         Zone = null;
         Spots.Clear();
         SpotsLoaded = false;
+        ObservedRange = 0f;
         Forget();
     }
 
@@ -177,15 +193,10 @@ internal sealed class Tracker(Configuration config)
         if (player == null)
             return;
 
-        var here = player.Position;
-        var radiusSquared = config.CheckRadius * config.CheckRadius;
+        var here = new Vector2(player.Position.X, player.Position.Z);
+        var coffers = LiveCoffers(here);
 
-        // Coffers standing in the world right now, so a spot can be resolved as occupied
-        // rather than merely visited.
-        var coffers = Svc.Objects
-            .Where(o => o.ObjectKind == ObjectKind.Treasure)
-            .Select(o => o.Position)
-            .ToList();
+        var radiusSquared = EffectiveRange * EffectiveRange;
 
         foreach (var spot in Spots)
         {
@@ -196,12 +207,54 @@ internal sealed class Tracker(Configuration config)
             if (spot.MapId != CurrentMapId)
                 continue;
 
-            if (Vector2.DistanceSquared(new Vector2(here.X, here.Z), new Vector2(spot.World.X, spot.World.Z)) > radiusSquared)
+            if (Vector2.DistanceSquared(here, new Vector2(spot.World.X, spot.World.Z)) > radiusSquared)
                 continue;
 
             spot.Checked = true;
-            spot.SawCoffer = coffers.Any(c =>
-                Vector3.DistanceSquared(c, spot.World) <= SpotOccupiedRadius * SpotOccupiedRadius);
+            spot.SawCoffer = coffers.Any(c => c.Kind == spot.Kind
+                && Vector3.DistanceSquared(c.Position, spot.World) <= SpotOccupiedRadius * SpotOccupiedRadius);
         }
+    }
+
+    /// <summary>
+    /// Coffers standing in the world right now. Same test BOCCHI uses - object kind Treasure,
+    /// still valid and still targetable - so one that has already been looted stops counting.
+    /// Every sighting also stretches the measured range.
+    /// </summary>
+    private List<(Vector3 Position, CofferKind Kind)> LiveCoffers(Vector2 here)
+    {
+        var coffers = new List<(Vector3, CofferKind)>();
+        var treasures = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>();
+
+        foreach (var obj in Svc.Objects)
+        {
+            if (obj.ObjectKind != ObjectKind.Treasure)
+                continue;
+            if (!obj.IsValid() || obj.IsDead || !obj.IsTargetable)
+                continue;
+
+            CofferKind kind;
+            if (treasures != null && treasures.TryGetRow(obj.BaseId, out var treasure))
+            {
+                switch (treasure.SGB.RowId)
+                {
+                    case 1596: kind = CofferKind.Bronze; break;
+                    case 1597: kind = CofferKind.Silver; break;
+                    default: continue;
+                }
+            }
+            else
+            {
+                continue;
+            }
+
+            coffers.Add((obj.Position, kind));
+
+            var flat = Vector2.Distance(here, new Vector2(obj.Position.X, obj.Position.Z));
+            if (flat > ObservedRange)
+                ObservedRange = flat;
+        }
+
+        return coffers;
     }
 }
