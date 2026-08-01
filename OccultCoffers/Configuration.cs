@@ -29,6 +29,9 @@ public class Configuration : IPluginConfiguration
 
     public bool OpenWindowOnSight { get; set; } = true;
 
+    /// <summary>Keep our markers drawn above any other plugin's.</summary>
+    public bool KeepMarkersOnTop { get; set; } = true;
+
     /// <summary>
     /// Work the check radius out from what the game actually streams in rather than from a
     /// number someone made up. BOCCHI has no radius at all - a coffer counts as detected the

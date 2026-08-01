@@ -147,6 +147,9 @@ public sealed class Plugin : IDalamudPlugin
 
             tracker.Update();
             mapLayer.Sync(tracker, config);
+
+            if (config.KeepMarkersOnTop)
+                mapLayer.KeepOnTop();
         }
         catch (Exception ex)
         {
