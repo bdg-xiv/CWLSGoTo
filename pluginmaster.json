@@ -401,6 +401,33 @@
   },
   {
     "Author": "bdg",
+    "Name": "Occult Coffers",
+    "InternalName": "OccultCoffers",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Cast Occult Treasuresight and this reads the count it reports - so many silver, so many bronze - then watches which coffer spawn spots you walk past. Every spot you come close to is one fewer place a coffer can be hiding, and the moment the spots you have not visited match the number still unaccounted for, those spots have to be the coffers, and they get marked on the map. Until then the unvisited spots are marked too, in a dimmer icon, so you can see at a glance which parts of the zone you have already swept. The spawn spots come from the zone's own layout data, so nothing has to be recorded by hand, and every coffer you find along the way is subtracted from the count. Works in South Horn and in North Horn, where markers are kept on the right floor - the North Basin and the Subterrane are separate maps and get separate marks. Drawn as its own layer on the map, so it does not fight with any other plugin's markers. Toggle it with /coffers.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "occult crescent",
+      "south horn",
+      "north horn",
+      "treasure",
+      "coffer",
+      "map"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Narrows down where the Occult Crescent coffers are by elimination.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/OccultCoffers.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/OccultCoffers.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/OccultCoffers.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.25",
