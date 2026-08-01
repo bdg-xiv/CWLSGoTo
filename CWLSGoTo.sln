@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LetGo", "LetGo\LetGo.csproj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FateHopper", "FateHopper\FateHopper.csproj", "{E3B91C57-6A24-4F80-BD1E-9C5A2D7F41B6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OccultCoffers", "OccultCoffers\OccultCoffers.csproj", "{A7C40E92-5B31-4D68-8E2A-3F6D91B08C74}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -105,6 +107,10 @@ Global
 		{E3B91C57-6A24-4F80-BD1E-9C5A2D7F41B6}.Debug|x64.Build.0 = Debug|x64
 		{E3B91C57-6A24-4F80-BD1E-9C5A2D7F41B6}.Release|x64.ActiveCfg = Release|x64
 		{E3B91C57-6A24-4F80-BD1E-9C5A2D7F41B6}.Release|x64.Build.0 = Release|x64
+		{A7C40E92-5B31-4D68-8E2A-3F6D91B08C74}.Debug|x64.ActiveCfg = Debug|x64
+		{A7C40E92-5B31-4D68-8E2A-3F6D91B08C74}.Debug|x64.Build.0 = Debug|x64
+		{A7C40E92-5B31-4D68-8E2A-3F6D91B08C74}.Release|x64.ActiveCfg = Release|x64
+		{A7C40E92-5B31-4D68-8E2A-3F6D91B08C74}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

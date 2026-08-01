@@ -61,6 +61,7 @@ jobs:
           @{ Project = "ArtisanGatherBridge"; InternalName = "GatherBuddy" },
           @{ Project = "LetGo"; InternalName = "LetGo" },
           @{ Project = "FateHopper"; InternalName = "FateHopper" },
+          @{ Project = "OccultCoffers"; InternalName = "OccultCoffers" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 
