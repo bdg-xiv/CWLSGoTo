@@ -171,17 +171,6 @@ internal sealed class MainWindow : Window
         ImGui.SameLine();
         ImGui.TextDisabled("(a lot of icons)");
 
-        var onTop = config.KeepMarkersOnTop;
-        if (ImGui.Checkbox("Keep these markers above other plugins'", ref onTop))
-        {
-            config.KeepMarkersOnTop = onTop;
-            config.Save();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Every plugin hangs its map markers off the same node, so who ends up\n" +
-                             "on top is down to load order. This puts ours back on top whenever\n" +
-                             "something stacks over them.");
-
         var openOnSight = config.OpenWindowOnSight;
         if (ImGui.Checkbox("Open this window on a new reading", ref openOnSight))
         {

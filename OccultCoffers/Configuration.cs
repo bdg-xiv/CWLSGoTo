@@ -6,13 +6,15 @@ public class Configuration : IPluginConfiguration
 {
     public const uint DefaultSilverIcon = 60355;
     public const uint DefaultBronzeIcon = 60356;
-    public const uint DefaultCandidateIcon = 60358;
+    // "Circle" from the game's own field-marker set. Small, neutral, and unmistakably not
+    // a chest - which is the point, since another plugin is already drawing chests.
+    public const uint DefaultCandidateIcon = 61232;
 
     // "Target to Ignore" - the crossed-out field marker. Swept and empty, nothing to
     // come back for, which is exactly what it looks like.
     public const uint DefaultClearedIcon = 61221;
 
-    private const int CurrentVersion = 2;
+    private const int CurrentVersion = 3;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -28,9 +30,6 @@ public class Configuration : IPluginConfiguration
     public bool ShowCleared { get; set; }
 
     public bool OpenWindowOnSight { get; set; } = true;
-
-    /// <summary>Keep our markers drawn above any other plugin's.</summary>
-    public bool KeepMarkersOnTop { get; set; } = true;
 
     /// <summary>
     /// Work the check radius out from what the game actually streams in rather than from a
@@ -62,8 +61,8 @@ public class Configuration : IPluginConfiguration
     public float CandidateIconSize { get; set; } = 18f;
 
     /// <summary>
-    /// Version 1 shipped the silver and bronze icons the wrong way round and used a
-    /// forgettable icon for swept spots. Only touch values still sitting on those old
+    /// Version 1 shipped the silver and bronze icons the wrong way round and used forgettable
+    /// icons for swept and unswept spots. Only touch values still sitting on those old
     /// defaults - a choice someone actually made stays made.
     /// </summary>
     public void Migrate()
@@ -79,6 +78,9 @@ public class Configuration : IPluginConfiguration
 
         if (ClearedIcon == 60354)
             ClearedIcon = DefaultClearedIcon;
+
+        if (CandidateIcon == 60358)
+            CandidateIcon = DefaultCandidateIcon;
 
         Version = CurrentVersion;
         Save();

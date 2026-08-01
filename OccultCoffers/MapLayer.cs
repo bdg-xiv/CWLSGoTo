@@ -14,14 +14,10 @@ namespace OccultCoffers;
 internal sealed class MapLayer : IDisposable
 {
     private readonly MapOverlayController controller = new();
-    private readonly MapDepth depth = new();
     private readonly List<MapMarkerNode> markers = [];
     private string drawn = string.Empty;
 
     public MapLayer() => controller.Enable();
-
-    /// <summary>Re-asserts the layer's place above other plugins' markers.</summary>
-    public void KeepOnTop() => depth.Enforce(controller);
 
     public void Dispose()
     {
