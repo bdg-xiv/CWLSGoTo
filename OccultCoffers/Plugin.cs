@@ -21,9 +21,12 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly Configuration config;
     private readonly Tracker tracker;
-    private readonly MapLayer mapLayer;
     private readonly WindowSystem windows = new("OccultCoffers");
     private readonly MainWindow window;
+
+    // Built on the first framework tick, not here: the plugin constructor runs on a worker
+    // thread and KamiToolKit refuses to touch the map addon from anywhere but the main one.
+    private MapLayer? mapLayer;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -32,7 +35,6 @@ public sealed class Plugin : IDalamudPlugin
 
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         tracker = new Tracker(config);
-        mapLayer = new MapLayer();
         window = new MainWindow(tracker, config);
         windows.AddWindow(window);
 
@@ -60,8 +62,35 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= windows.Draw;
         windows.RemoveAllWindows();
 
-        mapLayer.Dispose();
+        DisposeMapLayer();
         ECommonsMain.Dispose();
+    }
+
+    /// <summary>
+    /// The map nodes have to come down on the main thread, and the assembly must not go away
+    /// before that has happened - so when unload lands on a worker thread, wait for the tick.
+    /// </summary>
+    private void DisposeMapLayer()
+    {
+        var layer = mapLayer;
+        mapLayer = null;
+        if (layer == null)
+            return;
+
+        if (Svc.Framework.IsInFrameworkUpdateThread)
+        {
+            layer.Dispose();
+            return;
+        }
+
+        try
+        {
+            Svc.Framework.RunOnFrameworkThread(layer.Dispose).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Error(ex, "Failed to tear down the map layer");
+        }
     }
 
     private void ToggleWindow() => window.IsOpen = !window.IsOpen;
@@ -102,6 +131,10 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
+            // We are on the main thread here, which is the only place the map layer is
+            // allowed to be built or touched.
+            mapLayer ??= new MapLayer();
+
             if (!config.Enabled)
             {
                 mapLayer.Clear();
