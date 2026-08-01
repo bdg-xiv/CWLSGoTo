@@ -34,6 +34,7 @@ public sealed class Plugin : IDalamudPlugin
         KamiToolKitLibrary.Initialize(pluginInterface);
 
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        config.Migrate();
         tracker = new Tracker(config);
         window = new MainWindow(tracker, config);
         windows.AddWindow(window);

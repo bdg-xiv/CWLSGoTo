@@ -4,7 +4,17 @@ namespace OccultCoffers;
 
 public class Configuration : IPluginConfiguration
 {
-    public int Version { get; set; } = 1;
+    public const uint DefaultSilverIcon = 60355;
+    public const uint DefaultBronzeIcon = 60356;
+    public const uint DefaultCandidateIcon = 60358;
+
+    // "Target to Ignore" - the crossed-out field marker. Swept and empty, nothing to
+    // come back for, which is exactly what it looks like.
+    public const uint DefaultClearedIcon = 61221;
+
+    private const int CurrentVersion = 2;
+
+    public int Version { get; set; } = CurrentVersion;
 
     public bool Enabled { get; set; } = true;
 
@@ -40,13 +50,36 @@ public class Configuration : IPluginConfiguration
     /// call rather than something the game hands over.</summary>
     public float SubterraneCeilingY { get; set; } = -10f;
 
-    public uint SilverIcon { get; set; } = 60356;
-    public uint BronzeIcon { get; set; } = 60355;
-    public uint CandidateIcon { get; set; } = 60358;
-    public uint ClearedIcon { get; set; } = 60354;
+    public uint SilverIcon { get; set; } = DefaultSilverIcon;
+    public uint BronzeIcon { get; set; } = DefaultBronzeIcon;
+    public uint CandidateIcon { get; set; } = DefaultCandidateIcon;
+    public uint ClearedIcon { get; set; } = DefaultClearedIcon;
 
     public float ConfirmedIconSize { get; set; } = 32f;
     public float CandidateIconSize { get; set; } = 18f;
+
+    /// <summary>
+    /// Version 1 shipped the silver and bronze icons the wrong way round and used a
+    /// forgettable icon for swept spots. Only touch values still sitting on those old
+    /// defaults - a choice someone actually made stays made.
+    /// </summary>
+    public void Migrate()
+    {
+        if (Version >= CurrentVersion)
+            return;
+
+        if (SilverIcon == 60356 && BronzeIcon == 60355)
+        {
+            SilverIcon = DefaultSilverIcon;
+            BronzeIcon = DefaultBronzeIcon;
+        }
+
+        if (ClearedIcon == 60354)
+            ClearedIcon = DefaultClearedIcon;
+
+        Version = CurrentVersion;
+        Save();
+    }
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 }

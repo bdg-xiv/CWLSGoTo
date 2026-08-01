@@ -84,7 +84,9 @@ internal sealed class MapLayer : IDisposable
 
             if (config.ShowConfirmed)
             {
-                var icon = kind == CofferKind.Silver ? config.SilverIcon : config.BronzeIcon;
+                var icon = kind == CofferKind.Silver
+                    ? Icons.OrFallback(config.SilverIcon, Configuration.DefaultSilverIcon)
+                    : Icons.OrFallback(config.BronzeIcon, Configuration.DefaultBronzeIcon);
                 foreach (var spot in confirmed)
                     wanted.Add((spot, icon, config.ConfirmedIconSize, $"{kind} coffer - confirmed by elimination"));
             }
@@ -97,11 +99,13 @@ internal sealed class MapLayer : IDisposable
                 if (!spot.Checked)
                 {
                     if (config.ShowCandidates)
-                        wanted.Add((spot, config.CandidateIcon, config.CandidateIconSize, $"{kind} spot - not swept yet"));
+                        wanted.Add((spot, Icons.OrFallback(config.CandidateIcon, Configuration.DefaultCandidateIcon),
+                            config.CandidateIconSize, $"{kind} spot - not swept yet"));
                 }
                 else if (config.ShowCleared)
                 {
-                    wanted.Add((spot, config.ClearedIcon, config.CandidateIconSize,
+                    wanted.Add((spot, Icons.OrFallback(config.ClearedIcon, Configuration.DefaultClearedIcon),
+                        config.CandidateIconSize,
                         spot.SawCoffer ? $"{kind} spot - coffer found here" : $"{kind} spot - swept, empty"));
                 }
             }

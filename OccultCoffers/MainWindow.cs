@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 
 namespace OccultCoffers;
@@ -10,6 +12,10 @@ internal sealed class MainWindow : Window
 {
     private readonly Tracker tracker;
     private readonly Configuration config;
+
+    // What is in the box versus what has been accepted - they only meet on Enter.
+    private readonly Dictionary<string, int> pendingIcons = [];
+    private readonly Dictionary<string, uint> rejected = [];
 
     private static readonly Vector4 Confirmed = new(0.45f, 1.00f, 0.50f, 1f);
     private static readonly Vector4 Waiting = new(0.85f, 0.85f, 0.85f, 1f);
@@ -229,26 +235,77 @@ internal sealed class MainWindow : Window
                                $"{tracker.Zone.SubterraneName}.");
         }
 
-        DrawIcon("Silver icon", () => config.SilverIcon, v => config.SilverIcon = v);
-        DrawIcon("Bronze icon", () => config.BronzeIcon, v => config.BronzeIcon = v);
-        DrawIcon("Unswept icon", () => config.CandidateIcon, v => config.CandidateIcon = v);
-        DrawIcon("Swept icon", () => config.ClearedIcon, v => config.ClearedIcon = v);
+        ImGui.Spacing();
+        ImGui.TextDisabled("Icons - press Enter to apply. Ids that do not exist are refused.");
+        DrawIcon("Silver", "silver", () => config.SilverIcon, v => config.SilverIcon = v, Configuration.DefaultSilverIcon);
+        DrawIcon("Bronze", "bronze", () => config.BronzeIcon, v => config.BronzeIcon = v, Configuration.DefaultBronzeIcon);
+        DrawIcon("Unswept", "unswept", () => config.CandidateIcon, v => config.CandidateIcon = v, Configuration.DefaultCandidateIcon);
+        DrawIcon("Swept", "swept", () => config.ClearedIcon, v => config.ClearedIcon = v, Configuration.DefaultClearedIcon);
     }
 
-    private void DrawIcon(string label, Func<uint> get, Action<uint> set)
+    /// <summary>
+    /// Typing an id walks through every prefix of it, and asking for an icon that does not
+    /// exist throws hard enough to take the whole window down - which is what used to happen.
+    /// So nothing is applied until Enter, and then only if the id resolves.
+    /// </summary>
+    private void DrawIcon(string label, string key, Func<uint> get, Action<uint> set, uint fallback)
     {
-        var value = (int)get();
-        if (ImGui.InputInt(label, ref value))
+        DrawIconPreview(get());
+        ImGui.SameLine();
+
+        if (!pendingIcons.TryGetValue(key, out var pending))
+            pending = (int)get();
+
+        ImGui.SetNextItemWidth(110f);
+        ImGui.InputInt($"{label}###icon_{key}", ref pending, 1, 10);
+        pendingIcons[key] = pending;
+
+        // Commit on Enter or on losing focus, never mid-keystroke.
+        if (ImGui.IsItemDeactivatedAfterEdit())
         {
-            set((uint)Math.Max(0, value));
-            config.Save();
+            var wanted = (uint)Math.Max(0, pending);
+            if (Icons.Exists(wanted))
+            {
+                set(wanted);
+                config.Save();
+                pendingIcons.Remove(key);
+                rejected.Remove(key);
+            }
+            else
+            {
+                rejected[key] = wanted;
+            }
         }
 
-        var texture = Plugin.TextureProvider.GetFromGameIcon(new Dalamud.Interface.Textures.GameIconLookup(get())).GetWrapOrDefault();
-        if (texture != null)
+        if (rejected.TryGetValue(key, out var bad) && bad != get())
         {
             ImGui.SameLine();
-            ImGui.Image(texture.Handle, new Vector2(20, 20));
+            ImGui.TextColored(new Vector4(1f, 0.45f, 0.45f, 1f), $"no icon {bad}");
         }
+
+        if (get() != fallback)
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"Reset###reset_{key}"))
+            {
+                set(fallback);
+                config.Save();
+                pendingIcons.Remove(key);
+                rejected.Remove(key);
+            }
+        }
+    }
+
+    private static void DrawIconPreview(uint iconId)
+    {
+        if (Icons.Exists(iconId)
+            && Plugin.TextureProvider.TryGetFromGameIcon(new GameIconLookup(iconId), out var shared)
+            && shared.GetWrapOrDefault() is { } texture)
+        {
+            ImGui.Image(texture.Handle, new Vector2(22, 22));
+            return;
+        }
+
+        ImGui.Dummy(new Vector2(22, 22));
     }
 }
