@@ -290,9 +290,9 @@ internal sealed class Tracker(Configuration config)
             return;
         }
 
-        if (SightAt == null)
-            return;
-
+        // Sweeping is not only for the deduction. It is also the only thing that notices a
+        // coffer has been taken, and a coffer reported by another plugin can be sitting on
+        // the map before any reading exists - so this must not wait for one.
         Sweep();
     }
 

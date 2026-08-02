@@ -4,12 +4,11 @@ namespace OccultCoffers;
 
 public class Configuration : IPluginConfiguration
 {
-    // Deliberately NOT the chest icons. Eureka Linker draws every possible coffer spot
-    // using 60355 and 60356 for silver and bronze, so a confirmed coffer marked with the
-    // same art is indistinguishable from the 80-odd places one merely might be. These are
-    // the numbered attack markers - nothing else on an Occult Crescent map uses them.
-    public const uint DefaultSilverIcon = 61201;
-    public const uint DefaultBronzeIcon = 61202;
+    // Neither a chest nor a number. Chests are what an unswept spot already looks like, and
+    // the numbered attack markers read as waymarks 1 and 2 on a map where people place
+    // waymarks. Triangle and plus are neither, and nothing else draws them here.
+    public const uint DefaultSilverIcon = 61234;
+    public const uint DefaultBronzeIcon = 61233;
     // The chest icons, matching Eureka Linker's - an unswept spot is exactly what its
     // markers mean, so they should read the same. Confirmed coffers are what needs to
     // stand apart, and those use the attack markers below.
@@ -23,10 +22,12 @@ public class Configuration : IPluginConfiguration
     // come back for, which is exactly what it looks like.
     public const uint DefaultClearedIcon = 61221;
 
-    public const float DefaultConfirmedIconSize = 40f;
-    public const float DefaultCandidateIconSize = 24f;
+    // The size Eureka Linker's chest markers come out at, so ours line up with them rather
+    // than sitting proud of them. Telling them apart is the shape's job now, not the size's.
+    public const float DefaultConfirmedIconSize = 32f;
+    public const float DefaultCandidateIconSize = 32f;
 
-    private const int CurrentVersion = 6;
+    private const int CurrentVersion = 7;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -119,12 +120,20 @@ public class Configuration : IPluginConfiguration
         if (CandidateIconSize == 18f)
             CandidateIconSize = DefaultCandidateIconSize;
 
-        // The chest icons collide exactly with Eureka Linker's spot markers.
-        if (SilverIcon == 60355)
+        // 60355/60356 collided with Eureka Linker's spot markers; 61201/61202 replaced them
+        // and turned out to read as waymarks 1 and 2.
+        if (SilverIcon is 60355 or 61201)
             SilverIcon = DefaultSilverIcon;
 
-        if (BronzeIcon == 60356)
+        if (BronzeIcon is 60356 or 61202)
             BronzeIcon = DefaultBronzeIcon;
+
+        // Sized to sit level with the chest markers rather than proud of them.
+        if (ConfirmedIconSize == 40f)
+            ConfirmedIconSize = DefaultConfirmedIconSize;
+
+        if (CandidateIconSize == 24f)
+            CandidateIconSize = DefaultCandidateIconSize;
 
         Version = CurrentVersion;
         Save();
