@@ -4,8 +4,12 @@ namespace OccultCoffers;
 
 public class Configuration : IPluginConfiguration
 {
-    public const uint DefaultSilverIcon = 60355;
-    public const uint DefaultBronzeIcon = 60356;
+    // Deliberately NOT the chest icons. Eureka Linker draws every possible coffer spot
+    // using 60355 and 60356 for silver and bronze, so a confirmed coffer marked with the
+    // same art is indistinguishable from the 80-odd places one merely might be. These are
+    // the numbered attack markers - nothing else on an Occult Crescent map uses them.
+    public const uint DefaultSilverIcon = 61201;
+    public const uint DefaultBronzeIcon = 61202;
     // "Circle" from the game's own field-marker set. Small, neutral, and unmistakably not
     // a chest - which is the point, since another plugin is already drawing chests.
     public const uint DefaultCandidateIcon = 61232;
@@ -17,7 +21,7 @@ public class Configuration : IPluginConfiguration
     public const float DefaultConfirmedIconSize = 40f;
     public const float DefaultCandidateIconSize = 24f;
 
-    private const int CurrentVersion = 4;
+    private const int CurrentVersion = 5;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -93,6 +97,13 @@ public class Configuration : IPluginConfiguration
 
         if (CandidateIconSize == 18f)
             CandidateIconSize = DefaultCandidateIconSize;
+
+        // The chest icons collide exactly with Eureka Linker's spot markers.
+        if (SilverIcon == 60355)
+            SilverIcon = DefaultSilverIcon;
+
+        if (BronzeIcon == 60356)
+            BronzeIcon = DefaultBronzeIcon;
 
         Version = CurrentVersion;
         Save();
