@@ -234,7 +234,9 @@ internal sealed class MainWindow : Window
             }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Spots below this altitude are put on the Subterrane map instead of the\n" +
-                                 "North Basin one. The split below tells you whether it is right.");
+                                 "North Basin one. The North Basin runs down to about -22 and the\n" +
+                                 "Subterrane starts around -92, so anything in between is safe.\n" +
+                                 "The split below tells you whether it is right.");
 
             ImGui.TextDisabled($"Split: {tracker.Spots.Count(s => s.MapId == tracker.Zone!.SurfaceMapId)} in the " +
                                $"{tracker.Zone!.SurfaceName}, {tracker.Spots.Count(s => s.MapId == tracker.Zone.SubterraneMapId)} in the " +

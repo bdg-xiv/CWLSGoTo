@@ -27,7 +27,7 @@ public class Configuration : IPluginConfiguration
     public const float DefaultConfirmedIconSize = 32f;
     public const float DefaultCandidateIconSize = 32f;
 
-    private const int CurrentVersion = 7;
+    private const int CurrentVersion = 8;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -59,10 +59,16 @@ public class Configuration : IPluginConfiguration
     /// <summary>The radius when the automatic one is turned off.</summary>
     public float CheckRadius { get; set; } = 25f;
 
-    /// <summary>Anything below this altitude is taken to be on the Subterrane floor rather
-    /// than the North Basin. Exposed because it is the one number here that is a judgement
-    /// call rather than something the game hands over.</summary>
-    public float SubterraneCeilingY { get; set; } = -10f;
+    /// <summary>
+    /// Anything below this altitude is taken to be on the Subterrane floor rather than the
+    /// North Basin. The game does not state which floor a layout instance belongs to, so this
+    /// is a judgement call - but not a blind one: cross-checked against Eureka Linker's
+    /// hand-maintained table, North Basin coffers run down to Y -21.8 and Subterrane ones
+    /// start at Y -92, so anywhere in that 70-yalm gap is safe and the middle is safest.
+    /// </summary>
+    public float SubterraneCeilingY { get; set; } = DefaultSubterraneCeilingY;
+
+    public const float DefaultSubterraneCeilingY = -60f;
 
     public uint SilverIcon { get; set; } = DefaultSilverIcon;
     public uint BronzeIcon { get; set; } = DefaultBronzeIcon;
@@ -134,6 +140,11 @@ public class Configuration : IPluginConfiguration
 
         if (CandidateIconSize == 24f)
             CandidateIconSize = DefaultCandidateIconSize;
+
+        // -10 cut through the North Basin rather than between the floors, so every surface
+        // spot below it was being drawn on the Subterrane map and was simply missing.
+        if (SubterraneCeilingY == -10f)
+            SubterraneCeilingY = DefaultSubterraneCeilingY;
 
         Version = CurrentVersion;
         Save();
