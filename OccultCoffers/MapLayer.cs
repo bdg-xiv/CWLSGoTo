@@ -88,7 +88,12 @@ internal sealed class MapLayer : IDisposable
                     ? Icons.OrFallback(config.SilverIcon, Configuration.DefaultSilverIcon)
                     : Icons.OrFallback(config.BronzeIcon, Configuration.DefaultBronzeIcon);
                 foreach (var spot in confirmed)
-                    wanted.Add((spot, icon, config.ConfirmedIconSize, $"{kind} coffer - confirmed by elimination"));
+                {
+                    var why = spot.ReportedCoffer ? "reported here"
+                        : spot.HadCoffer ? "seen here"
+                        : "confirmed by elimination";
+                    wanted.Add((spot, icon, config.ConfirmedIconSize, $"{kind} coffer - {why}"));
+                }
             }
 
             foreach (var spot in tracker.Of(kind))
@@ -107,7 +112,7 @@ internal sealed class MapLayer : IDisposable
                 {
                     wanted.Add((spot, Icons.OrFallback(config.ClearedIcon, Configuration.DefaultClearedIcon),
                         config.CandidateIconSize,
-                        spot.SawCoffer ? $"{kind} spot - coffer found here" : $"{kind} spot - swept, empty"));
+                        spot.HadCoffer ? $"{kind} spot - coffer taken" : $"{kind} spot - swept, empty"));
                 }
             }
         }

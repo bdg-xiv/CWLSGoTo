@@ -4,6 +4,8 @@ using System.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
 using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using ECommons.DalamudServices;
 using ECommons.GameHelpers;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
@@ -55,29 +57,49 @@ internal sealed class Tracker(Configuration config)
 
     public IEnumerable<CofferSpot> Of(CofferKind kind) => Spots.Where(s => s.Kind == kind);
 
-    /// <summary>Coffers of this kind already accounted for by walking into them.</summary>
-    public int Found(CofferKind kind) => Of(kind).Count(s => s.SawCoffer);
+    /// <summary>Coffers of this kind already accounted for, whether by seeing one or by
+    /// being told about it. Looting one does not un-account for it.</summary>
+    public int Found(CofferKind kind) => Of(kind).Count(s => s.HadCoffer);
 
     /// <summary>How many of the reported coffers are still unaccounted for.</summary>
     public int Outstanding(CofferKind kind) => Math.Max(0, Reported(kind) - Found(kind));
 
-    public List<CofferSpot> Candidates(CofferKind kind) => Of(kind).Where(s => !s.Checked).ToList();
+    /// <summary>Spots that could still be hiding one of the unaccounted-for coffers.</summary>
+    public List<CofferSpot> Candidates(CofferKind kind)
+        => Of(kind).Where(s => !s.Checked && !s.HadCoffer).ToList();
 
     /// <summary>
-    /// The whole point: when the places left to look match the coffers left to find, every
-    /// one of those places has a coffer in it.
+    /// Everywhere a coffer is known to be right now: the ones we have been told about or
+    /// have seen, plus the whole point of the plugin - when the places left to look match
+    /// the coffers left to find, every one of those places has a coffer in it.
     /// </summary>
     public List<CofferSpot> Confirmed(CofferKind kind)
     {
+        var confirmed = Of(kind).Where(s => s.HoldsCoffer).ToList();
+
         if (SightAt == null)
-            return [];
+            return confirmed;
 
         var outstanding = Outstanding(kind);
         if (outstanding <= 0)
-            return [];
+            return confirmed;
 
         var candidates = Candidates(kind);
-        return candidates.Count == outstanding ? candidates : [];
+        if (candidates.Count == outstanding)
+            confirmed.AddRange(candidates);
+
+        return confirmed;
+    }
+
+    /// <summary>The elimination has narrowed things down, as opposed to us merely having
+    /// been told where a coffer is.</summary>
+    public bool Deduced(CofferKind kind)
+    {
+        if (SightAt == null)
+            return false;
+
+        var outstanding = Outstanding(kind);
+        return outstanding > 0 && Candidates(kind).Count == outstanding;
     }
 
     public bool IsConfirmed(CofferKind kind) => Confirmed(kind).Count > 0;
@@ -100,7 +122,9 @@ internal sealed class Tracker(Configuration config)
         foreach (var spot in Spots)
         {
             spot.Checked = false;
-            spot.SawCoffer = false;
+            spot.HadCoffer = false;
+            spot.ReportedCoffer = false;
+            spot.CofferGone = false;
         }
     }
 
@@ -133,6 +157,71 @@ internal sealed class Tracker(Configuration config)
         }
 
         return false;
+    }
+
+    // Eureka Linker announces a coffer it has spotted as "Treasure (Bronze): <map link>".
+    private static readonly Regex TreasureReportPattern = new(
+        @"^\s*Treasure\s*\(\s*(Silver|Bronze)\s*\)\s*:", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>How far a reported position may be from a spot and still be that spot.</summary>
+    private const float ReportMatchRadius = 12f;
+
+    /// <summary>
+    /// Takes another plugin's word for it when it says a coffer is at a place. That is a
+    /// stronger fact than anything we can work out ourselves, so the spot goes straight to
+    /// confirmed and stops being somewhere a coffer might be hiding.
+    /// </summary>
+    public bool TryHandleTreasureReport(SeString message)
+    {
+        if (Zone == null || !SpotsLoaded)
+            return false;
+
+        var match = TreasureReportPattern.Match(message.TextValue);
+        if (!match.Success)
+            return false;
+
+        var kind = match.Groups[1].Value.Equals("Silver", StringComparison.OrdinalIgnoreCase)
+            ? CofferKind.Silver
+            : CofferKind.Bronze;
+
+        var link = message.Payloads.OfType<MapLinkPayload>().FirstOrDefault();
+        if (link == null)
+        {
+            Svc.Log.Warning("[OccultCoffers] Treasure report had no map link, so there is nowhere to put it");
+            return false;
+        }
+
+        // A map link's raw position is the world position in thousandths, and its Y is the
+        // world Z - so this needs no coordinate maths of our own.
+        var reported = new Vector2(link.RawX / 1000f, link.RawY / 1000f);
+        var mapId = link.Map.RowId;
+
+        CofferSpot? best = null;
+        var bestDistance = ReportMatchRadius * ReportMatchRadius;
+        foreach (var spot in Of(kind))
+        {
+            if (spot.MapId != mapId)
+                continue;
+
+            var distance = Vector2.DistanceSquared(reported, new Vector2(spot.World.X, spot.World.Z));
+            if (distance > bestDistance)
+                continue;
+
+            bestDistance = distance;
+            best = spot;
+        }
+
+        if (best == null)
+        {
+            Svc.Log.Warning($"[OccultCoffers] {kind} coffer reported at {reported} on map {mapId}, " +
+                            "but no known spot is near enough to be it");
+            return false;
+        }
+
+        best.HadCoffer = true;
+        best.ReportedCoffer = true;
+        best.CofferGone = false;
+        return true;
     }
 
     private void StartCycle(int silver, int bronze)
@@ -200,9 +289,6 @@ internal sealed class Tracker(Configuration config)
 
         foreach (var spot in Spots)
         {
-            if (spot.Checked)
-                continue;
-
             // Only spots on the floor we are standing on can be judged from here.
             if (spot.MapId != CurrentMapId)
                 continue;
@@ -211,8 +297,22 @@ internal sealed class Tracker(Configuration config)
                 continue;
 
             spot.Checked = true;
-            spot.SawCoffer = coffers.Any(c => c.Kind == spot.Kind
+
+            // Re-read occupancy every pass rather than only on the first look: a coffer that
+            // was here a moment ago and is not here now is one that just got looted, and
+            // that is what turns it from confirmed back into swept.
+            var occupied = coffers.Any(c => c.Kind == spot.Kind
                 && Vector3.DistanceSquared(c.Position, spot.World) <= SpotOccupiedRadius * SpotOccupiedRadius);
+
+            if (occupied)
+            {
+                spot.HadCoffer = true;
+                spot.CofferGone = false;
+            }
+            else
+            {
+                spot.CofferGone = true;
+            }
         }
     }
 

@@ -113,6 +113,9 @@ public sealed class Plugin : IDalamudPlugin
             if (!config.Enabled)
                 return;
 
+            if (tracker.TryHandleTreasureReport(message.Message))
+                return;
+
             var text = message.Message.TextValue;
             if (!tracker.TryHandleMessage(text))
                 return;

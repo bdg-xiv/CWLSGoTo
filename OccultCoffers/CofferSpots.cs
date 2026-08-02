@@ -23,8 +23,24 @@ internal sealed class CofferSpot
     /// <summary>The player has been close enough to see whether anything is here.</summary>
     public bool Checked;
 
-    /// <summary>A coffer was actually standing here when we looked.</summary>
-    public bool SawCoffer;
+    /// <summary>
+    /// A coffer is known to have been here - seen in the world, or reported by another
+    /// plugin. Sticky, because the arithmetic cares that the coffer was accounted for, not
+    /// whether it is still sitting there.
+    /// </summary>
+    public bool HadCoffer;
+
+    /// <summary>Where that knowledge came from, so the tooltip can say so.</summary>
+    public bool ReportedCoffer;
+
+    /// <summary>
+    /// We are close enough to see the spot and there is nothing on it. This is what turns a
+    /// confirmed coffer back into a swept one the moment it gets looted.
+    /// </summary>
+    public bool CofferGone;
+
+    /// <summary>Known to hold a coffer, and it is still there.</summary>
+    public bool HoldsCoffer => HadCoffer && !CofferGone;
 }
 
 internal static class CofferSpots

@@ -97,19 +97,23 @@ internal sealed class MainWindow : Window
         }
 
         ImGui.Indent();
-        if (reported == 0)
+        if (confirmed.Count > 0)
         {
-            ImGui.TextColored(Dim, "None in the zone at the time of the reading.");
-        }
-        else if (confirmed.Count > 0)
-        {
-            ImGui.TextColored(Confirmed, $"{confirmed.Count} spot{(confirmed.Count == 1 ? "" : "s")} left and " +
-                                         $"{outstanding} coffer{(outstanding == 1 ? "" : "s")} left - they are marked on the map.");
+            ImGui.TextColored(Confirmed, tracker.Deduced(kind)
+                ? $"{candidates.Count} spot{(candidates.Count == 1 ? "" : "s")} left and " +
+                  $"{outstanding} coffer{(outstanding == 1 ? "" : "s")} left - they are marked on the map."
+                : $"{confirmed.Count} known to be there right now.");
+
             foreach (var spot in confirmed.OrderBy(Distance))
             {
                 var floor = tracker.Zone!.FloorNameFor(spot.MapId);
-                ImGui.TextColored(Confirmed, $"  {floor}  ({spot.World.X:F0}, {spot.World.Z:F0})   {Distance(spot):F0}y");
+                var source = spot.ReportedCoffer ? " reported" : spot.HadCoffer ? " seen" : "";
+                ImGui.TextColored(Confirmed, $"  {floor}  ({spot.World.X:F0}, {spot.World.Z:F0})   {Distance(spot):F0}y{source}");
             }
+        }
+        else if (reported == 0)
+        {
+            ImGui.TextColored(Dim, "None in the zone at the time of the reading.");
         }
         else if (outstanding == 0)
         {
