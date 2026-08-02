@@ -63,7 +63,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= windows.Draw;
         windows.RemoveAllWindows();
 
-        DisposeMapLayer();
+        TearDownNativeUi();
         ECommonsMain.Dispose();
     }
 
@@ -71,26 +71,34 @@ public sealed class Plugin : IDalamudPlugin
     /// The map nodes have to come down on the main thread, and the assembly must not go away
     /// before that has happened - so when unload lands on a worker thread, wait for the tick.
     /// </summary>
-    private void DisposeMapLayer()
+    private void TearDownNativeUi()
     {
         var layer = mapLayer;
         mapLayer = null;
-        if (layer == null)
-            return;
+
+        void Teardown()
+        {
+            layer?.Dispose();
+
+            // KamiToolKit installs a hook of its own during Initialize; without this the
+            // plugin unloads still owning it, which Dalamud reports as a leaked hook and
+            // which would eventually be a crash on the next reload.
+            KamiToolKitLibrary.Cleanup();
+        }
 
         if (Svc.Framework.IsInFrameworkUpdateThread)
         {
-            layer.Dispose();
+            Teardown();
             return;
         }
 
         try
         {
-            Svc.Framework.RunOnFrameworkThread(layer.Dispose).GetAwaiter().GetResult();
+            Svc.Framework.RunOnFrameworkThread(Teardown).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
-            Svc.Log.Error(ex, "Failed to tear down the map layer");
+            Svc.Log.Error(ex, "Failed to tear down the native UI");
         }
     }
 
