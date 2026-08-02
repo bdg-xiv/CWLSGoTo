@@ -256,9 +256,10 @@ internal sealed class MainWindow : Window
 
         ImGui.Spacing();
         ImGui.TextDisabled("Icons - press Enter to apply. Ids that do not exist are refused.");
-        DrawIcon("Silver", "silver", () => config.SilverIcon, v => config.SilverIcon = v, Configuration.DefaultSilverIcon);
-        DrawIcon("Bronze", "bronze", () => config.BronzeIcon, v => config.BronzeIcon = v, Configuration.DefaultBronzeIcon);
-        DrawIcon("Unswept", "unswept", () => config.CandidateIcon, v => config.CandidateIcon = v, Configuration.DefaultCandidateIcon);
+        DrawIcon("Silver confirmed", "silver", () => config.SilverIcon, v => config.SilverIcon = v, Configuration.DefaultSilverIcon);
+        DrawIcon("Bronze confirmed", "bronze", () => config.BronzeIcon, v => config.BronzeIcon = v, Configuration.DefaultBronzeIcon);
+        DrawIcon("Silver spot", "silverspot", () => config.SilverCandidateIcon, v => config.SilverCandidateIcon = v, Configuration.DefaultSilverCandidateIcon);
+        DrawIcon("Bronze spot", "bronzespot", () => config.BronzeCandidateIcon, v => config.BronzeCandidateIcon = v, Configuration.DefaultBronzeCandidateIcon);
         DrawIcon("Swept", "swept", () => config.ClearedIcon, v => config.ClearedIcon = v, Configuration.DefaultClearedIcon);
     }
 

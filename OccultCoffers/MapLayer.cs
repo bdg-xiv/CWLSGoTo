@@ -99,7 +99,8 @@ internal sealed class MapLayer : IDisposable
                 if (!spot.Checked)
                 {
                     if (config.ShowCandidates)
-                        wanted.Add((spot, Icons.OrFallback(config.CandidateIcon, Configuration.DefaultCandidateIcon),
+                        wanted.Add((spot,
+                            Icons.OrFallback(config.CandidateIconFor(kind), config.DefaultCandidateIconFor(kind)),
                             config.CandidateIconSize, $"{kind} spot - not swept yet"));
                 }
                 else if (config.ShowCleared)

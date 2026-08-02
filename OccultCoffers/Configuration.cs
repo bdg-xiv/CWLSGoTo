@@ -10,9 +10,14 @@ public class Configuration : IPluginConfiguration
     // the numbered attack markers - nothing else on an Occult Crescent map uses them.
     public const uint DefaultSilverIcon = 61201;
     public const uint DefaultBronzeIcon = 61202;
-    // "Circle" from the game's own field-marker set. Small, neutral, and unmistakably not
-    // a chest - which is the point, since another plugin is already drawing chests.
-    public const uint DefaultCandidateIcon = 61232;
+    // The chest icons, matching Eureka Linker's - an unswept spot is exactly what its
+    // markers mean, so they should read the same. Confirmed coffers are what needs to
+    // stand apart, and those use the attack markers below.
+    public const uint DefaultSilverCandidateIcon = 60355;
+    public const uint DefaultBronzeCandidateIcon = 60356;
+
+    // Only still here to migrate anyone off it.
+    private const uint LegacyCandidateIcon = 61232;
 
     // "Target to Ignore" - the crossed-out field marker. Swept and empty, nothing to
     // come back for, which is exactly what it looks like.
@@ -21,7 +26,7 @@ public class Configuration : IPluginConfiguration
     public const float DefaultConfirmedIconSize = 40f;
     public const float DefaultCandidateIconSize = 24f;
 
-    private const int CurrentVersion = 5;
+    private const int CurrentVersion = 6;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -61,8 +66,18 @@ public class Configuration : IPluginConfiguration
 
     public uint SilverIcon { get; set; } = DefaultSilverIcon;
     public uint BronzeIcon { get; set; } = DefaultBronzeIcon;
-    public uint CandidateIcon { get; set; } = DefaultCandidateIcon;
+    public uint SilverCandidateIcon { get; set; } = DefaultSilverCandidateIcon;
+    public uint BronzeCandidateIcon { get; set; } = DefaultBronzeCandidateIcon;
     public uint ClearedIcon { get; set; } = DefaultClearedIcon;
+
+    /// <summary>Superseded by the per-rarity pair above; kept so old settings can be read.</summary>
+    public uint CandidateIcon { get; set; }
+
+    internal uint CandidateIconFor(CofferKind kind)
+        => kind == CofferKind.Silver ? SilverCandidateIcon : BronzeCandidateIcon;
+
+    internal uint DefaultCandidateIconFor(CofferKind kind)
+        => kind == CofferKind.Silver ? DefaultSilverCandidateIcon : DefaultBronzeCandidateIcon;
 
     public float ConfirmedIconSize { get; set; } = DefaultConfirmedIconSize;
     public float CandidateIconSize { get; set; } = DefaultCandidateIconSize;
@@ -86,8 +101,15 @@ public class Configuration : IPluginConfiguration
         if (ClearedIcon == 60354)
             ClearedIcon = DefaultClearedIcon;
 
-        if (CandidateIcon == 60358)
-            CandidateIcon = DefaultCandidateIcon;
+        // Unswept spots used to be one icon for both rarities. A value that was left alone
+        // becomes the new per-rarity pair; one that was chosen deliberately is carried into
+        // both, so nothing silently reverts to something the user did not pick.
+        if (CandidateIcon is not (0 or 60358 or LegacyCandidateIcon))
+        {
+            SilverCandidateIcon = CandidateIcon;
+            BronzeCandidateIcon = CandidateIcon;
+        }
+        CandidateIcon = 0;
 
         // Bigger by default now that we know something else is drawing chests on the same
         // spots through the same overlay, and the draw order between the two is not ours
