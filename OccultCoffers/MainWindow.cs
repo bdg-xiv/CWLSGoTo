@@ -190,19 +190,21 @@ internal sealed class MainWindow : Window
         }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("A coffer is detected the moment the game streams it into the object table -\n" +
-                             "there is no radius to copy. So this measures one instead: the furthest a\n" +
-                             "coffer has actually appeared this visit, which is a lower bound on how far\n" +
-                             "you can trust an empty spot to really be empty.");
+                             "there is no radius to copy. So this measures one: the distance each coffer\n" +
+                             "was at when it first appeared, keeping the shortest. If one only showed up\n" +
+                             "at 40y then nothing past 40y can be trusted to have been looked at, however\n" +
+                             "far away another one happened to turn up.");
 
         if (config.AutoDetectionRange)
         {
             ImGui.Indent();
             ImGui.TextColored(Dim, tracker.RangeMeasured
-                ? $"Measured {tracker.ObservedRange:F0}y, using {tracker.EffectiveRange:F0}y."
-                : $"No coffer seen yet - holding at the {tracker.EffectiveRange:F0}y floor.");
+                ? $"Shortest of {tracker.RangeSamples} sighting{(tracker.RangeSamples == 1 ? "" : "s")}: " +
+                  $"{tracker.ObservedRange:F0}y, using {tracker.EffectiveRange:F0}y."
+                : $"No coffer has appeared yet - holding at the {tracker.EffectiveRange:F0}y floor.");
 
             var floor = config.MinDetectionRange;
-            if (ImGui.SliderFloat("Floor (yalms)", ref floor, 5f, 60f, "%.0f"))
+            if (ImGui.SliderFloat("Never below (yalms)", ref floor, 5f, 100f, "%.0f"))
             {
                 config.MinDetectionRange = floor;
                 config.Save();

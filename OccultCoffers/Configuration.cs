@@ -51,9 +51,8 @@ public class Configuration : IPluginConfiguration
     /// </summary>
     public bool AutoDetectionRange { get; set; } = true;
 
-    /// <summary>Used until a coffer has actually been seen, and as the floor thereafter.
-    /// Deliberately short: a spot wrongly called checked can be ruled out while a coffer is
-    /// still sitting on it, and that is the one error that produces a wrong answer.</summary>
+    /// <summary>Used until a coffer has actually appeared, and as the lower clamp thereafter,
+    /// so one freak short sighting cannot collapse the radius to nothing.</summary>
     public float MinDetectionRange { get; set; } = 15f;
 
     /// <summary>The radius when the automatic one is turned off.</summary>

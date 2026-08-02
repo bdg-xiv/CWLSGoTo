@@ -41,17 +41,33 @@ internal sealed class Tracker(Configuration config)
     public DateTime? SightAt { get; private set; }
     public uint CurrentMapId { get; private set; }
 
-    /// <summary>The furthest a coffer has actually turned up in the object table this visit.
-    /// Only ever grows, which keeps it a lower bound on what the game will stream - erring on
-    /// the short side, where the mistake costs a slower answer rather than a wrong one.</summary>
+    /// <summary>
+    /// The shortest distance at which a coffer has ever popped into the object table this
+    /// visit, and so the furthest we can claim to reliably see one. If some coffer only
+    /// appeared at 40 yalms, nothing beyond 40 can be trusted to have been looked at, no
+    /// matter that another one happened to show up at 120. Only ever shrinks.
+    /// </summary>
     public float ObservedRange { get; private set; }
 
     public bool RangeMeasured => ObservedRange > 0f;
 
+    /// <summary>How many coffers the measurement rests on.</summary>
+    public int RangeSamples { get; private set; }
+
     /// <summary>The radius a spot has to fall inside before we claim to have checked it.</summary>
     public float EffectiveRange => config.AutoDetectionRange
-        ? Math.Clamp(ObservedRange, config.MinDetectionRange, MaxSaneRange)
+        ? (RangeMeasured ? Math.Clamp(ObservedRange, config.MinDetectionRange, MaxSaneRange) : config.MinDetectionRange)
         : config.CheckRadius;
+
+    // A coffer that was already loaded when we arrived says nothing about detection range,
+    // and neither does one that appears right after a teleport - so measurements only count
+    // once the zone has settled and we have not just jumped across it.
+    private static readonly TimeSpan SettleDelay = TimeSpan.FromSeconds(5);
+    private const float TeleportJump = 30f;
+
+    private readonly HashSet<ulong> presentCoffers = [];
+    private DateTime measureFrom = DateTime.MaxValue;
+    private Vector3? lastSweepPosition;
 
     public int Reported(CofferKind kind) => kind == CofferKind.Silver ? ReportedSilver : ReportedBronze;
 
@@ -110,6 +126,10 @@ internal sealed class Tracker(Configuration config)
         Spots.Clear();
         SpotsLoaded = false;
         ObservedRange = 0f;
+        RangeSamples = 0;
+        presentCoffers.Clear();
+        lastSweepPosition = null;
+        measureFrom = DateTime.UtcNow + SettleDelay;
         Forget();
     }
 
@@ -283,7 +303,7 @@ internal sealed class Tracker(Configuration config)
             return;
 
         var here = new Vector2(player.Position.X, player.Position.Z);
-        var coffers = LiveCoffers(here);
+        var coffers = LiveCoffers(player.Position, here);
 
         var radiusSquared = EffectiveRange * EffectiveRange;
 
@@ -319,12 +339,18 @@ internal sealed class Tracker(Configuration config)
     /// <summary>
     /// Coffers standing in the world right now. Same test BOCCHI uses - object kind Treasure,
     /// still valid and still targetable - so one that has already been looted stops counting.
-    /// Every sighting also stretches the measured range.
+    /// The moment one first appears is also the measurement the detection range rests on.
     /// </summary>
-    private List<(Vector3 Position, CofferKind Kind)> LiveCoffers(Vector2 here)
+    private List<(Vector3 Position, CofferKind Kind)> LiveCoffers(Vector3 playerPosition, Vector2 here)
     {
         var coffers = new List<(Vector3, CofferKind)>();
         var treasures = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Treasure>();
+        var seenNow = new HashSet<ulong>();
+
+        var jumped = lastSweepPosition is { } previous
+                     && Vector3.Distance(previous, playerPosition) > TeleportJump;
+        var measuring = DateTime.UtcNow >= measureFrom && !jumped;
+        lastSweepPosition = playerPosition;
 
         foreach (var obj in Svc.Objects)
         {
@@ -349,12 +375,22 @@ internal sealed class Tracker(Configuration config)
             }
 
             coffers.Add((obj.Position, kind));
+            seenNow.Add(obj.GameObjectId);
+
+            // Only the first frame a coffer exists says anything: that is the distance the
+            // game was willing to stream it in at. Keep the shortest such distance, because
+            // the range has to be one every coffer would have cleared, not the luckiest one.
+            if (!measuring || presentCoffers.Contains(obj.GameObjectId))
+                continue;
 
             var flat = Vector2.Distance(here, new Vector2(obj.Position.X, obj.Position.Z));
-            if (flat > ObservedRange)
+            RangeSamples++;
+            if (!RangeMeasured || flat < ObservedRange)
                 ObservedRange = flat;
         }
 
+        presentCoffers.Clear();
+        presentCoffers.UnionWith(seenNow);
         return coffers;
     }
 }
