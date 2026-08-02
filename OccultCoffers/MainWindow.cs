@@ -236,6 +236,25 @@ internal sealed class MainWindow : Window
         }
 
         ImGui.Spacing();
+        var confirmedSize = config.ConfirmedIconSize;
+        if (ImGui.SliderFloat("Confirmed size", ref confirmedSize, 12f, 72f, "%.0f"))
+        {
+            config.ConfirmedIconSize = confirmedSize;
+            config.Save();
+        }
+
+        var candidateSize = config.CandidateIconSize;
+        if (ImGui.SliderFloat("Spot size", ref candidateSize, 8f, 56f, "%.0f"))
+        {
+            config.CandidateIconSize = candidateSize;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Other plugins draw on the same map layer, and which one ends up on top is\n" +
+                             "decided by load order, not by us. If these end up underneath something,\n" +
+                             "size is the reliable way to make them show.");
+
+        ImGui.Spacing();
         ImGui.TextDisabled("Icons - press Enter to apply. Ids that do not exist are refused.");
         DrawIcon("Silver", "silver", () => config.SilverIcon, v => config.SilverIcon = v, Configuration.DefaultSilverIcon);
         DrawIcon("Bronze", "bronze", () => config.BronzeIcon, v => config.BronzeIcon = v, Configuration.DefaultBronzeIcon);

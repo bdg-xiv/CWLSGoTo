@@ -14,7 +14,10 @@ public class Configuration : IPluginConfiguration
     // come back for, which is exactly what it looks like.
     public const uint DefaultClearedIcon = 61221;
 
-    private const int CurrentVersion = 3;
+    public const float DefaultConfirmedIconSize = 40f;
+    public const float DefaultCandidateIconSize = 24f;
+
+    private const int CurrentVersion = 4;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -57,8 +60,8 @@ public class Configuration : IPluginConfiguration
     public uint CandidateIcon { get; set; } = DefaultCandidateIcon;
     public uint ClearedIcon { get; set; } = DefaultClearedIcon;
 
-    public float ConfirmedIconSize { get; set; } = 32f;
-    public float CandidateIconSize { get; set; } = 18f;
+    public float ConfirmedIconSize { get; set; } = DefaultConfirmedIconSize;
+    public float CandidateIconSize { get; set; } = DefaultCandidateIconSize;
 
     /// <summary>
     /// Version 1 shipped the silver and bronze icons the wrong way round and used forgettable
@@ -81,6 +84,15 @@ public class Configuration : IPluginConfiguration
 
         if (CandidateIcon == 60358)
             CandidateIcon = DefaultCandidateIcon;
+
+        // Bigger by default now that we know something else is drawing chests on the same
+        // spots through the same overlay, and the draw order between the two is not ours
+        // to decide. Size is the only lever that always works.
+        if (ConfirmedIconSize == 32f)
+            ConfirmedIconSize = DefaultConfirmedIconSize;
+
+        if (CandidateIconSize == 18f)
+            CandidateIconSize = DefaultCandidateIconSize;
 
         Version = CurrentVersion;
         Save();
