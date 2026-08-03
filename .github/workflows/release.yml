@@ -62,6 +62,7 @@ jobs:
           @{ Project = "LetGo"; InternalName = "LetGo" },
           @{ Project = "FateHopper"; InternalName = "FateHopper" },
           @{ Project = "OccultCoffers"; InternalName = "OccultCoffers" },
+          @{ Project = "GlamRoulette"; InternalName = "GlamRoulette" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 

@@ -1,0 +1,125 @@
+using System;
+using Dalamud.Game.Command;
+using Dalamud.Interface.Windowing;
+using Dalamud.IoC;
+using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
+using ECommons;
+using ECommons.DalamudServices;
+using ECommons.Throttlers;
+
+namespace GlamRoulette;
+
+public sealed class Plugin : IDalamudPlugin
+{
+    private const string CommandName = "/glamroulette";
+    private const string UpdateThrottleName = "GlamRouletteUpdate";
+
+    [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+
+    private readonly Configuration config;
+    private readonly GlamourerIpc glamourer;
+    private readonly Wardrobe wardrobe;
+    private readonly PlayerContextMenu contextMenu;
+    private readonly WindowSystem windows = new("GlamRoulette");
+    private readonly MainWindow window;
+
+    public Plugin(IDalamudPluginInterface pluginInterface)
+    {
+        ECommonsMain.Init(pluginInterface, this);
+
+        config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        glamourer = new GlamourerIpc();
+        wardrobe = new Wardrobe(config, glamourer);
+        contextMenu = new PlayerContextMenu(config, wardrobe);
+        window = new MainWindow(config, wardrobe, glamourer);
+        windows.AddWindow(window);
+
+        PluginInterface.UiBuilder.Draw += windows.Draw;
+        PluginInterface.UiBuilder.OpenMainUi += ToggleWindow;
+        PluginInterface.UiBuilder.OpenConfigUi += ToggleWindow;
+
+        Svc.Framework.Update += OnFrameworkUpdate;
+
+        Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
+        {
+            HelpMessage = "Open Glam Roulette. Use 'reroll' to re-roll everyone, 'off'/'on' to toggle.",
+        });
+    }
+
+    public void Dispose()
+    {
+        Svc.Commands.RemoveHandler(CommandName);
+        Svc.Framework.Update -= OnFrameworkUpdate;
+
+        PluginInterface.UiBuilder.OpenConfigUi -= ToggleWindow;
+        PluginInterface.UiBuilder.OpenMainUi -= ToggleWindow;
+        PluginInterface.UiBuilder.Draw -= windows.Draw;
+        windows.RemoveAllWindows();
+
+        contextMenu.Dispose();
+
+        // Leave nobody wearing something they did not choose once this is gone.
+        try
+        {
+            wardrobe.RevertAll();
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Error(ex, "Failed to put everyone back");
+        }
+
+        ECommonsMain.Dispose();
+    }
+
+    private void ToggleWindow() => window.IsOpen = !window.IsOpen;
+
+    private void OnCommand(string command, string arguments)
+    {
+        var argument = arguments.Trim().ToLowerInvariant();
+        switch (argument)
+        {
+            case "":
+                ToggleWindow();
+                return;
+
+            case "reroll":
+                var count = wardrobe.RerollEverybody();
+                Svc.Chat.Print($"[Glam Roulette] Re-rolling {count} remembered outfit(s).");
+                return;
+
+            case "on":
+            case "off":
+                config.Enabled = argument == "on";
+                config.Save();
+                if (!config.Enabled)
+                    wardrobe.RevertAll();
+                Svc.Chat.Print($"[Glam Roulette] {(config.Enabled ? "On" : "Off")}.");
+                return;
+
+            case "revert":
+                wardrobe.RevertAll();
+                Svc.Chat.Print("[Glam Roulette] Put everyone back.");
+                return;
+
+            default:
+                Svc.Chat.Print($"[Glam Roulette] Unknown argument '{argument}'. Use reroll, revert, on or off.");
+                return;
+        }
+    }
+
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        try
+        {
+            if (!EzThrottler.Throttle(UpdateThrottleName, 1000))
+                return;
+
+            wardrobe.Update();
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Error(ex, "Failed during the framework update");
+        }
+    }
+}
