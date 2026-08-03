@@ -24,10 +24,18 @@ public class Configuration : IPluginConfiguration
     /// discipline subfolders are fair game for everyone.</summary>
     public bool IncludeSharedDesigns { get; set; } = true;
 
-    public string WarFolder { get; set; } = "war";
-    public string MagicFolder { get; set; } = "magic";
+    // Per-role, checked first.
+    public string TankFolder { get; set; } = "tank";
+    public string MeleeFolder { get; set; } = "melee";
+    public string RangedFolder { get; set; } = "ranged";
+    public string CasterFolder { get; set; } = "caster";
+    public string HealerFolder { get; set; } = "healer";
     public string CrafterFolder { get; set; } = "crafter";
     public string GathererFolder { get; set; } = "gatherer";
+
+    // The coarser bucket, used when a role has no folder of its own.
+    public string WarFolder { get; set; } = "war";
+    public string MagicFolder { get; set; } = "magic";
 
     /// <summary>Re-dye each outfit - one colour per channel across the whole outfit - so two
     /// people in the same design still differ.</summary>

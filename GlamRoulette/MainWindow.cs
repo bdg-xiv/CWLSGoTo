@@ -82,26 +82,50 @@ internal sealed class MainWindow : Window
                              "Leave it empty to draw from every design you have.");
 
         var byJob = config.MatchJobCategory;
-        if (ImGui.Checkbox("Separate pools per discipline", ref byJob))
+        if (ImGui.Checkbox("Separate pools per role", ref byJob))
         {
             config.MatchJobCategory = byJob;
             config.Save();
             wardrobe.RerollEverybody();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Draws from a subfolder of the design folder chosen by what the wearer is:\n" +
-                             "Disciples of War, Disciples of Magic, crafters and gatherers each get\n" +
-                             "their own. A discipline with no subfolder, or an empty one, falls back to\n" +
-                             "the whole pool.");
+            ImGui.SetTooltip("Draws from a subfolder of the design folder chosen by what the wearer is.\n" +
+                             "A role folder is used if it has anything in it; failing that the coarser\n" +
+                             "war or magic folder; failing that the whole pool. Both \"tank\" and\n" +
+                             "\"war/tank\" work, so organise it flat or nested as you like.");
 
         if (config.MatchJobCategory)
         {
             ImGui.Indent();
-            DrawFolder("War", () => config.WarFolder, v => config.WarFolder = v, JobPools.Group.War);
-            DrawFolder("Magic", () => config.MagicFolder, v => config.MagicFolder = v, JobPools.Group.Magic);
-            DrawFolder("Crafter", () => config.CrafterFolder, v => config.CrafterFolder = v, JobPools.Group.Crafter);
-            DrawFolder("Gatherer", () => config.GathererFolder, v => config.GathererFolder = v, JobPools.Group.Gatherer);
+            DrawFolder("Tanks", () => config.TankFolder, v => config.TankFolder = v, JobPools.Group.Tank);
+            DrawFolder("Melee DPS", () => config.MeleeFolder, v => config.MeleeFolder = v, JobPools.Group.Melee);
+            DrawFolder("Physical ranged", () => config.RangedFolder, v => config.RangedFolder = v, JobPools.Group.Ranged);
+            DrawFolder("Magical ranged", () => config.CasterFolder, v => config.CasterFolder = v, JobPools.Group.Caster);
+            DrawFolder("Healers", () => config.HealerFolder, v => config.HealerFolder = v, JobPools.Group.Healer);
+            DrawFolder("Crafters", () => config.CrafterFolder, v => config.CrafterFolder = v, JobPools.Group.Crafter);
+            DrawFolder("Gatherers", () => config.GathererFolder, v => config.GathererFolder = v, JobPools.Group.Gatherer);
 
+            ImGui.Spacing();
+            ImGui.TextDisabled("Fallbacks, used when a role has no folder of its own:");
+            var war = config.WarFolder;
+            ImGui.SetNextItemWidth(150f);
+            if (ImGui.InputText("War", ref war, 100))
+            {
+                config.WarFolder = war;
+                config.Save();
+                wardrobe.RerollEverybody();
+            }
+
+            var magic = config.MagicFolder;
+            ImGui.SetNextItemWidth(150f);
+            if (ImGui.InputText("Magic", ref magic, 100))
+            {
+                config.MagicFolder = magic;
+                config.Save();
+                wardrobe.RerollEverybody();
+            }
+
+            ImGui.Spacing();
             var shared = config.IncludeSharedDesigns;
             if (ImGui.Checkbox("Anything loose in the design folder suits everyone", ref shared))
             {

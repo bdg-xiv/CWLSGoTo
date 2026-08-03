@@ -58,17 +58,23 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             return all;
 
         var root = config.DesignFolder.Trim().Trim('/');
-        var folder = JobPools.FolderFor(config, group).Trim().Trim('/');
-        if (folder.Length == 0)
-            return all;
+        var shared = config.IncludeSharedDesigns
+            ? all.Where(d => JobPools.IsDirectlyIn(d.Path, root)).ToList()
+            : [];
 
-        var prefix = JobPools.Combine(root, folder);
-        var pool = all.Where(d => JobPools.IsInFolder(d.Path, prefix)).ToList();
+        // Most specific folder that actually has something in it wins, so a role folder beats
+        // its discipline and an empty one is simply passed over rather than emptying the pool.
+        foreach (var prefix in JobPools.FoldersFor(config, root, group))
+        {
+            var pool = all.Where(d => JobPools.IsInFolder(d.Path, prefix)).ToList();
+            if (pool.Count == 0)
+                continue;
 
-        if (config.IncludeSharedDesigns)
-            pool.AddRange(all.Where(d => JobPools.IsDirectlyIn(d.Path, root)));
+            pool.AddRange(shared);
+            return pool;
+        }
 
-        return pool.Count > 0 ? pool : all;
+        return shared.Count > 0 ? shared : all;
     }
 
     /// <summary>Hands out an outfit, keeping whatever this player was given before.</summary>
