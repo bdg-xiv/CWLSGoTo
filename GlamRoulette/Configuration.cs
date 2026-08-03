@@ -16,6 +16,12 @@ public class Configuration : IPluginConfiguration
     /// <summary>Only dress female characters, since the designs are cut for them.</summary>
     public bool FemaleOnly { get; set; } = true;
 
+    /// <summary>Re-dye each outfit, so two people in the same design still differ.</summary>
+    public bool RandomizeDyes { get; set; } = true;
+
+    /// <summary>Roll the second dye channel separately instead of matching the first.</summary>
+    public bool DyeSecondChannel { get; set; } = true;
+
     /// <summary>Only draw from designs whose Glamourer folder path starts with this.
     /// Empty means every design, which is rarely what anyone wants.</summary>
     public string DesignFolder { get; set; } = string.Empty;

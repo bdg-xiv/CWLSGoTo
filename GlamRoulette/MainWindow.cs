@@ -80,6 +80,31 @@ internal sealed class MainWindow : Window
             config.Save();
         }
 
+        var dyes = config.RandomizeDyes;
+        if (ImGui.Checkbox("Randomise dyes", ref dyes))
+        {
+            config.RandomizeDyes = dyes;
+            config.Save();
+            wardrobe.RerollEverybody();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Re-dyes each slot after the outfit goes on, so two people wearing\n" +
+                             "the same design still look different. The colours are derived from\n" +
+                             "who is wearing it, so they stay put rather than shimmering.");
+
+        if (config.RandomizeDyes)
+        {
+            var second = config.DyeSecondChannel;
+            if (ImGui.Checkbox("Roll the second dye channel separately", ref second))
+            {
+                config.DyeSecondChannel = second;
+                config.Save();
+                wardrobe.RerollEverybody();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Off means both channels get the same colour, which is tamer.");
+        }
+
         var reapply = config.Reapply;
         if (ImGui.Checkbox("Re-apply periodically", ref reapply))
         {

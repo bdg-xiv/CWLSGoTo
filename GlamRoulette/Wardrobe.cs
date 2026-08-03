@@ -12,7 +12,7 @@ namespace GlamRoulette;
 /// object index, because an index is only meaningful for as long as the player stays loaded
 /// and the whole point here is that it survives them walking away.
 /// </summary>
-internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer)
+internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes)
 {
     private readonly Random random = new();
 
@@ -135,6 +135,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer)
             if (result is GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone)
             {
                 applied[player.ObjectIndex] = (key, design);
+
+                // Has to follow every apply, not just the first: applying the design puts the
+                // design's own dyes back on, so the re-dye would be undone by the next pass.
+                dyes.Apply(player.ObjectIndex, key, design);
             }
             else if (result == GlamourerIpc.Result.DesignNotFound)
             {

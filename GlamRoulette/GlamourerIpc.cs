@@ -36,6 +36,8 @@ internal sealed class GlamourerIpc
     private readonly ICallGateSubscriber<Dictionary<Guid, (string DisplayName, string FullPath, uint DisplayColor, bool ShownInQdb)>> designList;
     private readonly ICallGateSubscriber<Guid, int, uint, ulong, int> applyDesign;
     private readonly ICallGateSubscriber<int, uint, ulong, int> revertState;
+    private readonly ICallGateSubscriber<Guid, Newtonsoft.Json.Linq.JObject?> designJObject;
+    private readonly ICallGateSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int> setItem;
 
     public GlamourerIpc()
     {
@@ -44,7 +46,32 @@ internal sealed class GlamourerIpc
             .GetIpcSubscriber<Dictionary<Guid, (string, string, uint, bool)>>("Glamourer.GetDesignListExtended");
         applyDesign = Svc.PluginInterface.GetIpcSubscriber<Guid, int, uint, ulong, int>("Glamourer.ApplyDesign");
         revertState = Svc.PluginInterface.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
+        designJObject = Svc.PluginInterface
+            .GetIpcSubscriber<Guid, Newtonsoft.Json.Linq.JObject?>("Glamourer.GetDesignJObject");
+        setItem = Svc.PluginInterface
+            .GetIpcSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int>("Glamourer.SetItem.V3");
     }
+
+    /// <summary>The design as stored, so its per-slot items can be read back.</summary>
+    public Newtonsoft.Json.Linq.JObject? Design(Guid design)
+    {
+        try
+        {
+            return designJObject.InvokeFunc(design);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not read design {design}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Re-sets a slot to the item it already has, but dyed. There is no "just change the dye"
+    /// call - the item has to be named again or Glamourer has nothing to put the dye on.
+    /// </summary>
+    public Result Dye(int objectIndex, byte slot, ulong itemId, IReadOnlyList<byte> stains)
+        => Call(() => setItem.InvokeFunc(objectIndex, slot, itemId, stains, 0, (ulong)ApplyFlag.Equipment));
 
     /// <summary>Glamourer is loaded and speaking a version we understand.</summary>
     public bool Available
