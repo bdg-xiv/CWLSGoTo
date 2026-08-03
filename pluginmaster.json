@@ -428,6 +428,31 @@
   },
   {
     "Author": "bdg",
+    "Name": "Glam Roulette",
+    "InternalName": "GlamRoulette",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Hands every other player around you a Glamourer design picked at random, so the world stops being a sea of the same three glamours. Glamourer can already do this to one person at a time - it matches automated designs to one exact character name, and its apply command takes a single target - so this walks the object table instead and does it to everyone. Each player keeps the outfit they were given: the choice is remembered against their name and world, so the same person looks the same tomorrow rather than reshuffling every time they walk back into view. Re-roll one person from the context menu on their name, or everyone at once with /glamroulette reroll. The design pool can be narrowed to a folder so it only draws from the designs you meant for this. Yourself is never touched, party members can be exempted, and everything it changed is reverted when the plugin unloads. All of it is local: this changes how other people look on your screen and nowhere else - they see themselves normally, and so does everyone else. Toggle the window with /glamroulette.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "glamourer",
+      "glamour",
+      "random",
+      "cosmetic"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Dresses everyone else in a random Glamourer design.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/GlamRoulette.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/GlamRoulette.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/GlamRoulette.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.25",
