@@ -7,8 +7,9 @@ using Lumina.Excel.Sheets;
 namespace GlamRoulette;
 
 /// <summary>
-/// Re-dyes an outfit after it has been put on. Glamourer has no "change the dye" call, so
-/// each slot is set to the item it already has with different stains attached.
+/// Re-dyes an outfit after it has been put on: one colour for channel one and one for
+/// channel two, the same across every slot. Glamourer has no "change the dye" call, so each
+/// slot is set to the item it already has with different stains attached.
 /// </summary>
 internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
 {
@@ -88,15 +89,17 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
         if (dyes.Length == 0)
             return;
 
-        foreach (var (slot, itemId) in ItemsOf(design))
-        {
-            var first = dyes[(int)(Seed(playerKey, design, slot, 0) % (uint)dyes.Length)];
-            var second = config.DyeSecondChannel
-                ? dyes[(int)(Seed(playerKey, design, slot, 1) % (uint)dyes.Length)]
-                : first;
+        // One colour per channel for the whole outfit, not per slot. Rolling every slot
+        // separately produced a harlequin; a single pair reads as an outfit someone dyed.
+        // The two channels are rolled independently, so they can land on the same colour
+        // by chance, which is fine - that is a plain single-dyed outfit.
+        var first = dyes[(int)(Seed(playerKey, design, 0) % (uint)dyes.Length)];
+        var second = config.DyeSecondChannel
+            ? dyes[(int)(Seed(playerKey, design, 1) % (uint)dyes.Length)]
+            : first;
 
+        foreach (var (slot, itemId) in ItemsOf(design))
             glamourer.Dye(objectIndex, slot, itemId, [first, second]);
-        }
     }
 
     /// <summary>
@@ -104,7 +107,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
     /// dye is derived rather than drawn. String.GetHashCode is randomised per process and
     /// would give someone a new palette on every restart, hence the hand-rolled one.
     /// </summary>
-    private static uint Seed(string playerKey, Guid design, byte slot, byte channel)
+    private static uint Seed(string playerKey, Guid design, byte channel)
     {
         unchecked
         {
@@ -116,7 +119,6 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
             foreach (var b in design.ToByteArray())
                 hash = (hash ^ b) * 16777619u;
 
-            hash = (hash ^ slot) * 16777619u;
             hash = (hash ^ channel) * 16777619u;
             return hash;
         }

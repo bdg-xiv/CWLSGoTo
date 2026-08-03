@@ -88,9 +88,10 @@ internal sealed class MainWindow : Window
             wardrobe.RerollEverybody();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Re-dyes each slot after the outfit goes on, so two people wearing\n" +
-                             "the same design still look different. The colours are derived from\n" +
-                             "who is wearing it, so they stay put rather than shimmering.");
+            ImGui.SetTooltip("Re-dyes the outfit after it goes on, so two people wearing the same\n" +
+                             "design still look different. One colour per channel across the whole\n" +
+                             "outfit, not per slot. The colours are derived from who is wearing it,\n" +
+                             "so they stay put rather than shimmering.");
 
         if (config.RandomizeDyes)
         {
@@ -102,7 +103,8 @@ internal sealed class MainWindow : Window
                 wardrobe.RerollEverybody();
             }
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Off means both channels get the same colour, which is tamer.");
+                ImGui.SetTooltip("The two channels are rolled independently and can land on the same\n" +
+                                 "colour by chance. Off ties them together so that always happens.");
         }
 
         var reapply = config.Reapply;
