@@ -76,13 +76,23 @@ internal sealed class GlamourerIpc
     }
 
     /// <summary>
+    /// Equipment only, deliberately. Glamourer turns these flags into a mask over what the
+    /// design is allowed to touch, so Equipment on its own masks every customization out and
+    /// a design cannot hand its face, race or colouring to the wearer whatever it has ticked.
+    /// Equipment|Customization is not the stricter request it looks like - it means "restrict
+    /// nothing" and leaves the outcome entirely up to the design.
+    ///
     /// Applied without Once, so the design sticks rather than being dropped the next time
     /// Glamourer reapplies its own automation over the top.
     /// </summary>
     public Result Apply(Guid design, int objectIndex)
-        => Call(() => applyDesign.InvokeFunc(design, objectIndex, 0,
-            (ulong)(ApplyFlag.Equipment | ApplyFlag.Customization)));
+        => Call(() => applyDesign.InvokeFunc(design, objectIndex, 0, (ulong)ApplyFlag.Equipment));
 
+    /// <summary>
+    /// Reverting is the opposite case and does want everything: applying an equipment-only
+    /// design over someone only sets equipment, it does not take a customization off that was
+    /// applied before, so undoing has to be allowed to reach further than dressing.
+    /// </summary>
     public Result Revert(int objectIndex)
         => Call(() => revertState.InvokeFunc(objectIndex, 0,
             (ulong)(ApplyFlag.Equipment | ApplyFlag.Customization)));

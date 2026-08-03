@@ -64,6 +64,15 @@ internal sealed class MainWindow : Window
             ImGui.SetTooltip("Only designs whose Glamourer folder path starts with this are used.\n" +
                              "Leave it empty to draw from every design you have.");
 
+        var femaleOnly = config.FemaleOnly;
+        if (ImGui.Checkbox("Female characters only", ref femaleOnly))
+        {
+            config.FemaleOnly = femaleOnly;
+            config.Save();
+            if (!femaleOnly)
+                wardrobe.RevertAll();
+        }
+
         var skipParty = config.SkipParty;
         if (ImGui.Checkbox("Leave party members alone", ref skipParty))
         {

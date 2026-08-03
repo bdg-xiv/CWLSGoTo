@@ -13,6 +13,9 @@ public class Configuration : IPluginConfiguration
     /// <summary>Leave party members in the glamour they chose.</summary>
     public bool SkipParty { get; set; }
 
+    /// <summary>Only dress female characters, since the designs are cut for them.</summary>
+    public bool FemaleOnly { get; set; } = true;
+
     /// <summary>Only draw from designs whose Glamourer folder path starts with this.
     /// Empty means every design, which is rarely what anyone wants.</summary>
     public string DesignFolder { get; set; } = string.Empty;

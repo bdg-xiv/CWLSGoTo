@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using ECommons.DalamudServices;
 
@@ -106,6 +107,8 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer)
                 continue;
             if (config.SkipParty && InParty(player))
                 continue;
+            if (config.FemaleOnly && !IsFemale(player))
+                continue;
 
             present.Add(player.ObjectIndex);
 
@@ -163,4 +166,16 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer)
 
     private static bool InParty(IPlayerCharacter player)
         => Svc.Party.Any(member => member.GameObject?.GameObjectId == player.GameObjectId);
+
+    /// <summary>
+    /// Gender lives at index 1 of the customize data, 0 male and 1 female. A character whose
+    /// data has not streamed in yet reads as nothing rather than as male, so it is skipped and
+    /// picked up on a later pass instead of being wrongly dressed or wrongly spared.
+    /// </summary>
+    private static bool IsFemale(IPlayerCharacter player)
+    {
+        var customize = player.Customize;
+        return customize.Length > (int)CustomizeIndex.Gender
+               && customize[(int)CustomizeIndex.Gender] == 1;
+    }
 }
