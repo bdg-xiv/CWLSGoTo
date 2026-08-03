@@ -27,6 +27,23 @@ internal sealed class MainWindow : Window
         };
     }
 
+    /// <summary>A discipline's subfolder, with a live count so a typo is obvious.</summary>
+    private void DrawFolder(string label, Func<string> get, Action<string> set, JobPools.Group group)
+    {
+        var value = get();
+        ImGui.SetNextItemWidth(150f);
+        if (ImGui.InputText(label, ref value, 100))
+        {
+            set(value);
+            config.Save();
+            wardrobe.RerollEverybody();
+        }
+
+        ImGui.SameLine();
+        var count = wardrobe.PoolFor(group).Count;
+        ImGui.TextColored(count == 0 ? Bad : Dim, $"{count} design{(count == 1 ? "" : "s")}");
+    }
+
     public override void Draw()
     {
         if (!glamourer.Available)
@@ -63,6 +80,37 @@ internal sealed class MainWindow : Window
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Only designs whose Glamourer folder path starts with this are used.\n" +
                              "Leave it empty to draw from every design you have.");
+
+        var byJob = config.MatchJobCategory;
+        if (ImGui.Checkbox("Separate pools per discipline", ref byJob))
+        {
+            config.MatchJobCategory = byJob;
+            config.Save();
+            wardrobe.RerollEverybody();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Draws from a subfolder of the design folder chosen by what the wearer is:\n" +
+                             "Disciples of War, Disciples of Magic, crafters and gatherers each get\n" +
+                             "their own. A discipline with no subfolder, or an empty one, falls back to\n" +
+                             "the whole pool.");
+
+        if (config.MatchJobCategory)
+        {
+            ImGui.Indent();
+            DrawFolder("War", () => config.WarFolder, v => config.WarFolder = v, JobPools.Group.War);
+            DrawFolder("Magic", () => config.MagicFolder, v => config.MagicFolder = v, JobPools.Group.Magic);
+            DrawFolder("Crafter", () => config.CrafterFolder, v => config.CrafterFolder = v, JobPools.Group.Crafter);
+            DrawFolder("Gatherer", () => config.GathererFolder, v => config.GathererFolder = v, JobPools.Group.Gatherer);
+
+            var shared = config.IncludeSharedDesigns;
+            if (ImGui.Checkbox("Anything loose in the design folder suits everyone", ref shared))
+            {
+                config.IncludeSharedDesigns = shared;
+                config.Save();
+                wardrobe.RerollEverybody();
+            }
+            ImGui.Unindent();
+        }
 
         var femaleOnly = config.FemaleOnly;
         if (ImGui.Checkbox("Female characters only", ref femaleOnly))

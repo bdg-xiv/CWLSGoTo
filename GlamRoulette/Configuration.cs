@@ -16,6 +16,19 @@ public class Configuration : IPluginConfiguration
     /// <summary>Only dress female characters, since the designs are cut for them.</summary>
     public bool FemaleOnly { get; set; } = true;
 
+    /// <summary>Draw from a different pool depending on what the wearer is: a subfolder per
+    /// discipline, under the design folder.</summary>
+    public bool MatchJobCategory { get; set; } = true;
+
+    /// <summary>Designs sitting directly in the design folder rather than in one of the
+    /// discipline subfolders are fair game for everyone.</summary>
+    public bool IncludeSharedDesigns { get; set; } = true;
+
+    public string WarFolder { get; set; } = "war";
+    public string MagicFolder { get; set; } = "magic";
+    public string CrafterFolder { get; set; } = "crafter";
+    public string GathererFolder { get; set; } = "gatherer";
+
     /// <summary>Re-dye each outfit - one colour per channel across the whole outfit - so two
     /// people in the same design still differ.</summary>
     public bool RandomizeDyes { get; set; } = true;

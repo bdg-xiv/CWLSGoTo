@@ -28,14 +28,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     public static string KeyOf(IPlayerCharacter player)
         => $"{player.Name.TextValue}@{player.HomeWorld.ValueNullable?.Name.ExtractText() ?? "?"}";
 
-    /// <summary>The designs the pool draws from, after the folder filter.</summary>
+    /// <summary>Every design the folder filter allows, ignoring discipline.</summary>
     public List<(Guid Id, string Name, string Path)> Pool()
     {
+        var root = config.DesignFolder.Trim().Trim('/');
         var pool = new List<(Guid, string, string)>();
+
         foreach (var (id, data) in glamourer.Designs())
         {
-            if (config.DesignFolder.Length > 0
-                && !data.FullPath.StartsWith(config.DesignFolder, StringComparison.OrdinalIgnoreCase))
+            if (!JobPools.IsInFolder(data.FullPath, root))
                 continue;
 
             pool.Add((id, data.DisplayName, data.FullPath));
@@ -44,13 +45,39 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return pool;
     }
 
+    /// <summary>
+    /// The designs a particular discipline may be given: its own subfolder, plus anything
+    /// sitting loose in the design folder if those are being shared out. An empty result
+    /// falls back to the whole pool rather than leaving the wearer undressed - a missing
+    /// subfolder should look like "not set up yet", not like the plugin is broken.
+    /// </summary>
+    public List<(Guid Id, string Name, string Path)> PoolFor(JobPools.Group group)
+    {
+        var all = Pool();
+        if (!config.MatchJobCategory || group == JobPools.Group.Unknown)
+            return all;
+
+        var root = config.DesignFolder.Trim().Trim('/');
+        var folder = JobPools.FolderFor(config, group).Trim().Trim('/');
+        if (folder.Length == 0)
+            return all;
+
+        var prefix = JobPools.Combine(root, folder);
+        var pool = all.Where(d => JobPools.IsInFolder(d.Path, prefix)).ToList();
+
+        if (config.IncludeSharedDesigns)
+            pool.AddRange(all.Where(d => JobPools.IsDirectlyIn(d.Path, root)));
+
+        return pool.Count > 0 ? pool : all;
+    }
+
     /// <summary>Hands out an outfit, keeping whatever this player was given before.</summary>
-    private Guid? DesignFor(string key)
+    private Guid? DesignFor(string key, JobPools.Group group)
     {
         if (config.Assignments.TryGetValue(key, out var existing))
             return existing;
 
-        var pool = Pool();
+        var pool = PoolFor(group);
         if (pool.Count == 0)
             return null;
 
@@ -60,22 +87,43 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return chosen;
     }
 
-    /// <summary>Throws away this player's outfit so the next pass picks a new one.</summary>
+    /// <summary>
+    /// Throws away this player's outfit so the next pass picks a new one. The key carries the
+    /// discipline when pools are split, so this clears every discipline they have been seen
+    /// on rather than only the one they happen to be wearing.
+    /// </summary>
     public bool Reroll(string key)
     {
-        if (!config.Assignments.Remove(key))
+        var player = PlayerOf(key);
+        var stale = config.Assignments.Keys
+            .Where(k => k == player || k.StartsWith(player + "#", StringComparison.Ordinal))
+            .ToList();
+
+        if (stale.Count == 0)
             return false;
+
+        foreach (var k in stale)
+            config.Assignments.Remove(k);
 
         config.Save();
 
         // Drop the applied record too, or nothing would re-apply until they reload.
-        foreach (var index in applied.Where(a => a.Value.Key == key).Select(a => a.Key).ToList())
+        foreach (var index in applied
+                     .Where(a => a.Value.Key == player
+                                 || a.Value.Key.StartsWith(player + "#", StringComparison.Ordinal))
+                     .Select(a => a.Key).ToList())
         {
             applied.Remove(index);
             lastApplied.Remove(index);
         }
 
         return true;
+    }
+
+    private static string PlayerOf(string key)
+    {
+        var hash = key.IndexOf('#');
+        return hash < 0 ? key : key[..hash];
     }
 
     public int RerollEverybody()
@@ -112,8 +160,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
             present.Add(player.ObjectIndex);
 
+            // The discipline is part of the key when pools are split, so switching from a
+            // warrior to a weaver gets an outfit from the right pool instead of keeping the
+            // one they were given as a warrior.
+            var group = JobPools.GroupOf(player);
             var key = KeyOf(player);
-            if (DesignFor(key) is not { } design)
+            if (config.MatchJobCategory && group != JobPools.Group.Unknown)
+                key += "#" + group;
+
+            if (DesignFor(key, group) is not { } design)
                 continue;
 
             if (applied.TryGetValue(player.ObjectIndex, out var current)
