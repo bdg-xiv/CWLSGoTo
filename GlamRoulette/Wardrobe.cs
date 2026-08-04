@@ -196,12 +196,18 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     }
 
     /// <summary>Hands out an outfit, keeping whatever this player was given before.</summary>
-    private Guid? DesignFor(string key, JobPools.Group group)
+    private Guid? DesignFor(string key, JobPools.Group group, Guid? avoid = null)
     {
         if (config.Assignments.TryGetValue(key, out var existing))
             return existing;
 
         var pool = PoolFor(group);
+
+        // Drawing the one just taken off would look like nothing happened - the dyes are
+        // derived from the outfit, so even those would come back the same.
+        if (avoid is { } previous && pool.Count > 1)
+            pool = pool.Where(d => d.Id != previous).ToList();
+
         if (pool.Count == 0)
             return null;
 
@@ -250,6 +256,40 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return hash < 0 ? key : key[..hash];
     }
 
+    /// <summary>
+    /// Puts one of your own outfits back in the pack once it has been yours long enough, and
+    /// returns it so the replacement is a different one. The clock is per outfit rather than per
+    /// player: your healer one ageing out leaves your tank one alone, and coming back to a job
+    /// after a while is exactly when you find it has changed.
+    ///
+    /// It runs while you are wearing it too, so sitting on one job long enough changes it where
+    /// you stand rather than waiting for you to switch and switch back.
+    /// </summary>
+    private Guid? ExpireMine(string key)
+    {
+        if (config.MyRotateMinutes <= 0 || IsPinned(key))
+            return null;
+
+        var now = DateTime.UtcNow;
+
+        // First sight of this one: start its clock rather than treating it as ancient.
+        if (!config.MyOutfitSince.TryGetValue(key, out var since))
+        {
+            config.MyOutfitSince[key] = now;
+            config.Save();
+            return null;
+        }
+
+        if (now - since < TimeSpan.FromMinutes(config.MyRotateMinutes))
+            return null;
+
+        var previous = config.Assignments.TryGetValue(key, out var worn) ? worn : (Guid?)null;
+        config.Assignments.Remove(key);
+        config.MyOutfitSince[key] = now;
+        config.Save();
+        return previous;
+    }
+
     /// <summary>Asks for every race swap again, for when the clan being used changes.</summary>
     public void ForgetRaces() => races.Forget();
 
@@ -289,7 +329,8 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             // Yourself is governed by its own setting and nothing else. You are in your own
             // party, so leaving party members alone would otherwise quietly cancel it the
             // moment anyone grouped with you.
-            if (player.GameObjectId == me.GameObjectId)
+            var isMe = player.GameObjectId == me.GameObjectId;
+            if (isMe)
             {
                 if (!config.IncludeMe)
                     continue;
@@ -328,7 +369,8 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (config.MatchJobCategory && group != JobPools.Group.Unknown)
                 key += "#" + group;
 
-            if (DesignFor(key, group) is not { } design)
+            // Only your own outfits go stale. Everyone else's are meant to stick.
+            if (DesignFor(key, group, isMe ? ExpireMine(key) : null) is not { } design)
                 continue;
 
             if (applied.TryGetValue(player.ObjectIndex, out var current)

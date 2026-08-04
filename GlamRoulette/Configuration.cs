@@ -18,6 +18,17 @@ public class Configuration : IPluginConfiguration
     public bool IncludeMe { get; set; }
 
     /// <summary>
+    /// How long one of your own outfits lasts before it goes back in the pack. Only yours:
+    /// everybody else keeps theirs so they stay recognisable, but a random glamour of your own
+    /// that never changes is just a glamour. Zero keeps them the same way everyone else's are.
+    /// </summary>
+    public int MyRotateMinutes { get; set; } = 30;
+
+    /// <summary>When each of your own outfits was dealt, by assignment key, so the clock is per
+    /// job rather than shared - and so it survives a relog.</summary>
+    public Dictionary<string, DateTime> MyOutfitSince { get; set; } = [];
+
+    /// <summary>
     /// Put people back to their Glamourer automation rather than to their bare gear. This is
     /// what "back to normal" means for anyone who has an automated design - reverting outright
     /// takes that off too.

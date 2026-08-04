@@ -222,6 +222,26 @@ internal sealed class MainWindow : Window
                              "one Mare shares, so this is the one roll anybody else could see.\n" +
                              "Untick it to go straight back to your own glamour.");
 
+        if (config.IncludeMe)
+        {
+            ImGui.Indent();
+            var rotate = config.MyRotateMinutes;
+            if (ImGui.SliderInt("My outfits last (minutes)", ref rotate, 0, 240))
+            {
+                config.MyRotateMinutes = Math.Max(0, rotate);
+                config.Save();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Yours only - everyone else keeps theirs so they stay recognisable.\n" +
+                                 "The clock runs per job, so your healer one going stale leaves your\n" +
+                                 "tank one alone, and coming back to a job after a while is when you\n" +
+                                 "find it has changed. It also changes under you if you stay on the\n" +
+                                 "one job that long. The replacement is never the one just taken off.\n" +
+                                 "Zero keeps yours as fixed as everybody else's, and an outfit you\n" +
+                                 "chose to remember never goes stale.");
+            ImGui.Unindent();
+        }
+
         var automation = config.RestoreAutomation;
         if (ImGui.Checkbox("Put people back to their Glamourer automation", ref automation))
         {
