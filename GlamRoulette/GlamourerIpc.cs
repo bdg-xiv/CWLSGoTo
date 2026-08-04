@@ -36,6 +36,7 @@ internal sealed class GlamourerIpc
     private readonly ICallGateSubscriber<Dictionary<Guid, (string DisplayName, string FullPath, uint DisplayColor, bool ShownInQdb)>> designList;
     private readonly ICallGateSubscriber<Guid, int, uint, ulong, int> applyDesign;
     private readonly ICallGateSubscriber<int, uint, ulong, int> revertState;
+    private readonly ICallGateSubscriber<int, uint, ulong, int> revertToAutomation;
     private readonly ICallGateSubscriber<Guid, Newtonsoft.Json.Linq.JObject?> designJObject;
     private readonly ICallGateSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int> setItem;
     private readonly ICallGateSubscriber<int, uint, (int Result, Newtonsoft.Json.Linq.JObject? State)> getState;
@@ -48,6 +49,8 @@ internal sealed class GlamourerIpc
             .GetIpcSubscriber<Dictionary<Guid, (string, string, uint, bool)>>("Glamourer.GetDesignListExtended");
         applyDesign = Svc.PluginInterface.GetIpcSubscriber<Guid, int, uint, ulong, int>("Glamourer.ApplyDesign");
         revertState = Svc.PluginInterface.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
+        revertToAutomation = Svc.PluginInterface
+            .GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertToAutomation.V2");
         designJObject = Svc.PluginInterface
             .GetIpcSubscriber<Guid, Newtonsoft.Json.Linq.JObject?>("Glamourer.GetDesignJObject");
         setItem = Svc.PluginInterface
@@ -128,6 +131,16 @@ internal sealed class GlamourerIpc
     /// </summary>
     public Result Revert(int objectIndex)
         => Call(() => revertState.InvokeFunc(objectIndex, 0,
+            (ulong)(ApplyFlag.Equipment | ApplyFlag.Customization)));
+
+    /// <summary>
+    /// Puts someone back the way Glamourer would have them rather than the way the game would:
+    /// their automated design if they have one, their own gear if they do not. A plain revert
+    /// undoes our outfit and the automation with it, which on yourself means taking your
+    /// glamour off rather than giving it back.
+    /// </summary>
+    public Result RevertToAutomation(int objectIndex)
+        => Call(() => revertToAutomation.InvokeFunc(objectIndex, 0,
             (ulong)(ApplyFlag.Equipment | ApplyFlag.Customization)));
 
     /// <summary>

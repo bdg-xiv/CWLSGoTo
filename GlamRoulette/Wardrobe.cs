@@ -285,10 +285,19 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         {
             if (obj is not IPlayerCharacter player)
                 continue;
+
+            // Yourself is governed by its own setting and nothing else. You are in your own
+            // party, so leaving party members alone would otherwise quietly cancel it the
+            // moment anyone grouped with you.
             if (player.GameObjectId == me.GameObjectId)
+            {
+                if (!config.IncludeMe)
+                    continue;
+            }
+            else if (config.SkipParty && InParty(player))
+            {
                 continue;
-            if (config.SkipParty && InParty(player))
-                continue;
+            }
 
             present.Add(player.ObjectIndex);
 
@@ -372,11 +381,37 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         // Race and outfit both come off with the same call, and someone can have had one
         // without the other - a Hrothgar with nothing in the pool to wear, say.
         foreach (var index in applied.Keys.Concat(races.Indices).Distinct().ToList())
-            glamourer.Revert(index);
+            Restore(index);
 
         races.Forget();
         applied.Clear();
         lastApplied.Clear();
+    }
+
+    /// <summary>Stops taking part yourself, without disturbing anybody else.</summary>
+    public void RevertMe()
+    {
+        var me = Svc.Objects.LocalPlayer;
+        if (me == null)
+            return;
+
+        Restore(me.ObjectIndex);
+        applied.Remove(me.ObjectIndex);
+        lastApplied.Remove(me.ObjectIndex);
+    }
+
+    /// <summary>
+    /// Hands someone back. Going by way of the automation is what "back to normal" means for
+    /// anyone who has an automated design, since a plain revert would take that off as well and
+    /// leave them in whatever they are actually wearing.
+    /// </summary>
+    private void Restore(int index)
+    {
+        if (config.RestoreAutomation
+            && glamourer.RevertToAutomation(index) is GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone)
+            return;
+
+        glamourer.Revert(index);
     }
 
     private static bool InParty(IPlayerCharacter player)

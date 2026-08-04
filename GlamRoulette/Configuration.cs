@@ -13,6 +13,17 @@ public class Configuration : IPluginConfiguration
     /// <summary>Leave party members in the glamour they chose.</summary>
     public bool SkipParty { get; set; }
 
+    /// <summary>Take a turn yourself. Off by default: the point of this is what other people
+    /// look like, and your own glamour is presumably one you picked.</summary>
+    public bool IncludeMe { get; set; }
+
+    /// <summary>
+    /// Put people back to their Glamourer automation rather than to their bare gear. This is
+    /// what "back to normal" means for anyone who has an automated design - reverting outright
+    /// takes that off too.
+    /// </summary>
+    public bool RestoreAutomation { get; set; } = true;
+
     /// <summary>Only dress female characters, since the designs are cut for them.</summary>
     public bool FemaleOnly { get; set; } = true;
 

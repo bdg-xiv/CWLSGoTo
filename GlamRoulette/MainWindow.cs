@@ -208,6 +208,32 @@ internal sealed class MainWindow : Window
             config.Save();
         }
 
+        var includeMe = config.IncludeMe;
+        if (ImGui.Checkbox("Take a turn myself", ref includeMe))
+        {
+            config.IncludeMe = includeMe;
+            config.Save();
+            if (!includeMe)
+                wardrobe.RevertMe();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Deals you an outfit too, from the same pool as everybody else and by\n" +
+                             "the same rules. Still only on your own screen - but your look is the\n" +
+                             "one Mare shares, so this is the one roll anybody else could see.\n" +
+                             "Untick it to go straight back to your own glamour.");
+
+        var automation = config.RestoreAutomation;
+        if (ImGui.Checkbox("Put people back to their Glamourer automation", ref automation))
+        {
+            config.RestoreAutomation = automation;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("What \"back to normal\" should mean. A plain revert undoes an automated\n" +
+                             "design along with ours, which on yourself means losing your glamour\n" +
+                             "rather than getting it back. Anyone with no automation is reverted\n" +
+                             "the ordinary way regardless.");
+
         var dyes = config.RandomizeDyes;
         if (ImGui.Checkbox("Randomise dyes", ref dyes))
         {
