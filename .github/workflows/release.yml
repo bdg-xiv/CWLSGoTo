@@ -64,6 +64,7 @@ jobs:
           @{ Project = "OccultCoffers"; InternalName = "OccultCoffers" },
           @{ Project = "GlamRoulette"; InternalName = "GlamRoulette" },
           @{ Project = "MountHeels"; InternalName = "MountHeels" },
+          @{ Project = "HuntSpots"; InternalName = "HuntSpots" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 
