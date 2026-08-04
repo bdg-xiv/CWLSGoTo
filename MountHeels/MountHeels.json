@@ -1,8 +1,8 @@
 {
   "Author": "bdg",
   "Name": "Mount Heels",
-  "Punchline": "A separate Simple Heels offset for every mount.",
-  "Description": "Simple Heels knows whether you are mounted but not what you are mounted on - it has one \"Mounted\" offset shared by every mount in the game. That is fine until you use one you stand on top of rather than sit in, where the value that suited a chocobo leaves you floating or sunk. This gives each mount its own offset. It watches what you are riding and hands Simple Heels the right number as you get on, through the same channel Mare uses to share other people's heels, then hands control straight back when you dismount. Set an offset with the mount summoned and nudge it until it sits right; the preview updates live. Mounts you have not configured are left entirely alone, so nothing changes until you ask it to. Toggle the window with /mountheels.",
+  "Punchline": "Heels that keep working on a mount you stand on.",
+  "Description": "Simple Heels lifts you by whatever height your shoes declare, so they sit on the ground instead of sinking into it. Get on a mount you stand on top of rather than sit in and that lift goes away, because it has one \"Mounted\" offset shared by every mount in the game and a chocobo wants nothing. This gives each mount its own, and takes the height from the mods rather than from you: it reads the same number Simple Heels already worked out for the shoes you have on, so it follows a change of shoes on its own and there is nothing to dial in. Tick a mount while you are riding it and that is the whole setup; a trim for height, sideways, forward and turn is there for a platform that is not quite where the game says it is. Mounts you have not ticked are left entirely alone. Toggle the window with /mountheels.",
   "ApplicableVersion": "any",
   "Tags": [
     "simple heels",

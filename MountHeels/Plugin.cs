@@ -18,7 +18,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
     private readonly Configuration config;
-    private readonly SimpleHeelsIpc heels;
+    private readonly SimpleHeelsLink heels;
     private readonly MountWatcher watcher;
     private readonly WindowSystem windows = new("MountHeels");
     private readonly MainWindow window;
@@ -28,7 +28,8 @@ public sealed class Plugin : IDalamudPlugin
         ECommonsMain.Init(pluginInterface, this);
 
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        heels = new SimpleHeelsIpc();
+        config.Migrate();
+        heels = new SimpleHeelsLink();
         watcher = new MountWatcher(config, heels);
         window = new MainWindow(config, watcher, heels);
         windows.AddWindow(window);
@@ -38,8 +39,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += ToggleWindow;
 
         Svc.Framework.Update += OnFrameworkUpdate;
-        // Logging out invalidates the registration, and leaving it in place would have Simple
-        // Heels holding a config for an object index that is now somebody else.
+        // Logging out ends the ride, so there is nothing left of ours to take back.
         Svc.ClientState.Logout += OnLogout;
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
@@ -59,7 +59,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= windows.Draw;
         windows.RemoveAllWindows();
 
-        // Never leave Simple Heels holding a config of ours after we are gone.
+        // Never leave Simple Heels holding an offset of ours after we are gone.
         try
         {
             watcher.Release();
@@ -72,7 +72,9 @@ public sealed class Plugin : IDalamudPlugin
         ECommonsMain.Dispose();
     }
 
-    private void OnLogout(int type, int code) => watcher.Release();
+    // Simple Heels drops everything on logout by itself, and a chat command on the way out is
+    // the last thing anybody needs.
+    private void OnLogout(int type, int code) => watcher.Forget();
 
     private void ToggleWindow() => window.IsOpen = !window.IsOpen;
 

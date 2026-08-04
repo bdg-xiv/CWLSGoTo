@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -13,13 +11,13 @@ internal sealed class MainWindow : Window
 {
     private readonly Configuration config;
     private readonly MountWatcher watcher;
-    private readonly SimpleHeelsIpc heels;
+    private readonly SimpleHeelsLink heels;
 
     private static readonly Vector4 Dim = new(0.65f, 0.65f, 0.65f, 1f);
     private static readonly Vector4 Bad = new(1f, 0.45f, 0.45f, 1f);
     private static readonly Vector4 Good = new(0.45f, 1f, 0.5f, 1f);
 
-    public MainWindow(Configuration config, MountWatcher watcher, SimpleHeelsIpc heels)
+    public MainWindow(Configuration config, MountWatcher watcher, SimpleHeelsLink heels)
         : base("Mount Heels###MountHeels")
     {
         this.config = config;
@@ -27,7 +25,7 @@ internal sealed class MainWindow : Window
         this.heels = heels;
         SizeConstraints = new WindowSizeConstraints
         {
-            MinimumSize = new Vector2(380, 240),
+            MinimumSize = new Vector2(400, 260),
             MaximumSize = new Vector2(800, 900),
         };
     }
@@ -62,14 +60,28 @@ internal sealed class MainWindow : Window
                 watcher.Release();
         }
 
+        var height = watcher.StandingHeight;
+        if (height == 0f)
+            ImGui.TextColored(Bad, "Your shoes are not giving Simple Heels a height right now.");
+        else
+            ImGui.TextColored(Dim, $"Your shoes are worth {height:F4} on the ground.");
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Whatever Simple Heels already lifts you by while standing, whether that\n" +
+                             "came out of the mod or was set by hand for those shoes. Mounts below\n" +
+                             "follow it, so changing shoes changes them too.");
+
         ImGui.Separator();
 
-        if (watcher.Mounted)
+        if (watcher.Mounted && watcher.CurrentMount != 0)
         {
             ImGui.Text($"Riding: {NameOf(watcher.CurrentMount)}");
             ImGui.SameLine();
-            ImGui.TextColored(watcher.Pushing ? Good : Dim, watcher.Pushing ? "(adjusted)" : "(left alone)");
+            ImGui.TextColored(watcher.Adjusting ? Good : Dim, watcher.Adjusting ? "(adjusted)" : "(left alone)");
             DrawEditor(watcher.CurrentMount);
+        }
+        else if (watcher.Mounted)
+        {
+            ImGui.TextColored(Dim, "Riding behind someone else - their mount, their offset.");
         }
         else
         {
@@ -84,18 +96,27 @@ internal sealed class MainWindow : Window
             ImGui.PushID((int)mountId);
             ImGui.Text($"  {NameOf(mountId)}");
             ImGui.SameLine();
-            ImGui.TextColored(Dim, $"Y {offset.Y:F3}" +
-                                   (offset.X != 0 || offset.Z != 0 ? $"  X {offset.X:F3}  Z {offset.Z:F3}" : "") +
-                                   (offset.Rotation != 0 ? $"  R {offset.Rotation:F2}" : ""));
+            ImGui.TextColored(Dim, Describe(offset));
             ImGui.SameLine();
             if (ImGui.SmallButton("Forget"))
             {
                 config.Offsets.Remove(mountId);
                 config.Save();
-                watcher.Refresh();
+                watcher.Release();
             }
             ImGui.PopID();
         }
+    }
+
+    private static string Describe(MountOffset offset)
+    {
+        var height = offset.UseModelHeight
+            ? offset.Y == 0f ? "shoes" : $"shoes {offset.Y:+0.###;-0.###}"
+            : $"{offset.Y:F3}";
+
+        return height +
+               (offset.X != 0 || offset.Z != 0 ? $"  X {offset.X:F3}  Z {offset.Z:F3}" : "") +
+               (offset.Rotation != 0 ? $"  {offset.Rotation:F0}°" : "");
     }
 
     private void DrawEditor(uint mountId)
@@ -116,22 +137,32 @@ internal sealed class MainWindow : Window
 
         ImGui.Indent();
 
+        var useModel = offset.UseModelHeight;
+        if (ImGui.Checkbox("Stand at the height the shoes are giving", ref useModel))
+            Set(mountId, offset with { UseModelHeight = useModel });
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("For a mount you stand on top of, this is the same lift you get on the\n" +
+                             "ground - which is exactly what is missing while riding one.");
+
         var y = offset.Y;
-        if (ImGui.DragFloat("Height", ref y, 0.001f, -2f, 2f, "%.3f"))
+        if (ImGui.DragFloat(useModel ? "Extra height" : "Height", ref y, 0.001f, -2f, 2f, "%.3f"))
             Set(mountId, offset with { Y = y });
+
+        if (useModel)
+            ImGui.TextColored(Dim, $"    Standing at {watcher.HeightFor(offset):F4}.");
 
         if (ImGui.TreeNode("Sideways, forward and turn"))
         {
             var x = offset.X;
-            if (ImGui.DragFloat("X", ref x, 0.001f, -2f, 2f, "%.3f"))
+            if (ImGui.DragFloat("Left", ref x, 0.001f, -2f, 2f, "%.3f"))
                 Set(mountId, offset with { X = x });
 
             var z = offset.Z;
-            if (ImGui.DragFloat("Z", ref z, 0.001f, -2f, 2f, "%.3f"))
+            if (ImGui.DragFloat("Forward", ref z, 0.001f, -2f, 2f, "%.3f"))
                 Set(mountId, offset with { Z = z });
 
             var r = offset.Rotation;
-            if (ImGui.DragFloat("Rotation", ref r, 0.01f, -3.15f, 3.15f, "%.2f"))
+            if (ImGui.DragFloat("Turn (degrees)", ref r, 0.5f, -180f, 180f, "%.0f"))
                 Set(mountId, offset with { Rotation = r });
 
             ImGui.TreePop();
@@ -145,10 +176,10 @@ internal sealed class MainWindow : Window
         {
             config.Offsets.Remove(mountId);
             config.Save();
-            watcher.Refresh();
+            watcher.Release();
         }
 
-        ImGui.TextColored(Dim, "An offset of all zeroes counts as \"leave it alone\".");
+        ImGui.TextColored(Dim, "Nothing ticked and nothing typed counts as \"leave it alone\".");
         ImGui.Unindent();
     }
 
@@ -156,7 +187,7 @@ internal sealed class MainWindow : Window
     {
         config.Offsets[mountId] = offset;
         config.Save();
-        // Force the next tick to push again so the change is visible while dragging.
+        // Send it again on the next tick so the change shows up while dragging.
         watcher.Refresh();
     }
 }
