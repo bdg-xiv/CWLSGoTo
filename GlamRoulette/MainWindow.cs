@@ -10,21 +10,40 @@ internal sealed class MainWindow : Window
     private readonly Configuration config;
     private readonly Wardrobe wardrobe;
     private readonly GlamourerIpc glamourer;
+    private readonly Dyes dyes;
 
     private static readonly Vector4 Dim = new(0.65f, 0.65f, 0.65f, 1f);
     private static readonly Vector4 Bad = new(1f, 0.45f, 0.45f, 1f);
 
-    public MainWindow(Configuration config, Wardrobe wardrobe, GlamourerIpc glamourer)
+    public MainWindow(Configuration config, Wardrobe wardrobe, GlamourerIpc glamourer, Dyes dyes)
         : base("Glam Roulette###GlamRoulette")
     {
         this.config = config;
         this.wardrobe = wardrobe;
         this.glamourer = glamourer;
+        this.dyes = dyes;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(360, 220),
             MaximumSize = new Vector2(700, 800),
         };
+    }
+
+    /// <summary>One tier's weight, with the share of rolls it actually works out to - the
+    /// number that matters is not the weight but what it does once tier sizes are in play.</summary>
+    private void DrawWeight(string label, Dyes.Tier tier, Func<int> get, Action<int> set)
+    {
+        var value = get();
+        ImGui.SetNextItemWidth(120f);
+        if (ImGui.SliderInt(label, ref value, 0, 50))
+        {
+            set(Math.Max(0, value));
+            config.Save();
+            wardrobe.RerollEverybody();
+        }
+
+        ImGui.SameLine();
+        ImGui.TextColored(Dim, $"{dyes.Share(tier):P0} of rolls, {dyes.Count(tier)} dyes");
     }
 
     /// <summary>A discipline's subfolder, with a live count so a typo is obvious.</summary>
@@ -168,6 +187,13 @@ internal sealed class MainWindow : Window
 
         if (config.RandomizeDyes)
         {
+            ImGui.Indent();
+            DrawWeight("Metallic", Dyes.Tier.Metallic, () => config.MetallicWeight, v => config.MetallicWeight = v);
+            DrawWeight("Premium", Dyes.Tier.Premium, () => config.PremiumWeight, v => config.PremiumWeight = v);
+            DrawWeight("Standard", Dyes.Tier.Standard, () => config.StandardWeight, v => config.StandardWeight = v);
+            ImGui.TextDisabled("Premium is the 668-gil tier: the pastels, the darks, Pure White and Jet Black.");
+            ImGui.Unindent();
+
             var second = config.DyeSecondChannel;
             if (ImGui.Checkbox("Roll the second dye channel separately", ref second))
             {

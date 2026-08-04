@@ -24,23 +24,105 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
     /// <summary>Item ids per slot, read out of the design once and kept.</summary>
     private readonly Dictionary<Guid, List<(byte Slot, ulong ItemId)>> items = [];
 
-    private byte[]? palette;
+    public enum Tier
+    {
+        Standard,
+        Premium,
+        Metallic,
+    }
 
-    /// <summary>Every real dye in the game. Row 0 is "no dye" and is not one.</summary>
-    private byte[] Palette()
+    private (byte Id, Tier Tier)[]? palette;
+
+    /// <summary>
+    /// Every real dye, sorted into how hard it is to come by. Metallic is the game's own
+    /// IsMetallic column rather than a list of names, so it stays right as dyes are added.
+    /// Premium is the 668-gil tier - the pastels, darks, Pure White and Jet Black - picked out
+    /// by the price of the item that applies them, plus anything with no vendor item at all.
+    /// </summary>
+    private (byte Id, Tier Tier)[] Palette()
     {
         if (palette != null)
             return palette;
 
-        var sheet = Svc.Data.GetExcelSheet<Stain>();
-        palette = sheet == null
-            ? []
-            : sheet.Where(s => s.RowId is > 0 and < 256 && s.Name.ExtractText().Length > 0)
-                   .Select(s => (byte)s.RowId)
-                   .ToArray();
+        var stains = Svc.Data.GetExcelSheet<Stain>();
+        if (stains == null)
+            return palette = [];
 
-        Svc.Log.Information($"[GlamRoulette] {palette.Length} dyes available");
+        var prices = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+        var items = Svc.Data.GetExcelSheet<Item>();
+        if (items != null)
+        {
+            foreach (var item in items)
+            {
+                var name = item.Name.ExtractText();
+                if (name.EndsWith(" Dye", StringComparison.OrdinalIgnoreCase))
+                    prices.TryAdd(name[..^4].Trim(), item.PriceMid);
+            }
+        }
+
+        palette = stains
+            .Where(s => s.RowId is > 0 and < 256 && s.Name.ExtractText().Length > 0)
+            .Select(s =>
+            {
+                var name = s.Name.ExtractText().Trim();
+                var tier = s.IsMetallic ? Tier.Metallic
+                    : !prices.TryGetValue(name, out var price) || price > PremiumPrice ? Tier.Premium
+                    : Tier.Standard;
+                return ((byte)s.RowId, tier);
+            })
+            .ToArray();
+
+        Svc.Log.Information($"[GlamRoulette] {palette.Length} dyes: " +
+                            $"{palette.Count(p => p.Tier == Tier.Metallic)} metallic, " +
+                            $"{palette.Count(p => p.Tier == Tier.Premium)} premium, " +
+                            $"{palette.Count(p => p.Tier == Tier.Standard)} standard");
         return palette;
+    }
+
+    private const uint PremiumPrice = 400;
+
+    public int Count(Tier tier) => Palette().Count(p => p.Tier == tier);
+
+    private int WeightOf(Tier tier) => Math.Max(0, tier switch
+    {
+        Tier.Metallic => config.MetallicWeight,
+        Tier.Premium => config.PremiumWeight,
+        _ => config.StandardWeight,
+    });
+
+    /// <summary>The share of rolls each tier will take, for showing in the settings.</summary>
+    public float Share(Tier tier)
+    {
+        var total = Palette().Sum(p => (long)WeightOf(p.Tier));
+        if (total == 0)
+            return 0f;
+
+        return (float)Palette().Where(p => p.Tier == tier).Sum(p => (long)WeightOf(p.Tier)) / total;
+    }
+
+    /// <summary>
+    /// Picks a dye with the tiers weighted, from a number that is derived rather than random,
+    /// so the same wearer keeps the same colour.
+    /// </summary>
+    private byte Pick(uint seed)
+    {
+        var dyes = Palette();
+        var total = dyes.Sum(p => (long)WeightOf(p.Tier));
+
+        // Everything weighted to nothing would be a division by zero, and "no dyes at all" is
+        // not what someone means by turning every weight down.
+        if (total <= 0)
+            return dyes[(int)(seed % (uint)dyes.Length)].Id;
+
+        var target = (long)(seed % (uint)total);
+        foreach (var (id, tier) in dyes)
+        {
+            target -= WeightOf(tier);
+            if (target < 0)
+                return id;
+        }
+
+        return dyes[^1].Id;
     }
 
     private List<(byte Slot, ulong ItemId)> ItemsOf(Guid design)
@@ -85,18 +167,15 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
         if (!config.RandomizeDyes)
             return;
 
-        var dyes = Palette();
-        if (dyes.Length == 0)
+        if (Palette().Length == 0)
             return;
 
         // One colour per channel for the whole outfit, not per slot. Rolling every slot
         // separately produced a harlequin; a single pair reads as an outfit someone dyed.
         // The two channels are rolled independently, so they can land on the same colour
         // by chance, which is fine - that is a plain single-dyed outfit.
-        var first = dyes[(int)(Seed(playerKey, design, 0) % (uint)dyes.Length)];
-        var second = config.DyeSecondChannel
-            ? dyes[(int)(Seed(playerKey, design, 1) % (uint)dyes.Length)]
-            : first;
+        var first = Pick(Seed(playerKey, design, 0));
+        var second = config.DyeSecondChannel ? Pick(Seed(playerKey, design, 1)) : first;
 
         foreach (var (slot, itemId) in ItemsOf(design))
             glamourer.Dye(objectIndex, slot, itemId, [first, second]);

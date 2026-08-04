@@ -44,6 +44,13 @@ public class Configuration : IPluginConfiguration
     /// <summary>Roll the second dye channel separately instead of matching the first.</summary>
     public bool DyeSecondChannel { get; set; } = true;
 
+    // How often each tier comes up, relative to the others. There are far more standard dyes
+    // than metallic ones, so the metallic weight has to be well above parity just to break
+    // even - these defaults land it a bit over half of all rolls.
+    public int MetallicWeight { get; set; } = 12;
+    public int PremiumWeight { get; set; } = 4;
+    public int StandardWeight { get; set; } = 1;
+
     /// <summary>Only draw from designs whose Glamourer folder path starts with this.
     /// Empty means every design, which is rarely what anyone wants.</summary>
     public string DesignFolder { get; set; } = string.Empty;
