@@ -55,6 +55,16 @@ public class Configuration : IPluginConfiguration
     /// </summary>
     public Dictionary<string, Guid> Assignments { get; set; } = [];
 
+    /// <summary>When each player was last in front of us, keyed by name and world without the
+    /// role, so being seen on any job keeps all of their outfits alive.</summary>
+    public Dictionary<string, DateTime> LastSeen { get; set; } = [];
+
+    /// <summary>Players whose outfits are kept no matter how long they have been gone.</summary>
+    public HashSet<string> Pinned { get; set; } = [];
+
+    /// <summary>How long an unseen player keeps their outfit. Zero means forever.</summary>
+    public int RememberMinutes { get; set; } = 30;
+
     /// <summary>Re-apply periodically, since anything that redraws a character drops the
     /// design and Glamourer will not put it back on its own.</summary>
     public bool Reapply { get; set; } = true;

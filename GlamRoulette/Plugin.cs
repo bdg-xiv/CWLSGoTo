@@ -31,6 +31,7 @@ public sealed class Plugin : IDalamudPlugin
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         glamourer = new GlamourerIpc();
         wardrobe = new Wardrobe(config, glamourer, new Dyes(config, glamourer));
+        wardrobe.StampUnknownAsSeen();
         contextMenu = new PlayerContextMenu(config, wardrobe);
         window = new MainWindow(config, wardrobe, glamourer);
         windows.AddWindow(window);

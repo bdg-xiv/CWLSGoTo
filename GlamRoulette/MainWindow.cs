@@ -64,7 +64,8 @@ internal sealed class MainWindow : Window
         var pool = wardrobe.Pool();
         ImGui.TextColored(pool.Count == 0 ? Bad : Dim,
             $"{pool.Count} design{(pool.Count == 1 ? "" : "s")} in the pool, " +
-            $"{wardrobe.Dressed} dressed right now, {wardrobe.Remembered} remembered.");
+            $"{wardrobe.Dressed} dressed right now, {wardrobe.Remembered} remembered" +
+            (wardrobe.Kept > 0 ? $" ({wardrobe.Kept} kept)." : "."));
 
         if (pool.Count == 0)
             ImGui.TextColored(Bad, "Nothing to draw from - check the folder filter below.");
@@ -178,6 +179,18 @@ internal sealed class MainWindow : Window
                 ImGui.SetTooltip("The two channels are rolled independently and can land on the same\n" +
                                  "colour by chance. Off ties them together so that always happens.");
         }
+
+        var remember = config.RememberMinutes;
+        if (ImGui.SliderInt("Forget after (minutes)", ref remember, 0, 240))
+        {
+            config.RememberMinutes = Math.Max(0, remember);
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("A player who has not been seen for this long loses their outfit and\n" +
+                             "gets a new one next time. Zero keeps everyone forever, which is what\n" +
+                             "this used to do - and why there were hundreds of them.\n" +
+                             "Right-click someone and choose \"Remember outfit\" to exempt them.");
 
         var reapply = config.Reapply;
         if (ImGui.Checkbox("Re-apply periodically", ref reapply))

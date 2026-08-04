@@ -42,11 +42,27 @@ internal sealed class PlayerContextMenu : IDisposable
                 PrefixChar = 'G',
                 OnClicked = _ => Reroll(key),
             });
+
+            var pinned = wardrobe.IsPinned(key);
+            args.AddMenuItem(new MenuItem
+            {
+                Name = new SeStringBuilder().AddText(pinned ? "Stop remembering outfit" : "Remember outfit").Build(),
+                PrefixChar = 'G',
+                OnClicked = _ => TogglePinned(key),
+            });
         }
         catch (Exception ex)
         {
             Svc.Log.Error(ex, "Failed to build the context menu entry");
         }
+    }
+
+    private void TogglePinned(string key)
+    {
+        var pinned = wardrobe.TogglePinned(key);
+        Svc.Chat.Print(pinned
+            ? $"[Glam Roulette] Keeping {key}'s outfit however long they are away."
+            : $"[Glam Roulette] {key}'s outfit will be forgotten like anyone else's.");
     }
 
     private void Reroll(string key)

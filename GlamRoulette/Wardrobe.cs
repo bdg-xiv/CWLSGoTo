@@ -22,8 +22,96 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
     private readonly Dictionary<int, DateTime> lastApplied = [];
 
+    private DateTime nextPrune = DateTime.MinValue;
+    private bool seenDirty;
+
     public int Dressed => applied.Count;
     public int Remembered => config.Assignments.Count;
+    public int Kept => config.Pinned.Count;
+
+    public bool IsPinned(string playerKey) => config.Pinned.Contains(PlayerOf(playerKey));
+
+    /// <summary>Keeps or stops keeping this player's outfits regardless of when they were
+    /// last around. Returns what the setting is now.</summary>
+    public bool TogglePinned(string playerKey)
+    {
+        var player = PlayerOf(playerKey);
+        var pinned = !config.Pinned.Remove(player);
+        if (pinned)
+        {
+            config.Pinned.Add(player);
+            // Stamp them as seen, or a pin applied to someone already past the cutoff would
+            // be undone by the very next prune.
+            config.LastSeen[player] = DateTime.UtcNow;
+        }
+
+        config.Save();
+        return pinned;
+    }
+
+    /// <summary>
+    /// Assignments from before there was a last-seen time get stamped as if they were just
+    /// seen, so switching this on ages everyone out over the next half hour instead of
+    /// wiping every outfit at once.
+    /// </summary>
+    public void StampUnknownAsSeen()
+    {
+        var now = DateTime.UtcNow;
+        var added = 0;
+
+        foreach (var key in config.Assignments.Keys)
+        {
+            var player = PlayerOf(key);
+            if (config.LastSeen.TryAdd(player, now))
+                added++;
+        }
+
+        if (added > 0)
+        {
+            config.Save();
+            Svc.Log.Information($"[GlamRoulette] {added} remembered outfit(s) had no last-seen time, starting their clock now");
+        }
+    }
+
+    /// <summary>Drops the outfits of players who have not been around for a while.</summary>
+    private void Prune()
+    {
+        if (config.RememberMinutes <= 0 || DateTime.UtcNow < nextPrune)
+            return;
+
+        nextPrune = DateTime.UtcNow.AddMinutes(1);
+
+        if (seenDirty)
+        {
+            seenDirty = false;
+            config.Save();
+        }
+
+        var cutoff = DateTime.UtcNow.AddMinutes(-config.RememberMinutes);
+        var gone = config.LastSeen
+            .Where(s => s.Value < cutoff && !config.Pinned.Contains(s.Key))
+            .Select(s => s.Key)
+            .ToList();
+
+        if (gone.Count == 0)
+            return;
+
+        var dropped = 0;
+        foreach (var player in gone)
+        {
+            config.LastSeen.Remove(player);
+            foreach (var key in config.Assignments.Keys
+                         .Where(k => PlayerOf(k) == player).ToList())
+            {
+                config.Assignments.Remove(key);
+                dropped++;
+            }
+        }
+
+        config.Save();
+        Svc.Log.Information($"[GlamRoulette] Forgot {dropped} outfit(s) from {gone.Count} player(s) not seen in " +
+                            $"{config.RememberMinutes} minutes");
+    }
 
     public static string KeyOf(IPlayerCharacter player)
         => $"{player.Name.TextValue}@{player.HomeWorld.ValueNullable?.Name.ExtractText() ?? "?"}";
@@ -147,6 +235,8 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         if (!config.Enabled || !glamourer.Available)
             return;
 
+        Prune();
+
         var me = Svc.Objects.LocalPlayer;
         if (me == null)
             return;
@@ -165,6 +255,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 continue;
 
             present.Add(player.ObjectIndex);
+
+            // Written in memory every pass but only saved on the prune tick - the config is
+            // not worth rewriting once a second for a timestamp.
+            config.LastSeen[KeyOf(player)] = DateTime.UtcNow;
+            seenDirty = true;
 
             // The discipline is part of the key when pools are split, so switching from a
             // warrior to a weaver gets an outfit from the right pool instead of keeping the
