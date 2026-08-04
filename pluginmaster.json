@@ -453,6 +453,31 @@
   },
   {
     "Author": "bdg",
+    "Name": "Mount Heels",
+    "InternalName": "MountHeels",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Simple Heels knows whether you are mounted but not what you are mounted on - it has one \"Mounted\" offset shared by every mount in the game. That is fine until you use one you stand on top of rather than sit in, where the value that suited a chocobo leaves you floating or sunk. This gives each mount its own offset. It watches what you are riding and hands Simple Heels the right number as you get on, through the same channel Mare uses to share other people's heels, then hands control straight back when you dismount. Set an offset with the mount summoned and nudge it until it sits right; the preview updates live. Mounts you have not configured are left entirely alone, so nothing changes until you ask it to. Toggle the window with /mountheels.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "simple heels",
+      "heels",
+      "mount",
+      "offset"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "A separate Simple Heels offset for every mount.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/MountHeels.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/MountHeels.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/MountHeels.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.25",
