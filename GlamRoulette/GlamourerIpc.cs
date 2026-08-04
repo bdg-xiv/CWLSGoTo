@@ -38,6 +38,8 @@ internal sealed class GlamourerIpc
     private readonly ICallGateSubscriber<int, uint, ulong, int> revertState;
     private readonly ICallGateSubscriber<Guid, Newtonsoft.Json.Linq.JObject?> designJObject;
     private readonly ICallGateSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int> setItem;
+    private readonly ICallGateSubscriber<int, uint, (int Result, Newtonsoft.Json.Linq.JObject? State)> getState;
+    private readonly ICallGateSubscriber<object, int, uint, ulong, int> applyState;
 
     public GlamourerIpc()
     {
@@ -50,6 +52,10 @@ internal sealed class GlamourerIpc
             .GetIpcSubscriber<Guid, Newtonsoft.Json.Linq.JObject?>("Glamourer.GetDesignJObject");
         setItem = Svc.PluginInterface
             .GetIpcSubscriber<int, byte, ulong, IReadOnlyList<byte>, uint, ulong, int>("Glamourer.SetItem.V3");
+        getState = Svc.PluginInterface
+            .GetIpcSubscriber<int, uint, (int, Newtonsoft.Json.Linq.JObject?)>("Glamourer.GetState");
+        applyState = Svc.PluginInterface
+            .GetIpcSubscriber<object, int, uint, ulong, int>("Glamourer.ApplyState");
     }
 
     /// <summary>The design as stored, so its per-slot items can be read back.</summary>
@@ -123,6 +129,56 @@ internal sealed class GlamourerIpc
     public Result Revert(int objectIndex)
         => Call(() => revertState.InvokeFunc(objectIndex, 0,
             (ulong)(ApplyFlag.Equipment | ApplyFlag.Customization)));
+
+    /// <summary>
+    /// Moves someone to another clan, and nothing else. Their state is read back and handed
+    /// straight to Glamourer with every customization switched off bar the clan, so the only
+    /// thing being asked for is the change of race.
+    ///
+    /// Deliberately not spelling out the face, hair or anything else: Glamourer runs its own
+    /// fix-up when a design changes clan, and it is the one that knows which of those the new
+    /// clan actually has. It even knows Hrothgar faces are numbered four higher than everyone
+    /// else's, which is exactly the trap here. Whatever carries over sensibly - colouring,
+    /// build - carries over, and the rest lands on something valid.
+    /// </summary>
+    public Result SetClan(int objectIndex, byte race, byte clan)
+    {
+        try
+        {
+            var (result, state) = getState.InvokeFunc(objectIndex, 0);
+            if ((Result)result != Result.Success)
+                return (Result)result;
+
+            if (state?["Customize"] is not Newtonsoft.Json.Linq.JObject customize)
+                return Result.ActorNotHuman;
+
+            foreach (var property in customize.Properties())
+                if (property.Value is Newtonsoft.Json.Linq.JObject entry && entry["Apply"] != null)
+                    entry["Apply"] = false;
+
+            // Race and clan have to agree or the state is rejected as nonsense before it gets
+            // anywhere near being applied.
+            if (!Set(customize, "Race", race) || !Set(customize, "Clan", clan))
+                return Result.ActorNotHuman;
+
+            return Call(() => applyState.InvokeFunc(state, objectIndex, 0, (ulong)ApplyFlag.Customization));
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not change the clan of object {objectIndex}: {ex.Message}");
+            return Result.Unavailable;
+        }
+    }
+
+    private static bool Set(Newtonsoft.Json.Linq.JObject customize, string name, byte value)
+    {
+        if (customize[name] is not Newtonsoft.Json.Linq.JObject entry)
+            return false;
+
+        entry["Value"] = value;
+        entry["Apply"] = true;
+        return true;
+    }
 
     private static Result Call(Func<int> call)
     {

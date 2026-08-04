@@ -12,7 +12,7 @@ namespace GlamRoulette;
 /// object index, because an index is only meaningful for as long as the player stays loaded
 /// and the whole point here is that it survives them walking away.
 /// </summary>
-internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes)
+internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes, RaceSwap races)
 {
     private readonly Random random = new();
 
@@ -250,6 +250,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return hash < 0 ? key : key[..hash];
     }
 
+    /// <summary>Asks for every race swap again, for when the clan being used changes.</summary>
+    public void ForgetRaces() => races.Forget();
+
     /// <summary>Re-rolls everyone except the outfits that were explicitly kept.</summary>
     public int RerollEverybody()
     {
@@ -286,10 +289,22 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 continue;
             if (config.SkipParty && InParty(player))
                 continue;
-            if (config.FemaleOnly && !IsFemale(player))
-                continue;
 
             present.Add(player.ObjectIndex);
+
+            // Ahead of dressing them, and worth a pass of its own when it first lands: changing
+            // race redraws the character, and a redraw takes the outfit off again. Better to
+            // let the next pass dress the Elezen than to dress a Hrothgar who is about to stop
+            // being one.
+            if (races.Handle(player))
+            {
+                applied.Remove(player.ObjectIndex);
+                lastApplied.Remove(player.ObjectIndex);
+                continue;
+            }
+
+            if (config.FemaleOnly && !IsFemale(player))
+                continue;
 
             // Written in memory every pass but only saved on the prune tick - the config is
             // not worth rewriting once a second for a timestamp.
@@ -347,14 +362,19 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             applied.Remove(index);
             lastApplied.Remove(index);
         }
+
+        races.Sweep(present);
     }
 
     /// <summary>Puts everyone back as we found them.</summary>
     public void RevertAll()
     {
-        foreach (var index in applied.Keys.ToList())
+        // Race and outfit both come off with the same call, and someone can have had one
+        // without the other - a Hrothgar with nothing in the pool to wear, say.
+        foreach (var index in applied.Keys.Concat(races.Indices).Distinct().ToList())
             glamourer.Revert(index);
 
+        races.Forget();
         applied.Clear();
         lastApplied.Clear();
     }

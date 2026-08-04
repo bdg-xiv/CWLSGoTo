@@ -165,6 +165,42 @@ internal sealed class MainWindow : Window
                 wardrobe.RevertAll();
         }
 
+        var hroth = config.SwapHrothgarFemales;
+        if (ImGui.Checkbox("Female Hrothgar turn up as Elezen", ref hroth))
+        {
+            config.SwapHrothgarFemales = hroth;
+            config.Save();
+            // Switching it on needs nothing - the next pass finds them. Switching it off has to
+            // put them back, since nothing else is going to undo a race that is already applied.
+            if (!hroth)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Changes their clan on your screen only. Glamourer picks a face and hair\n" +
+                             "that the new clan actually has - the numbers do not carry across races -\n" +
+                             "so colouring and build follow them over but the face will not match.\n" +
+                             "This redraws them once, and again if something puts them back.");
+
+        if (config.SwapHrothgarFemales)
+        {
+            ImGui.Indent();
+            var duskwight = config.HrothgarFemaleClan == 4;
+            if (ImGui.RadioButton("Wildwood", !duskwight))
+            {
+                config.HrothgarFemaleClan = 3;
+                config.Save();
+                wardrobe.ForgetRaces();
+            }
+            ImGui.SameLine();
+            if (ImGui.RadioButton("Duskwight", duskwight))
+            {
+                config.HrothgarFemaleClan = 4;
+                config.Save();
+                wardrobe.ForgetRaces();
+            }
+            ImGui.Unindent();
+        }
+
         var skipParty = config.SkipParty;
         if (ImGui.Checkbox("Leave party members alone", ref skipParty))
         {

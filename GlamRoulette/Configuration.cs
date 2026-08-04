@@ -37,6 +37,13 @@ public class Configuration : IPluginConfiguration
     public string WarFolder { get; set; } = "war";
     public string MagicFolder { get; set; } = "magic";
 
+    /// <summary>Show female Hrothgar as Elezen instead.</summary>
+    public bool SwapHrothgarFemales { get; set; } = true;
+
+    /// <summary>Which Elezen clan they become. Penumbra.GameData.Enums.SubRace: 3 is Wildwood,
+    /// 4 is Duskwight.</summary>
+    public byte HrothgarFemaleClan { get; set; } = 3;
+
     /// <summary>Re-dye each outfit - one colour per channel across the whole outfit - so two
     /// people in the same design still differ.</summary>
     public bool RandomizeDyes { get; set; } = true;
