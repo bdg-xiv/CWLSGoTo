@@ -715,6 +715,23 @@ public sealed class Plugin : IDalamudPlugin
         return (cap == 0 || level < cap) && level < item.Value.LevelItem.RowId + 50;
     }
 
+    /// <summary>
+    /// Half of a sword-and-shield set. Paladin's is the only weapon the game splits into two
+    /// items, and the halves desynthesize under different classes - the sword under Blacksmith,
+    /// the shield under Armourer - so their levels move independently. Buy the pair while only
+    /// one half still grants skill and the other is dead weight: DesynthAll leaves it alone,
+    /// and because these pieces are unique it then sits in a bag slot the next round wants.
+    /// Skipping the whole pair costs one weapon's worth of fodder and nothing else.
+    /// </summary>
+    private static bool IsHalfOfAPair(uint itemId)
+    {
+        var slot = Svc.Data.GetExcelSheet<Item>().GetRowOrDefault(itemId)?.EquipSlotCategory.RowId;
+
+        // Every other weapon takes both hands at once and is one item; only a sword and its
+        // shield claim the main hand and the off hand separately.
+        return slot is 1 or 2;
+    }
+
     /// <summary>The game-wide desynthesis level ceiling: the highest item level anything
     /// desynthesizable has. At that level no item grants skill any more.</summary>
     private uint MaxDesynthLevel
@@ -753,8 +770,9 @@ public sealed class Plugin : IDalamudPlugin
             return false; // The list hasn't populated yet.
 
         // Anything on the visible tab that would still raise a desynthesis level is
-        // fodder - the per-class levels decide, not a fixed item list.
-        var rows = all.Where(x => RaisesDesynthLevel(x.ItemId)).ToList();
+        // fodder - the per-class levels decide, not a fixed item list - bar the sword and
+        // shield, which come as a pair and cannot both be relied on to be worth breaking.
+        var rows = all.Where(x => RaisesDesynthLevel(x.ItemId) && !IsHalfOfAPair(x.ItemId)).ToList();
         if (rows.Count == 0)
         {
             Print("Nothing on this tab would raise a desynthesis level any more - check the other tabs.");
