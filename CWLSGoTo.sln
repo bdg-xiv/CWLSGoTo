@@ -39,6 +39,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OccultCoffers", "OccultCoff
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GlamRoulette", "GlamRoulette\GlamRoulette.csproj", "{B62F18D0-4A73-4E15-9C86-2D50FA37E9B1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MountHeels", "MountHeels\MountHeels.csproj", "{C93A26E1-7F58-4B02-A6D4-51E8C0B93F27}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -117,6 +119,10 @@ Global
 		{B62F18D0-4A73-4E15-9C86-2D50FA37E9B1}.Debug|x64.Build.0 = Debug|x64
 		{B62F18D0-4A73-4E15-9C86-2D50FA37E9B1}.Release|x64.ActiveCfg = Release|x64
 		{B62F18D0-4A73-4E15-9C86-2D50FA37E9B1}.Release|x64.Build.0 = Release|x64
+		{C93A26E1-7F58-4B02-A6D4-51E8C0B93F27}.Debug|x64.ActiveCfg = Debug|x64
+		{C93A26E1-7F58-4B02-A6D4-51E8C0B93F27}.Debug|x64.Build.0 = Debug|x64
+		{C93A26E1-7F58-4B02-A6D4-51E8C0B93F27}.Release|x64.ActiveCfg = Release|x64
+		{C93A26E1-7F58-4B02-A6D4-51E8C0B93F27}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
