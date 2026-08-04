@@ -190,7 +190,8 @@ internal sealed class MainWindow : Window
             ImGui.SetTooltip("A player who has not been seen for this long loses their outfit and\n" +
                              "gets a new one next time. Zero keeps everyone forever, which is what\n" +
                              "this used to do - and why there were hundreds of them.\n" +
-                             "Right-click someone and choose \"Remember outfit\" to exempt them.");
+                             "Right-click someone and choose \"Remember this outfit\" to keep the one\n" +
+                             "they are wearing. That is per outfit, so their other roles still age out.");
 
         var reapply = config.Reapply;
         if (ImGui.Checkbox("Re-apply periodically", ref reapply))

@@ -1,4 +1,5 @@
 using System;
+using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.Gui.ContextMenu;
 using Dalamud.Game.Text.SeStringHandling;
 using ECommons.DalamudServices;
@@ -34,19 +35,28 @@ internal sealed class PlayerContextMenu : IDisposable
             if (string.IsNullOrEmpty(world))
                 return;
 
-            var key = $"{target.TargetName}@{world}";
+            var player = $"{target.TargetName}@{world}";
 
             args.AddMenuItem(new MenuItem
             {
                 Name = new SeStringBuilder().AddText("Re-roll outfit").Build(),
                 PrefixChar = 'G',
-                OnClicked = _ => Reroll(key),
+                OnClicked = _ => Reroll(player),
             });
 
+            // Keeping is per outfit, so it needs the role they are on right now rather than
+            // just their name. Without the object in front of us there is no role to read,
+            // and pinning the player as a whole would keep more than was asked for.
+            if (target.TargetObject is not IPlayerCharacter character)
+                return;
+
+            var key = wardrobe.KeyFor(character);
             var pinned = wardrobe.IsPinned(key);
+
             args.AddMenuItem(new MenuItem
             {
-                Name = new SeStringBuilder().AddText(pinned ? "Stop remembering outfit" : "Remember outfit").Build(),
+                Name = new SeStringBuilder()
+                    .AddText(pinned ? "Stop remembering this outfit" : "Remember this outfit").Build(),
                 PrefixChar = 'G',
                 OnClicked = _ => TogglePinned(key),
             });
@@ -61,8 +71,8 @@ internal sealed class PlayerContextMenu : IDisposable
     {
         var pinned = wardrobe.TogglePinned(key);
         Svc.Chat.Print(pinned
-            ? $"[Glam Roulette] Keeping {key}'s outfit however long they are away."
-            : $"[Glam Roulette] {key}'s outfit will be forgotten like anyone else's.");
+            ? $"[Glam Roulette] Keeping this outfit on {Describe(key)} however long they are away."
+            : $"[Glam Roulette] This outfit on {Describe(key)} will be forgotten like any other.");
     }
 
     private void Reroll(string key)
@@ -72,6 +82,14 @@ internal sealed class PlayerContextMenu : IDisposable
         if (wardrobe.Reroll(key))
             Svc.Chat.Print($"[Glam Roulette] Re-rolling {key}.");
         else
-            Svc.Chat.Print($"[Glam Roulette] {key} had no outfit from me to re-roll.");
+            Svc.Chat.Print($"[Glam Roulette] {key} had nothing to re-roll - either no outfit from me, " +
+                           "or the ones they have are being kept.");
+    }
+
+    /// <summary>"Name@World#Tank" reads better as "Name@World as a tank".</summary>
+    private static string Describe(string key)
+    {
+        var hash = key.IndexOf('#');
+        return hash < 0 ? key : $"{key[..hash]} as {key[(hash + 1)..].ToLowerInvariant()}";
     }
 }

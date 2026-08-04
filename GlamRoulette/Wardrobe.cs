@@ -29,20 +29,37 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     public int Remembered => config.Assignments.Count;
     public int Kept => config.Pinned.Count;
 
-    public bool IsPinned(string playerKey) => config.Pinned.Contains(PlayerOf(playerKey));
-
-    /// <summary>Keeps or stops keeping this player's outfits regardless of when they were
-    /// last around. Returns what the setting is now.</summary>
-    public bool TogglePinned(string playerKey)
+    /// <summary>The assignment key for a player as they are right now, role included.</summary>
+    public string KeyFor(IPlayerCharacter player)
     {
-        var player = PlayerOf(playerKey);
-        var pinned = !config.Pinned.Remove(player);
-        if (pinned)
+        var group = JobPools.GroupOf(player);
+        var key = KeyOf(player);
+        return config.MatchJobCategory && group != JobPools.Group.Unknown ? key + "#" + group : key;
+    }
+
+    /// <summary>Pins from before this was per-outfit named a whole player, so honour both.</summary>
+    public bool IsPinned(string assignmentKey)
+        => config.Pinned.Contains(assignmentKey) || config.Pinned.Contains(PlayerOf(assignmentKey));
+
+    /// <summary>Keeps or stops keeping this one outfit. Returns what the setting is now.</summary>
+    public bool TogglePinned(string assignmentKey)
+    {
+        bool pinned;
+        if (IsPinned(assignmentKey))
         {
-            config.Pinned.Add(player);
+            // Clear the whole-player form as well, or an old one would keep every role of
+            // theirs pinned and unpinning a single outfit would look like it did nothing.
+            config.Pinned.Remove(assignmentKey);
+            config.Pinned.Remove(PlayerOf(assignmentKey));
+            pinned = false;
+        }
+        else
+        {
+            config.Pinned.Add(assignmentKey);
             // Stamp them as seen, or a pin applied to someone already past the cutoff would
             // be undone by the very next prune.
-            config.LastSeen[player] = DateTime.UtcNow;
+            config.LastSeen[PlayerOf(assignmentKey)] = DateTime.UtcNow;
+            pinned = true;
         }
 
         config.Save();
@@ -88,28 +105,41 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         }
 
         var cutoff = DateTime.UtcNow.AddMinutes(-config.RememberMinutes);
-        var gone = config.LastSeen
-            .Where(s => s.Value < cutoff && !config.Pinned.Contains(s.Key))
-            .Select(s => s.Key)
-            .ToList();
-
+        var gone = config.LastSeen.Where(s => s.Value < cutoff).Select(s => s.Key).ToList();
         if (gone.Count == 0)
             return;
 
         var dropped = 0;
+        var players = 0;
+
         foreach (var player in gone)
         {
-            config.LastSeen.Remove(player);
-            foreach (var key in config.Assignments.Keys
-                         .Where(k => PlayerOf(k) == player).ToList())
+            // Pinned outfits survive individually, so a player can keep the one that was
+            // worth keeping and lose the rest.
+            var expiring = config.Assignments.Keys
+                .Where(k => PlayerOf(k) == player && !IsPinned(k))
+                .ToList();
+
+            foreach (var key in expiring)
             {
                 config.Assignments.Remove(key);
                 dropped++;
             }
+
+            if (expiring.Count > 0)
+                players++;
+
+            // Only stop tracking them once nothing of theirs is left, or a pinned outfit
+            // would lose its last-seen time and never be prunable if it were ever unpinned.
+            if (!config.Assignments.Keys.Any(k => PlayerOf(k) == player))
+                config.LastSeen.Remove(player);
         }
 
+        if (dropped == 0)
+            return;
+
         config.Save();
-        Svc.Log.Information($"[GlamRoulette] Forgot {dropped} outfit(s) from {gone.Count} player(s) not seen in " +
+        Svc.Log.Information($"[GlamRoulette] Forgot {dropped} outfit(s) from {players} player(s) not seen in " +
                             $"{config.RememberMinutes} minutes");
     }
 
@@ -182,15 +212,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     }
 
     /// <summary>
-    /// Throws away this player's outfit so the next pass picks a new one. The key carries the
-    /// discipline when pools are split, so this clears every discipline they have been seen
-    /// on rather than only the one they happen to be wearing.
+    /// Throws away this player's outfits so the next pass picks new ones - every role they
+    /// have been seen on, not only the one they are standing in. Kept outfits are left alone;
+    /// they are meant to be immovable, and unpinning is right there in the same menu.
     /// </summary>
     public bool Reroll(string key)
     {
         var player = PlayerOf(key);
         var stale = config.Assignments.Keys
-            .Where(k => k == player || k.StartsWith(player + "#", StringComparison.Ordinal))
+            .Where(k => (k == player || k.StartsWith(player + "#", StringComparison.Ordinal)) && !IsPinned(k))
             .ToList();
 
         if (stale.Count == 0)
@@ -220,10 +250,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return hash < 0 ? key : key[..hash];
     }
 
+    /// <summary>Re-rolls everyone except the outfits that were explicitly kept.</summary>
     public int RerollEverybody()
     {
-        var count = config.Assignments.Count;
-        config.Assignments.Clear();
+        var stale = config.Assignments.Keys.Where(k => !IsPinned(k)).ToList();
+        var count = stale.Count;
+
+        foreach (var key in stale)
+            config.Assignments.Remove(key);
+
         config.Save();
         applied.Clear();
         lastApplied.Clear();

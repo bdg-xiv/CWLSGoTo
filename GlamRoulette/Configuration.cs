@@ -59,7 +59,11 @@ public class Configuration : IPluginConfiguration
     /// role, so being seen on any job keeps all of their outfits alive.</summary>
     public Dictionary<string, DateTime> LastSeen { get; set; } = [];
 
-    /// <summary>Players whose outfits are kept no matter how long they have been gone.</summary>
+    /// <summary>
+    /// Outfits kept no matter how long their wearer has been gone, keyed the same way as an
+    /// assignment - so one role's outfit can be kept while the same player's others age out.
+    /// An entry without a role is honoured too, from when pinning covered a whole player.
+    /// </summary>
     public HashSet<string> Pinned { get; set; } = [];
 
     /// <summary>How long an unseen player keeps their outfit. Zero means forever.</summary>
