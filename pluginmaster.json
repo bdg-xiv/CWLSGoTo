@@ -274,7 +274,7 @@
     "Author": "bdg",
     "Name": "Laziness",
     "InternalName": "Laziness",
-    "AssemblyVersion": "0.0.0.16",
+    "AssemblyVersion": "0.0.0.17",
     "Description": "A window of one-click chores. \"Buy soil\" talks to Hismena in Idyllshire, spends your Allagan Tomestones of Poetics on Unidentifiable Shells, then walks over to Bertana and trades every shell for Grade 3 Shroud Topsoil. Stand near the NPCs and press the button.",
     "ApplicableVersion": "any",
     "Tags": [
@@ -475,6 +475,31 @@
     "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/MountHeels.zip",
     "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/MountHeels.zip",
     "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/MountHeels.zip"
+  },
+  {
+    "Author": "bdg",
+    "Name": "Hunt Spots",
+    "InternalName": "HuntSpots",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Draws the spots where A and S ranks come up onto the game's own map, in every zone from A Realm Reborn to Dawntrail. Open the map and they are there - browse to a zone you are about to fly to and they are there too, so you can see where to look before you arrive. Points that serve more than one rank are drawn once, as the rarest of them, with the ranks in the tooltip. Spawn points are not in the game files: nothing in the sheets says where a mark can appear. These are the ones the community mapped out, taken from Hunt Helper (github.com/img02/HuntHelper, MIT) and used with thanks - if you want to record or correct them, that is the plugin to do it in. Icons and size are configurable, and the defaults deliberately avoid the ones Eureka Linker uses. Toggle the window with /huntspots.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "hunt",
+      "map",
+      "marks",
+      "spawn"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "A and S rank spawn points, on the real map.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/HuntSpots.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/HuntSpots.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/HuntSpots.zip"
   },
   {
     "Author": "bdg",
