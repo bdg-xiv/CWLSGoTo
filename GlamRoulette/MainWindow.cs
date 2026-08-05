@@ -89,6 +89,9 @@ internal sealed class MainWindow : Window
         ImGui.TextWrapped("Two outfit mods built on the same base item cannot both be on - they replace " +
                           "the same file, and one has to win. List them here and each person is given " +
                           "just the one their outfit needs, so both can be in the pool.");
+        ImGui.TextWrapped("Several clashing pairs can share this list. Which ones are really in each " +
+                          "other's way is worked out from the items they change, so a mod is only " +
+                          "switched off for someone whose outfit needed the room.");
 
         foreach (var mod in config.ExclusiveMods.ToList())
         {
@@ -106,6 +109,8 @@ internal sealed class MainWindow : Window
 
         if (config.ExclusiveMods.Count == 1)
             ImGui.TextColored(Dim, "One on its own has nothing to clash with - add the other.");
+        else if (config.ExclusiveMods.Count > 1)
+            ImGui.TextColored(Dim, $"{wardrobe.ClashCount} of these have someone to fight.");
 
         ImGui.SetNextItemWidth(180f);
         ImGui.InputTextWithHint("##clashfilter", "Find a mod to add...", ref clashFilter, 100);

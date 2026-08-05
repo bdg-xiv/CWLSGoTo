@@ -22,14 +22,34 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
     /// <summary>Which mod each item belongs to, built from what the listed mods change.</summary>
     private Dictionary<ulong, List<string>>? owners;
 
+    /// <summary>
+    /// Which mods actually fight each other, worked out rather than grouped by hand: two mods
+    /// that change the same item are after the same files, and two that have no item in common
+    /// have no quarrel. So every clashing pair you own can go in one list and a mod is only
+    /// ever switched off to make room for one it was really in the way of.
+    /// </summary>
+    private Dictionary<string, HashSet<string>>? rivals;
+
     /// <summary>What each object index was last set to, so nobody is redrawn for no reason.</summary>
     private readonly Dictionary<int, string> applied = [];
 
     public int Count => applied.Count;
 
+    /// <summary>How many of the listed mods actually have a rival among the others, so a list
+    /// with a typo or a mod that clashes with nothing is visible rather than silent.</summary>
+    public int Clashing
+    {
+        get
+        {
+            owners ??= Build();
+            return rivals!.Count;
+        }
+    }
+
     public void Forget()
     {
         owners = null;
+        rivals = null;
         applied.Clear();
     }
 
@@ -53,9 +73,18 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
         if (applied.TryGetValue(objectIndex, out var previous) && previous == wanted)
             return false;
 
+        // Only the ones this outfit's mod was actually fighting. A second clashing pair in the
+        // same list has nothing to do with this player and is left switched on.
+        var fighting = rivals!.GetValueOrDefault(wanted) ?? [];
+
         var changed = false;
         foreach (var mod in config.ExclusiveMods)
+        {
+            if (mod.Directory != wanted && !fighting.Contains(mod.Directory))
+                continue;
+
             changed |= penumbra.Enable(objectIndex, mod.Directory, mod.Directory == wanted);
+        }
 
         applied[objectIndex] = wanted;
 
@@ -116,7 +145,22 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
             }
         }
 
-        Svc.Log.Information($"[GlamRoulette] {config.ExclusiveMods.Count} clashing mods cover {built.Count} items");
+        // Anything sharing an item is after the same files, so those are the pairs that fight.
+        rivals = [];
+        foreach (var mods in built.Values.Where(m => m.Count > 1))
+        {
+            foreach (var mod in mods)
+            {
+                if (!rivals.TryGetValue(mod, out var against))
+                    rivals[mod] = against = [];
+
+                foreach (var other in mods.Where(o => o != mod))
+                    against.Add(other);
+            }
+        }
+
+        Svc.Log.Information($"[GlamRoulette] {config.ExclusiveMods.Count} listed mods cover {built.Count} items, " +
+                            $"{rivals.Count} of them with someone to fight");
         return built;
     }
 

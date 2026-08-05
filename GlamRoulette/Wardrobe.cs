@@ -460,6 +460,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         exclusives.Forget();
     }
 
+    /// <summary>How many of the listed clashing mods have a rival among the others.</summary>
+    public int ClashCount => exclusives.Clashing;
+
     /// <summary>A mod's option groups, for the window to list.</summary>
     public IReadOnlyDictionary<string, (string[] Options, PenumbraIpc.GroupType Type)> GroupsOf(string modDirectory)
         => mods.GroupsOf(modDirectory);
