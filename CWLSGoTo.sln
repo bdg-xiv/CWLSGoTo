@@ -43,6 +43,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MountHeels", "MountHeels\Mo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HuntSpots", "HuntSpots\HuntSpots.csproj", "{4C1D9A83-2F6E-47B5-9E0A-8D3B71C6A254}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PositionalBridge", "PositionalBridge\PositionalBridge.csproj", "{9B7E5D14-63A2-4E88-B1F0-27C4A9D8E035}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -129,6 +131,10 @@ Global
 		{4C1D9A83-2F6E-47B5-9E0A-8D3B71C6A254}.Debug|x64.Build.0 = Debug|x64
 		{4C1D9A83-2F6E-47B5-9E0A-8D3B71C6A254}.Release|x64.ActiveCfg = Release|x64
 		{4C1D9A83-2F6E-47B5-9E0A-8D3B71C6A254}.Release|x64.Build.0 = Release|x64
+		{9B7E5D14-63A2-4E88-B1F0-27C4A9D8E035}.Debug|x64.ActiveCfg = Debug|x64
+		{9B7E5D14-63A2-4E88-B1F0-27C4A9D8E035}.Debug|x64.Build.0 = Debug|x64
+		{9B7E5D14-63A2-4E88-B1F0-27C4A9D8E035}.Release|x64.ActiveCfg = Release|x64
+		{9B7E5D14-63A2-4E88-B1F0-27C4A9D8E035}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
