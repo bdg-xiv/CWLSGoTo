@@ -270,10 +270,18 @@ internal sealed class MainWindow : Window
     /// Which of a group's options are in play. A mod with forty variants is rarely forty
     /// variants you want to see, and a set of tick boxes is rarely all worth rolling.
     /// </summary>
-    private void DrawGroupOptions(ModPick mod, string group, string[] options)
+    private void DrawGroupOptions(ModPick mod, string group, string[] options, PenumbraIpc.GroupType type)
     {
         if (!ImGui.TreeNode($"which options##opts{group}"))
             return;
+
+        // What unticking actually does is not the same for the two kinds, and the difference
+        // matters: on a dropdown it takes an option out of the running, on tick boxes it hands
+        // that one option back to you. Said here rather than once at the bottom, where it could
+        // only ever be true of one of them.
+        ImGui.TextColored(Dim, type == PenumbraIpc.GroupType.Single
+            ? "One of the ticked is picked. Unticked are never picked."
+            : "Each ticked one is flipped by itself. Unticked keep what you set in Penumbra.");
 
         var allowed = mod.Allowed(group);
 
@@ -435,16 +443,23 @@ internal sealed class MainWindow : Window
                     var allowed = mod.Allowed(group);
                     var live = allowed == null ? options.Length : options.Count(allowed.Contains);
 
+                    // The kind leads, because it is the thing worth scanning down the list for:
+                    // a dropdown that lands on the one option called "None" and tick boxes that
+                    // turn something off are the same surprise arrived at two different ways.
                     ImGui.SameLine();
                     ImGui.TextColored(Dim, type == PenumbraIpc.GroupType.Single
-                        ? $"{live} of {options.Length}, one of them"
-                        : $"{live} of {options.Length} toggles, any combination");
+                        ? $"- picks ONE of {live}"
+                        : $"- flips EACH of {live}");
+
+                    if (live != options.Length)
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(Dim, $"({options.Length - live} left out)");
+                    }
 
                     if (include)
-                        DrawGroupOptions(mod, group, options);
+                        DrawGroupOptions(mod, group, options, type);
                 }
-
-                ImGui.TextColored(Dim, "Unticked keeps whatever you have chosen in Penumbra.");
 
                 ImGui.TreePop();
             }
