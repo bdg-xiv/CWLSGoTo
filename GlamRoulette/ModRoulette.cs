@@ -104,20 +104,35 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra)
             }
 
             var seed = Seed(playerKey, mod.Directory, group);
+            var allowed = mod.Allowed(group);
 
-            if (type == PenumbraIpc.GroupType.Single)
+            if (PicksOne(type))
             {
-                picks[group] = [options[(int)(seed % (uint)options.Length)]];
+                // Narrowed to the options that were left ticked, so a mod with forty variants
+                // can be held to the handful worth seeing. Unticking every one of them would
+                // leave nothing to draw from, which is not a state worth honouring.
+                var pool = allowed == null ? options : options.Where(allowed.Contains).ToArray();
+                if (pool.Length == 0)
+                    pool = options;
+
+                picks[group] = [pool[(int)(seed % (uint)pool.Length)]];
                 continue;
             }
 
-            // Multi and Combining both draw as a set of tick boxes and both take a list of the
-            // ones that are on, so each option gets its own coin and any combination can come
-            // up rather than exactly one.
+            // Tick boxes: each option gets its own coin, so any combination can come up rather
+            // than exactly one. An option that was not left ticked is not rolled at all - it
+            // keeps whatever the collection has it at, the same rule as an untouched group.
+            var mineOn = yours.TryGetValue(group, out var current) ? new HashSet<string>(current) : [];
             var on = new List<string>();
+
             for (var i = 0; i < options.Length; i++)
-                if ((seed >> i & 1) == 1)
-                    on.Add(options[i]);
+            {
+                var option = options[i];
+                var roll = allowed == null || allowed.Contains(option);
+
+                if (roll ? (seed >> i & 1) == 1 : mineOn.Contains(option))
+                    on.Add(option);
+            }
 
             picks[group] = on;
         }
@@ -126,13 +141,21 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra)
     }
 
     /// <summary>
-    /// Imc groups are toggles over an item's own attributes rather than a set of looks, so
-    /// rolling one gets you a broken item rather than a different one. Everything else is a
-    /// list of choices: Combining draws as tick boxes exactly like Multi and takes the same
-    /// list of names, which is why it is in here despite being its own type.
+    /// Every kind of group Penumbra has is a list of choices, whatever it is called: Single
+    /// picks one, and Multi, Combining and Imc all draw as tick boxes and all take the same
+    /// list of the names that are on. An Imc option is one attribute of the item being turned
+    /// on or off - "show sleeves", "show stockings" - which is the mod's own way of showing and
+    /// hiding parts, so rolling one is the point rather than a hazard.
+    ///
+    /// Anything Penumbra adds later is left alone until it is known to take a list of names.
     /// </summary>
     public static bool Rollable(PenumbraIpc.GroupType type)
-        => type is PenumbraIpc.GroupType.Single or PenumbraIpc.GroupType.Multi or PenumbraIpc.GroupType.Combining;
+        => type is PenumbraIpc.GroupType.Single or PenumbraIpc.GroupType.Multi
+            or PenumbraIpc.GroupType.Combining or PenumbraIpc.GroupType.Imc;
+
+    /// <summary>Single groups take exactly one name; every other kind takes the list that is
+    /// ticked on.</summary>
+    private static bool PicksOne(PenumbraIpc.GroupType type) => type == PenumbraIpc.GroupType.Single;
 
     /// <summary>
     /// What the collection already says about a mod, cached: this is a round trip per mod per

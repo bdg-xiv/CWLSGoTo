@@ -14,6 +14,16 @@ public class ModPick
     public string Name { get; set; } = string.Empty;
 
     public HashSet<string> SkipGroups { get; set; } = [];
+
+    /// <summary>
+    /// Which of a group's options are in play, by group. A group that is not in here has all of
+    /// its options in play - the usual case, and what a freshly added mod starts as.
+    /// </summary>
+    public Dictionary<string, HashSet<string>> GroupOptions { get; set; } = [];
+
+    /// <summary>The options a group may use, or null for all of them.</summary>
+    public HashSet<string>? Allowed(string group)
+        => GroupOptions.TryGetValue(group, out var allowed) ? allowed : null;
 }
 
 public class Configuration : IPluginConfiguration

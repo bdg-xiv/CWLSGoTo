@@ -69,6 +69,64 @@ internal sealed class MainWindow : Window
     }
 
     /// <summary>
+    /// Which of a group's options are in play. A mod with forty variants is rarely forty
+    /// variants you want to see, and a set of tick boxes is rarely all worth rolling.
+    /// </summary>
+    private void DrawGroupOptions(ModPick mod, string group, string[] options)
+    {
+        if (!ImGui.TreeNode($"which options##opts{group}"))
+            return;
+
+        var allowed = mod.Allowed(group);
+
+        if (ImGui.SmallButton($"All##all{group}"))
+        {
+            mod.GroupOptions.Remove(group);
+            config.Save();
+            wardrobe.ForgetMods();
+            allowed = null;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton($"None##none{group}"))
+        {
+            mod.GroupOptions[group] = [];
+            config.Save();
+            wardrobe.ForgetMods();
+            allowed = mod.Allowed(group);
+        }
+
+        // Tall lists get their own scroll rather than pushing everything else off the window.
+        var scrolled = options.Length > 8;
+        if (scrolled)
+            ImGui.BeginChild($"##list{group}", new Vector2(0, 150), true);
+
+        foreach (var option in options)
+        {
+            var on = allowed?.Contains(option) ?? true;
+            if (!ImGui.Checkbox($"{option}##{group}{option}", ref on))
+                continue;
+
+            // The absent-means-everything shorthand has to become a real set the moment one is
+            // turned off, or there would be nothing to take it out of.
+            var set = mod.Allowed(group) ?? [..options];
+            if (on)
+                set.Add(option);
+            else
+                set.Remove(option);
+
+            mod.GroupOptions[group] = set;
+            config.Save();
+            wardrobe.ForgetMods();
+        }
+
+        if (scrolled)
+            ImGui.EndChild();
+
+        ImGui.TreePop();
+    }
+
+    /// <summary>
     /// The mods whose dropdowns get rolled, picked out one at a time. Deliberately not "every
     /// mod that is on": a size or body group has to match the wearer, and rolling one of those
     /// is how you get gaps instead of variety.
@@ -145,10 +203,16 @@ internal sealed class MainWindow : Window
                         wardrobe.ForgetMods();
                     }
 
+                    var allowed = mod.Allowed(group);
+                    var live = allowed == null ? options.Length : options.Count(allowed.Contains);
+
                     ImGui.SameLine();
                     ImGui.TextColored(Dim, type == PenumbraIpc.GroupType.Single
-                        ? $"{options.Length} options, one of them"
-                        : $"{options.Length} toggles, any combination");
+                        ? $"{live} of {options.Length}, one of them"
+                        : $"{live} of {options.Length} toggles, any combination");
+
+                    if (include)
+                        DrawGroupOptions(mod, group, options);
                 }
 
                 ImGui.TextColored(Dim, "Unticked keeps whatever you have chosen in Penumbra.");
