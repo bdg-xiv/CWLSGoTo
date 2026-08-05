@@ -27,6 +27,7 @@ internal sealed class PenumbraIpc
 
     private readonly ICallGateSubscriber<(int Breaking, int Feature)> apiVersion;
     private readonly ICallGateSubscriber<Dictionary<string, string>> modList;
+    private readonly ICallGateSubscriber<string, string, Dictionary<string, object?>> changedItems;
     private readonly ICallGateSubscriber<string, string, IReadOnlyDictionary<string, (string[] Options, int Type)>?> availableSettings;
     private readonly ICallGateSubscriber<int, string, string,
         (bool Inherit, bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings),
@@ -43,6 +44,8 @@ internal sealed class PenumbraIpc
         // reaches nobody at all rather than failing loudly.
         apiVersion = Svc.PluginInterface.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion.V5");
         modList = Svc.PluginInterface.GetIpcSubscriber<Dictionary<string, string>>("Penumbra.GetModList");
+        changedItems = Svc.PluginInterface
+            .GetIpcSubscriber<string, string, Dictionary<string, object?>>("Penumbra.GetChangedItems.V5");
         availableSettings = Svc.PluginInterface
             .GetIpcSubscriber<string, string, IReadOnlyDictionary<string, (string[], int)>?>("Penumbra.GetAvailableModSettings.V5");
         setForPlayer = Svc.PluginInterface
@@ -56,6 +59,41 @@ internal sealed class PenumbraIpc
         currentSettings = Svc.PluginInterface
             .GetIpcSubscriber<Guid, string, string, bool, (int, (bool, int, Dictionary<string, List<string>>, bool)?)>(
                 "Penumbra.GetCurrentModSettings.V5");
+    }
+
+    /// <summary>The items a mod changes, by name - Penumbra's own Changed Items list.</summary>
+    public IReadOnlyCollection<string> ChangedItems(string modDirectory)
+    {
+        try
+        {
+            return changedItems.InvokeFunc(modDirectory, string.Empty).Keys;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not read what {modDirectory} changes: {ex.Message}");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Switches a whole mod on or off for one player and nobody else. Two mods that replace the
+    /// same model file can only have one winner in a collection, but a temporary setting is per
+    /// object, so each person can be given the one their outfit actually needs.
+    /// </summary>
+    public bool Enable(int objectIndex, string modDirectory, bool enabled)
+    {
+        try
+        {
+            var result = setForPlayer.InvokeFunc(objectIndex, modDirectory, string.Empty,
+                (false, enabled, 0, new Dictionary<string, IReadOnlyList<string>>()), "Glam Roulette", 0);
+
+            return result == 0;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not switch {modDirectory} for object {objectIndex}: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>The collection a player is actually being drawn with.</summary>

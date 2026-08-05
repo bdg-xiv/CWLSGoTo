@@ -12,7 +12,8 @@ namespace GlamRoulette;
 /// object index, because an index is only meaningful for as long as the player stays loaded
 /// and the whole point here is that it survives them walking away.
 /// </summary>
-internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes, RaceSwap races, ModRoulette mods)
+internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes, RaceSwap races,
+    ModRoulette mods, Exclusives exclusives)
 {
     private readonly Random random = new();
 
@@ -382,6 +383,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (DesignFor(key, group, isMe ? ExpireMine(key) : null) is not { } design)
                 continue;
 
+            // Which of the clashing mods this outfit needs, before it goes on: switching a mod
+            // redraws them, and a redraw takes the outfit off again.
+            if (exclusives.Apply(player.ObjectIndex, design))
+            {
+                applied.Remove(player.ObjectIndex);
+                lastApplied.Remove(player.ObjectIndex);
+                continue;
+            }
+
             if (applied.TryGetValue(player.ObjectIndex, out var current)
                 && current.Key == key && current.Design == design)
             {
@@ -425,6 +435,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         races.Sweep(present);
         mods.Sweep(present);
+        exclusives.Sweep(present);
     }
 
     /// <summary>Puts everyone back as we found them.</summary>
@@ -436,13 +447,18 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             Restore(index);
 
         mods.ReleaseAll();
+        exclusives.Forget();
         races.Forget();
         applied.Clear();
         lastApplied.Clear();
     }
 
     /// <summary>Rolls the mod options again for everyone, for when the picks change.</summary>
-    public void ForgetMods() => mods.Forget();
+    public void ForgetMods()
+    {
+        mods.Forget();
+        exclusives.Forget();
+    }
 
     /// <summary>A mod's option groups, for the window to list.</summary>
     public IReadOnlyDictionary<string, (string[] Options, PenumbraIpc.GroupType Type)> GroupsOf(string modDirectory)

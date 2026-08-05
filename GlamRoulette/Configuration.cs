@@ -103,6 +103,13 @@ public class Configuration : IPluginConfiguration
     /// and clipping rather than variety.</summary>
     public List<ModPick> RandomizedMods { get; set; } = [];
 
+    /// <summary>
+    /// Mods that cannot be on at once because they replace the same files. Each player is given
+    /// only the one their outfit needs, so two outfits built on the same base item can both be
+    /// in the pool.
+    /// </summary>
+    public List<ModPick> ExclusiveMods { get; set; } = [];
+
     // How often each tier comes up, relative to the others. There are far more standard dyes
     // than metallic ones, so the metallic weight has to be well above parity just to break
     // even - these defaults land it a bit over half of all rolls.

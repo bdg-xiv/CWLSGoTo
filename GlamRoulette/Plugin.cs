@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
@@ -33,7 +33,7 @@ public sealed class Plugin : IDalamudPlugin
         var dyes = new Dyes(config, glamourer);
         var penumbra = new PenumbraIpc();
         wardrobe = new Wardrobe(config, glamourer, dyes, new RaceSwap(config, glamourer),
-            new ModRoulette(config, penumbra));
+            new ModRoulette(config, penumbra), new Exclusives(config, penumbra, dyes));
         wardrobe.StampUnknownAsSeen();
         contextMenu = new PlayerContextMenu(config, wardrobe);
         window = new MainWindow(config, wardrobe, glamourer, dyes, penumbra);

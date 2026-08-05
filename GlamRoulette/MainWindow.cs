@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -15,6 +15,7 @@ internal sealed class MainWindow : Window
     private readonly PenumbraIpc penumbra;
 
     private string modFilter = string.Empty;
+    private string clashFilter = string.Empty;
 
     private static readonly Vector4 Dim = new(0.65f, 0.65f, 0.65f, 1f);
     private static readonly Vector4 Bad = new(1f, 0.45f, 0.45f, 1f);
@@ -66,6 +67,76 @@ internal sealed class MainWindow : Window
         ImGui.SameLine();
         var count = wardrobe.PoolFor(group).Count;
         ImGui.TextColored(count == 0 ? Bad : Dim, $"{count} design{(count == 1 ? "" : "s")}");
+    }
+
+    /// <summary>
+    /// Mods that cannot be on together, so each person can be given only the one their outfit
+    /// wants. Two outfits built on the same base item replace the same model file and a
+    /// collection can only have one winner - but a player can.
+    /// </summary>
+    private void DrawExclusives()
+    {
+        if (!ImGui.TreeNode("Mods that clash with each other"))
+            return;
+
+        if (!penumbra.Available)
+        {
+            ImGui.TextColored(Bad, "Penumbra is not answering.");
+            ImGui.TreePop();
+            return;
+        }
+
+        ImGui.TextWrapped("Two outfit mods built on the same base item cannot both be on - they replace " +
+                          "the same file, and one has to win. List them here and each person is given " +
+                          "just the one their outfit needs, so both can be in the pool.");
+
+        foreach (var mod in config.ExclusiveMods.ToList())
+        {
+            ImGui.PushID("x" + mod.Directory);
+            ImGui.Text($"  {mod.Name}");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Remove"))
+            {
+                config.ExclusiveMods.Remove(mod);
+                config.Save();
+                wardrobe.RevertAll();
+            }
+            ImGui.PopID();
+        }
+
+        if (config.ExclusiveMods.Count == 1)
+            ImGui.TextColored(Dim, "One on its own has nothing to clash with - add the other.");
+
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputTextWithHint("##clashfilter", "Find a mod to add...", ref clashFilter, 100);
+
+        if (clashFilter.Trim().Length >= 2)
+        {
+            var needle = clashFilter.Trim();
+            var shown = 0;
+
+            foreach (var (directory, name) in penumbra.Mods())
+            {
+                if (shown >= 8)
+                    break;
+                if (name.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                if (config.ExclusiveMods.Any(m => m.Directory == directory))
+                    continue;
+
+                shown++;
+                if (!ImGui.Button($"{name}##clash{directory}"))
+                    continue;
+
+                config.ExclusiveMods.Add(new ModPick { Directory = directory, Name = name });
+                config.Save();
+                clashFilter = string.Empty;
+                wardrobe.ForgetMods();
+                break;
+            }
+        }
+
+        ImGui.TreePop();
     }
 
     /// <summary>
@@ -484,6 +555,7 @@ internal sealed class MainWindow : Window
         }
 
         DrawModOptions();
+        DrawExclusives();
 
         var remember = config.RememberMinutes;
         if (ImGui.SliderInt("Forget after (minutes)", ref remember, 0, 240))

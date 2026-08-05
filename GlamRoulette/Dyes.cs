@@ -125,7 +125,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
         return dyes[^1].Id;
     }
 
-    private List<(byte Slot, ulong ItemId)> ItemsOf(Guid design)
+    public List<(byte Slot, ulong ItemId)> ItemsOf(Guid design)
     {
         if (items.TryGetValue(design, out var cached))
             return cached;
