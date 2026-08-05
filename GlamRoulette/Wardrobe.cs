@@ -308,6 +308,25 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// <summary>Asks for every race swap again, for when the clan being used changes.</summary>
     public void ForgetRaces() => races.Forget();
 
+    /// <summary>
+    /// Throws away your own outfits so the next pass deals you new ones. Same as right-clicking
+    /// yourself, without needing to find your own name to right-click.
+    /// </summary>
+    public bool RerollMe()
+    {
+        var me = Svc.Objects.LocalPlayer;
+        if (me == null)
+            return false;
+
+        // The clock too, or an outfit dealt now would be judged on when the last one arrived
+        // and could go stale within the minute.
+        var key = KeyOf(me);
+        foreach (var stamp in config.MyOutfitSince.Keys.Where(k => PlayerOf(k) == key).ToList())
+            config.MyOutfitSince[stamp] = DateTime.UtcNow;
+
+        return Reroll(key);
+    }
+
     /// <summary>Re-rolls everyone except the outfits that were explicitly kept.</summary>
     public int RerollEverybody()
     {

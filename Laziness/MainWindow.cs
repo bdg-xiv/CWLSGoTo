@@ -1,5 +1,7 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
+using ECommons.Automation;
+using ECommons.DalamudServices;
 using System;
 
 namespace Laziness;
@@ -72,6 +74,16 @@ public class MainWindow : Window
             plugin.StartCrp);
 
         ImGui.EndDisabled();
+
+        // Not a chore and not this plugin's business, but it belongs on whichever panel is
+        // already open. Only offered when Glam Roulette is actually there to answer.
+        if (Svc.Commands.Commands.ContainsKey("/glamroulette"))
+        {
+            ImGui.SameLine();
+            Chore("Re-roll me", "Deals yourself another outfit from Glam Roulette.\n"
+                + "Only does anything if you have it taking a turn on yourself.",
+                () => Chat.ExecuteCommand("/glamroulette me"));
+        }
 
         if (!plugin.Running)
             return;

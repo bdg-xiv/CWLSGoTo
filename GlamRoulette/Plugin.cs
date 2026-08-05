@@ -47,7 +47,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Glam Roulette. Use 'reroll' to re-roll everyone, 'off'/'on' to toggle.",
+            HelpMessage = "Open Glam Roulette. 'reroll' for everyone, 'me' for yourself, 'off'/'on' to toggle.",
         });
     }
 
@@ -90,6 +90,13 @@ public sealed class Plugin : IDalamudPlugin
             case "reroll":
                 var count = wardrobe.RerollEverybody();
                 Svc.Chat.Print($"[Glam Roulette] Re-rolling {count} remembered outfit(s).");
+                return;
+
+            case "me":
+            case "rerollme":
+                Svc.Chat.Print(wardrobe.RerollMe()
+                    ? "[Glam Roulette] Dealing yourself another one."
+                    : "[Glam Roulette] Nothing of yours to re-roll - it may be one you chose to keep.");
                 return;
 
             case "on":

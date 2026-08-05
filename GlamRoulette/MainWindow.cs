@@ -616,6 +616,15 @@ internal sealed class MainWindow : Window
             var count = wardrobe.RerollEverybody();
             ECommons.DalamudServices.Svc.Chat.Print($"[Glam Roulette] Re-rolling {count} remembered outfit(s).");
         }
+
+        if (config.IncludeMe)
+        {
+            ImGui.SameLine();
+            if (ImGui.Button("Re-roll me"))
+                ECommons.DalamudServices.Svc.Chat.Print(wardrobe.RerollMe()
+                    ? "[Glam Roulette] Dealing yourself another one."
+                    : "[Glam Roulette] Nothing of yours to re-roll - it may be one you chose to keep.");
+        }
         ImGui.SameLine();
         if (ImGui.Button("Put everyone back"))
             wardrobe.RevertAll();
