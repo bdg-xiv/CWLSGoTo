@@ -8,10 +8,11 @@ namespace GlamRoulette;
 /// <summary>
 /// Penumbra's published IPC, subscribed by label so this does not carry a copy of its API around.
 ///
-/// The call that matters is SetTemporaryModSettingsPlayer. Mod settings normally belong to a
-/// collection, so giving two people different options would otherwise mean a collection each;
-/// this sets them against an object index instead, writes nothing to the collection, and comes
-/// off again in one call. It is the same door Mare uses to give synced players their own mods.
+/// The call that matters is SetTemporaryModSettingsPlayer, which is not quite what its name
+/// suggests: it takes an object index but writes to whatever collection that object is being drawn
+/// with, and everyone else in that collection is written to along with them. Giving two people
+/// different options is therefore a matter of timing rather than of addressing - see
+/// <see cref="CollectionState"/>.
 /// </summary>
 internal sealed class PenumbraIpc
 {
@@ -32,11 +33,13 @@ internal sealed class PenumbraIpc
     private readonly ICallGateSubscriber<int, string, string,
         (bool Inherit, bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings),
         string, int, int> setForPlayer;
-    private readonly ICallGateSubscriber<int, int, int> removeAllForPlayer;
+    private readonly ICallGateSubscriber<Guid, int, int> removeAllForCollection;
     private readonly ICallGateSubscriber<int, int, object?> redraw;
     private readonly ICallGateSubscriber<int, (bool ObjectValid, bool IndividualSet, (Guid Id, string Name) Collection)> collectionForObject;
     private readonly ICallGateSubscriber<Guid, string, string, bool,
         (int Result, (bool Enabled, int Priority, Dictionary<string, List<string>> Settings, bool Inherited)? Data)> currentSettings;
+
+    private readonly ICallGateSubscriber<object?> initialized;
 
     public PenumbraIpc()
     {
@@ -51,14 +54,34 @@ internal sealed class PenumbraIpc
         setForPlayer = Svc.PluginInterface
             .GetIpcSubscriber<int, string, string, (bool, bool, int, IReadOnlyDictionary<string, IReadOnlyList<string>>), string, int, int>(
                 "Penumbra.SetTemporaryModSettingsPlayer.V5");
-        removeAllForPlayer = Svc.PluginInterface
-            .GetIpcSubscriber<int, int, int>("Penumbra.RemoveAllTemporaryModSettingsPlayer.V5");
+        removeAllForCollection = Svc.PluginInterface
+            .GetIpcSubscriber<Guid, int, int>("Penumbra.RemoveAllTemporaryModSettings.V5");
         redraw = Svc.PluginInterface.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject.V5");
         collectionForObject = Svc.PluginInterface
             .GetIpcSubscriber<int, (bool, bool, (Guid, string))>("Penumbra.GetCollectionForObject.V5");
         currentSettings = Svc.PluginInterface
             .GetIpcSubscriber<Guid, string, string, bool, (int, (bool, int, Dictionary<string, List<string>>, bool)?)>(
                 "Penumbra.GetCurrentModSettings.V5");
+        initialized = Svc.PluginInterface.GetIpcSubscriber<object?>("Penumbra.Initialized");
+    }
+
+    /// <summary>
+    /// Penumbra coming back up. Temporary settings do not survive it, so anything we thought a
+    /// collection was holding has to be treated as gone - otherwise everyone stays in the mod's
+    /// defaults and we never notice, having convinced ourselves it was all already in place.
+    /// </summary>
+    public void OnRestart(Action handler) => initialized.Subscribe(handler);
+
+    public void StopWatching(Action handler)
+    {
+        try
+        {
+            initialized.Unsubscribe(handler);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not stop watching Penumbra: {ex.Message}");
+        }
     }
 
     /// <summary>The items a mod changes, by name - Penumbra's own Changed Items list.</summary>
@@ -72,27 +95,6 @@ internal sealed class PenumbraIpc
         {
             Svc.Log.Warning($"[GlamRoulette] Could not read what {modDirectory} changes: {ex.Message}");
             return [];
-        }
-    }
-
-    /// <summary>
-    /// Switches a whole mod on or off for one player and nobody else. Two mods that replace the
-    /// same model file can only have one winner in a collection, but a temporary setting is per
-    /// object, so each person can be given the one their outfit actually needs.
-    /// </summary>
-    public bool Enable(int objectIndex, string modDirectory, bool enabled)
-    {
-        try
-        {
-            var result = setForPlayer.InvokeFunc(objectIndex, modDirectory, string.Empty,
-                (false, enabled, 0, new Dictionary<string, IReadOnlyList<string>>()), "Glam Roulette", 0);
-
-            return result == 0;
-        }
-        catch (Exception ex)
-        {
-            Svc.Log.Warning($"[GlamRoulette] Could not switch {modDirectory} for object {objectIndex}: {ex.Message}");
-            return false;
         }
     }
 
@@ -185,16 +187,19 @@ internal sealed class PenumbraIpc
     }
 
     /// <summary>
-    /// Sets one mod's options for one player and nobody else. Inherit is false and enabled true
-    /// so the mod is definitely on for them, whatever the collection says; the key stays zero so
-    /// these are not locked to us and can always be cleared by hand.
+    /// Sets one mod - on or off, and with which options - in the collection this player is being
+    /// drawn with. Inherit is false so the mod is definitely at what we say rather than at what it
+    /// inherits; the key stays zero so these are not locked to us and can always be cleared by
+    /// hand. Only the model built after this call carries the change, which is what makes it
+    /// per-person despite the collection being shared.
     /// </summary>
-    public bool Apply(int objectIndex, string modDirectory, IReadOnlyDictionary<string, IReadOnlyList<string>> settings)
+    public bool Apply(int objectIndex, string modDirectory, bool enabled,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> settings)
     {
         try
         {
             var result = setForPlayer.InvokeFunc(objectIndex, modDirectory, string.Empty,
-                (false, true, 0, settings), "Glam Roulette", 0);
+                (false, enabled, 0, settings), "Glam Roulette", 0);
 
             if (result == 0)
                 return true;
@@ -209,16 +214,16 @@ internal sealed class PenumbraIpc
         }
     }
 
-    /// <summary>Takes every temporary setting of ours off one player.</summary>
-    public void Release(int objectIndex)
+    /// <summary>Takes every temporary setting back out of a collection.</summary>
+    public void Release(Guid collection)
     {
         try
         {
-            removeAllForPlayer.InvokeFunc(objectIndex, 0);
+            removeAllForCollection.InvokeFunc(collection, 0);
         }
         catch (Exception ex)
         {
-            Svc.Log.Warning($"[GlamRoulette] Could not clear object {objectIndex}: {ex.Message}");
+            Svc.Log.Warning($"[GlamRoulette] Could not clear collection {collection}: {ex.Message}");
         }
     }
 

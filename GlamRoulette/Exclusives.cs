@@ -13,9 +13,10 @@ namespace GlamRoulette;
 /// have one winner - so the loser's outfit comes out wearing the winner's mesh. Priority does
 /// not help; there is one file and two claims on it.
 ///
-/// Penumbra's temporary settings are per object though, so the choice does not have to be made
-/// once for everyone. Each player gets the one mod their outfit actually needs switched on and
-/// the rest switched off, and the pair can be in the pool together.
+/// A temporary setting can be changed between one person being drawn and the next though, and a
+/// model keeps what it was built with, so the choice does not have to be made once for everyone.
+/// Each player is drawn with the one mod their outfit actually needs switched on and the rest
+/// switched off, and the pair can be in the pool together.
 /// </summary>
 internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dyes dyes)
 {
@@ -34,11 +35,6 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
     /// is more specific about them than an outfit that happens to include a pair.</summary>
     private Dictionary<string, int>? sizes;
 
-    /// <summary>What each object index was last set to, so nobody is redrawn for no reason.</summary>
-    private readonly Dictionary<int, string> applied = [];
-
-    public int Count => applied.Count;
-
     /// <summary>How many of the listed mods actually have a rival among the others, so a list
     /// with a typo or a mod that clashes with nothing is visible rather than silent.</summary>
     public int Clashing
@@ -55,49 +51,39 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
         owners = null;
         rivals = null;
         sizes = null;
-        applied.Clear();
     }
 
     /// <summary>
-    /// Switches the listed mods on or off for one player to suit the outfit they have been
-    /// given. Returns true when something changed, since that costs a redraw and the outfit has
-    /// to go on after it rather than before.
+    /// Which of the listed mods have to be on and which off for one outfit to come out right.
+    /// Nothing is sent from here - the wardrobe collects this together with the rolled options
+    /// and writes both at once, so one person costs one redraw rather than two.
     /// </summary>
-    public bool Apply(int objectIndex, Guid design)
+    public IReadOnlyList<(string Mod, bool Enabled)> Plan(Guid design)
     {
         if (config.ExclusiveMods.Count < 2 || !penumbra.Available)
-            return false;
+            return [];
 
         var wanted = OwnerOf(design);
 
         // No idea which of them this outfit belongs to - leave every one of them alone rather
         // than guessing and turning off the one that was working.
         if (wanted == null)
-            return false;
-
-        if (applied.TryGetValue(objectIndex, out var previous) && previous == wanted)
-            return false;
+            return [];
 
         // Only the ones this outfit's mod was actually fighting. A second clashing pair in the
         // same list has nothing to do with this player and is left switched on.
         var fighting = rivals!.GetValueOrDefault(wanted) ?? [];
 
-        var changed = false;
+        var plan = new List<(string, bool)>();
         foreach (var mod in config.ExclusiveMods)
         {
             if (mod.Directory != wanted && !fighting.Contains(mod.Directory))
                 continue;
 
-            changed |= penumbra.Enable(objectIndex, mod.Directory, mod.Directory == wanted);
+            plan.Add((mod.Directory, mod.Directory == wanted));
         }
 
-        applied[objectIndex] = wanted;
-
-        // The wardrobe redraws once for everything that moved, so nothing is asked for here.
-        if (changed)
-            Svc.Log.Debug($"[GlamRoulette] Object {objectIndex} is on {wanted} alone");
-
-        return changed;
+        return plan;
     }
 
     /// <summary>
@@ -189,16 +175,4 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
         return built;
     }
 
-    public void Release(int objectIndex)
-    {
-        // The temporary settings come off with everything else this plugin set on them, so
-        // there is only the bookkeeping to drop here.
-        applied.Remove(objectIndex);
-    }
-
-    public void Sweep(HashSet<int> present)
-    {
-        foreach (var index in applied.Keys.Where(i => !present.Contains(i)).ToList())
-            applied.Remove(index);
-    }
 }

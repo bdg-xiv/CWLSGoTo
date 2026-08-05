@@ -14,12 +14,6 @@ namespace GlamRoulette;
 /// </summary>
 internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dyes dyes)
 {
-    /// <summary>What each object index is currently set to, so a redraw is only asked for when
-    /// something actually changed. A redraw is the expensive part.</summary>
-    private readonly Dictionary<int, string> applied = [];
-
-    public int Dressed => applied.Count;
-
     /// <summary>Cached per mod, since reading them is a round trip and they only change when a
     /// mod is reinstalled.</summary>
     private readonly Dictionary<string, IReadOnlyDictionary<string, (string[] Options, PenumbraIpc.GroupType Type)>> groups = [];
@@ -35,7 +29,6 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     public void Forget()
     {
         groups.Clear();
-        applied.Clear();
         mine.Clear();
         owners = null;
     }
@@ -85,52 +78,35 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         return built;
     }
 
-    /// <summary>Applies everybody's picks. Returns true if this one had to be redrawn.</summary>
-    public bool Apply(int objectIndex, string playerKey, Guid design)
+    /// <summary>
+    /// What this wearer's mods should be rolled to. Nothing is sent from here - the wardrobe
+    /// collects this alongside the clash handling and writes both at once, so one person costs
+    /// one redraw rather than two.
+    /// </summary>
+    public IReadOnlyList<(string Mod, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)> Plan(
+        Guid collection, string playerKey, Guid design)
     {
         if (!config.RandomizeModOptions || config.RandomizedMods.Count == 0 || !penumbra.Available)
-            return false;
+            return [];
 
         // Only the mods this outfit is actually wearing. Rolling the options of all of them for
         // everybody meant every single person needed a redraw to show settings that had no
         // bearing on what they had on.
         var worn = WornBy(design);
         if (worn.Count == 0)
-            return false;
+            return [];
 
-        // Whatever collection this player is really being drawn with, since a temporary setting
-        // has to carry the groups we are not rolling or they fall back to the mod's defaults.
-        var collection = penumbra.CollectionOf(objectIndex);
-
-        var picks = new List<(string Directory, Dictionary<string, IReadOnlyList<string>> Settings)>();
+        var picks = new List<(string, IReadOnlyDictionary<string, IReadOnlyList<string>>)>();
         foreach (var mod in config.RandomizedMods.Where(m => worn.Contains(m.Directory)))
         {
+            // Yours carries the groups we are not rolling: a temporary setting is built from the
+            // mod's own defaults, so a group left unsaid reverts rather than staying put.
             var chosen = Pick(mod, playerKey, Yours(collection, mod.Directory));
             if (chosen.Count > 0)
                 picks.Add((mod.Directory, chosen));
         }
 
-        if (picks.Count == 0)
-            return false;
-
-        // Worked out before anything is sent, so a pass that changes nothing costs nothing.
-        // Penumbra will not show a settings change without a redraw, and redrawing every pass
-        // would leave everyone flickering.
-        var signature = string.Join("|", picks.Select(p =>
-            p.Directory + "=" + string.Join(",", p.Settings.Select(s => $"{s.Key}:{string.Join("/", s.Value)}"))));
-
-        if (applied.TryGetValue(objectIndex, out var previous) && previous == signature)
-            return false;
-
-        var changed = false;
-        foreach (var (directory, settings) in picks)
-            changed |= penumbra.Apply(objectIndex, directory, settings);
-
-        applied[objectIndex] = signature;
-
-        // Deliberately not redrawing here. The wardrobe does it once for whatever changed,
-        // rather than this and the clash handling each asking for one.
-        return changed;
+        return picks;
     }
 
     /// <summary>
@@ -227,31 +203,6 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         var settings = penumbra.CurrentSettings(collection, modDirectory);
         mine[(collection, modDirectory)] = (DateTime.UtcNow, settings);
         return settings;
-    }
-
-    /// <summary>Takes our settings off someone and puts them back as they were.</summary>
-    public void Release(int objectIndex, bool redraw = true)
-    {
-        if (!applied.Remove(objectIndex) || !penumbra.Available)
-            return;
-
-        penumbra.Release(objectIndex);
-        if (redraw)
-            penumbra.Redraw(objectIndex);
-    }
-
-    public void ReleaseAll()
-    {
-        foreach (var index in applied.Keys.ToList())
-            Release(index);
-    }
-
-    public void Sweep(HashSet<int> present)
-    {
-        // Someone who has walked away is gone along with their temporary settings, so there is
-        // nothing to take off - just to stop remembering.
-        foreach (var index in applied.Keys.Where(i => !present.Contains(i)).ToList())
-            applied.Remove(index);
     }
 
     /// <summary>Same hand-rolled hash the dyes use: String.GetHashCode is randomised per

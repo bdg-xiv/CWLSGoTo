@@ -23,6 +23,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly PlayerContextMenu contextMenu;
     private readonly WindowSystem windows = new("GlamRoulette");
     private readonly MainWindow window;
+    private readonly PenumbraIpc penumbra;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -31,10 +32,11 @@ public sealed class Plugin : IDalamudPlugin
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         glamourer = new GlamourerIpc();
         var dyes = new Dyes(config, glamourer);
-        var penumbra = new PenumbraIpc();
+        penumbra = new PenumbraIpc();
         wardrobe = new Wardrobe(config, glamourer, dyes, new RaceSwap(config, glamourer),
             new ModRoulette(config, penumbra, dyes), new Exclusives(config, penumbra, dyes), penumbra);
         wardrobe.StampUnknownAsSeen();
+        penumbra.OnRestart(OnPenumbraRestart);
         contextMenu = new PlayerContextMenu(config, wardrobe);
         window = new MainWindow(config, wardrobe, glamourer, dyes, penumbra);
         windows.AddWindow(window);
@@ -51,10 +53,19 @@ public sealed class Plugin : IDalamudPlugin
         });
     }
 
+    /// <summary>Penumbra has restarted, so every mod and every temporary setting it was holding
+    /// has been through a fresh start and none of what we remember about it still stands.</summary>
+    private void OnPenumbraRestart()
+    {
+        Svc.Log.Information("[GlamRoulette] Penumbra restarted, working the mods out again");
+        wardrobe.ForgetMods();
+    }
+
     public void Dispose()
     {
         Svc.Commands.RemoveHandler(CommandName);
         Svc.Framework.Update -= OnFrameworkUpdate;
+        penumbra.StopWatching(OnPenumbraRestart);
 
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleWindow;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleWindow;

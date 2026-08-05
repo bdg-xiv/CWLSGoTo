@@ -17,11 +17,25 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 {
     private readonly Random random = new();
 
-    /// <summary>Object indices we have dressed, and what we put them in - so we know what to
-    /// revert, and can tell a re-apply from a first apply.</summary>
-    private readonly Dictionary<int, (string Key, Guid Design)> applied = [];
+    /// <summary>
+    /// Object indices we have dressed, what we put them in, and which model it went onto - so we
+    /// know what to revert, can tell a re-apply from a first apply, and can see at once when the
+    /// game has rebuilt somebody and taken the outfit off with the old model.
+    /// </summary>
+    private readonly Dictionary<int, (string Key, Guid Design, nint Draw)> applied = [];
 
     private readonly Dictionary<int, DateTime> lastApplied = [];
+
+    /// <summary>
+    /// The model each player's mod settings were settled against. A temporary setting only shows
+    /// on the model built after it, so the one question worth asking is whether this is still that
+    /// model - the pointer changes on every redraw, ours or the game's, and nothing else has to be
+    /// looked at while it has not. Zero means we have just asked for a rebuild and whatever turns
+    /// up next is the one we asked for.
+    /// </summary>
+    private readonly Dictionary<string, nint> settled = [];
+
+    private readonly CollectionState state = new();
 
     private DateTime nextPrune = DateTime.MinValue;
     private bool seenDirty;
@@ -251,6 +265,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         {
             config.Assignments.Remove(k);
             Rolled(k);
+
+            // The mod options are rolled from the same key, so they have to be looked at again
+            // as well - a new outfit is very likely a different set of mods.
+            settled.Remove(k);
         }
 
         config.Save();
@@ -350,6 +368,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         config.Save();
         applied.Clear();
         lastApplied.Clear();
+        settled.Clear();
         return count;
     }
 
@@ -365,6 +384,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             return;
 
         var present = new HashSet<int>();
+        var here = new HashSet<string>();
         var redrawn = 0;
         var spent = false;
 
@@ -428,42 +448,41 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (DesignFor(key, group, isMe ? ExpireMine(key) : null) is not { } design)
                 continue;
 
-            if (spent)
-                continue;
+            here.Add(key);
 
-            // Both of these change mod settings, and a settings change only shows on a redraw.
-            // Done together and redrawn once: a redraw is the expensive part of all this, and
-            // asking for two in a row is what made a new arrival cost half a second.
-            var clashed = exclusives.Apply(player.ObjectIndex, design);
-            var moved = clashed | mods.Apply(player.ObjectIndex, key, design);
-
-            // The settings are in place either way. Forcing the redraw is only about showing
-            // them now rather than whenever the game next reloads that character on its own.
-            if (moved && config.ForceRedraw)
+            // Mod settings only show on the model built after them, so the one question worth
+            // asking is whether this is still the model they were settled against. While it is,
+            // there is nothing to work out and nothing to send.
+            //
+            // Someone still loading in has no model to ask about, and that is not a reason to
+            // leave them undressed - Glamourer holds an outfit for a character who has yet to
+            // appear and puts it on as they do, which is how they come into view already
+            // wearing it rather than changing a second later.
+            var draw = ModelOf(player);
+            if (draw != 0)
             {
-                // Said out loud, because a redraw is the one thing here anybody can see
-                // happening and there is no other way to tell ours from somebody else's.
-                Svc.Log.Information($"[GlamRoulette] Redrawing {key} - " +
-                                    (clashed ? "clashing mods" : "mod options"));
-
-                // The redraw takes the outfit off again, so it goes on next pass rather than
-                // being put on now and immediately thrown away.
-                penumbra.Redraw(player.ObjectIndex);
-                applied.Remove(player.ObjectIndex);
-                lastApplied.Remove(player.ObjectIndex);
-
-                // One arrival's worth of upheaval per pass. A crowd loading at once would
-                // otherwise redraw all of them in the same frame, which is the freeze. Not a
-                // break: leaving the loop early would leave everyone after this out of the
-                // present set below, and they would be forgotten and started over next pass.
-                if (!config.RedrawAllAtOnce && ++redrawn >= config.RedrawsPerPass)
-                    spent = true;
-
-                continue;
+                if (!settled.TryGetValue(key, out var since))
+                {
+                    if (!Settle(player, key, design, draw, ref spent, ref redrawn))
+                        continue;
+                }
+                else if (since == 0)
+                {
+                    // The rebuild we asked for. It was built from what had just been written,
+                    // so it is theirs by construction and needs no checking.
+                    settled[key] = draw;
+                }
+                else if (since != draw)
+                {
+                    // Something rebuilt them - a zone change, a gearset, someone else's
+                    // business. Whatever they were carrying went with the old model.
+                    if (!Settle(player, key, design, draw, ref spent, ref redrawn))
+                        continue;
+                }
             }
 
             if (applied.TryGetValue(player.ObjectIndex, out var current)
-                && current.Key == key && current.Design == design)
+                && current.Key == key && current.Design == design && current.Draw == draw)
             {
                 if (!config.Reapply)
                     continue;
@@ -480,7 +499,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
             if (result is GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone)
             {
-                applied[player.ObjectIndex] = (key, design);
+                applied[player.ObjectIndex] = (key, design, draw);
 
                 // Has to follow every apply, not just the first: applying the design puts the
                 // design's own dyes back on, so the re-dye would be undone by the next pass.
@@ -503,9 +522,120 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             lastApplied.Remove(index);
         }
 
+        // Their model went with them, so what it was settled against means nothing now. What
+        // does survive is what the collection was left holding, and that is kept - it is what
+        // lets somebody walk back in, or a whole zone reload, without costing a redraw.
+        foreach (var key in settled.Keys.Where(k => !here.Contains(k)).ToList())
+            settled.Remove(key);
+
         races.Sweep(present);
-        mods.Sweep(present);
-        exclusives.Sweep(present);
+    }
+
+    /// <summary>
+    /// Brings one player's mods to what their outfit wants. Returns false when they are to be
+    /// left for a later pass, either because they are being rebuilt or because this pass has
+    /// done enough of that already.
+    /// </summary>
+    private bool Settle(IPlayerCharacter player, string key, Guid design, nint draw,
+        ref bool spent, ref int redrawn)
+    {
+        // Which collection they are really being drawn with. Asked for only when something has
+        // actually rebuilt them, since it is a round trip and the answer rarely changes.
+        var collection = penumbra.CollectionOf(player.ObjectIndex);
+        var wishes = Wishes(collection, key, design);
+
+        // Only what the collection is not already holding. A zone change throws away every model
+        // in it but not the collection's settings, so whoever's options were loaded before the
+        // teleport comes back correct on the other side without being touched - which is most of
+        // a hunt train, most of the time.
+        var missing = wishes.Where(w => !state.Holds(collection, w.Mod, w.Signature)).ToList();
+
+        if (missing.Count == 0)
+        {
+            settled[key] = draw;
+            return true;
+        }
+
+        // One person's worth of upheaval per pass. A crowd arriving together would otherwise
+        // take all of their redraws in the same frame, which is the freeze.
+        if (spent)
+            return false;
+
+        foreach (var (mod, enabled, options, signature) in missing)
+            if (penumbra.Apply(player.ObjectIndex, mod, enabled, options))
+                state.Wrote(collection, mod, signature);
+
+        // The settings are in place either way. Forcing the redraw is only about showing them now
+        // rather than whenever the game next reloads that character on its own.
+        if (!config.ForceRedraw)
+        {
+            settled[key] = draw;
+            return true;
+        }
+
+        // Said out loud, because a redraw is the one thing here anybody can see happening and
+        // there is no other way to tell ours from somebody else's.
+        Svc.Log.Information($"[GlamRoulette] Redrawing {key} for {missing.Count} mod(s)");
+
+        // The redraw takes the outfit off with the old model, so it goes on next pass rather
+        // than being put on now and immediately thrown away.
+        penumbra.Redraw(player.ObjectIndex);
+        applied.Remove(player.ObjectIndex);
+        lastApplied.Remove(player.ObjectIndex);
+        settled[key] = 0;
+
+        if (!config.RedrawAllAtOnce && ++redrawn >= config.RedrawsPerPass)
+            spent = true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Everything one outfit needs of the mods it is built on, the clash handling and the rolled
+    /// options merged into one list so a person costs one redraw rather than two. Off wins: a mod
+    /// switched off to stop it fighting is not one whose options are worth rolling.
+    /// </summary>
+    private List<(string Mod, bool Enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> Options, string Signature)>
+        Wishes(Guid collection, string key, Guid design)
+    {
+        var none = new Dictionary<string, IReadOnlyList<string>>();
+        var wishes = new Dictionary<string, (bool Enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)>();
+
+        foreach (var (mod, enabled) in exclusives.Plan(design))
+            wishes[mod] = (enabled, none);
+
+        foreach (var (mod, options) in mods.Plan(collection, key, design))
+        {
+            if (wishes.TryGetValue(mod, out var already) && !already.Enabled)
+                continue;
+
+            wishes[mod] = (true, options);
+        }
+
+        return wishes
+            .Select(w => (w.Key, w.Value.Enabled, w.Value.Options, Signature(w.Value.Enabled, w.Value.Options)))
+            .ToList();
+    }
+
+    /// <summary>What a wish amounts to once it is in the collection, for telling whether it is
+    /// already there. Sorted, since a dictionary is not required to hand things back in any
+    /// particular order and the same wish has to read the same way twice.</summary>
+    private static string Signature(bool enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> options)
+        => enabled
+            ? "on " + string.Join(",", options
+                .OrderBy(o => o.Key, StringComparer.Ordinal)
+                .Select(o => $"{o.Key}:{string.Join("/", o.Value)}"))
+            : "off";
+
+    /// <summary>
+    /// The model a player is currently being drawn as, or zero while they have none. This is what
+    /// a mod setting is baked into, so a new one means everything they were carrying is gone -
+    /// which is the whole of what a zone change does to a crowd.
+    /// </summary>
+    private static unsafe nint ModelOf(IPlayerCharacter player)
+    {
+        var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)player.Address;
+        return native == null ? 0 : (nint)native->DrawObject;
     }
 
     /// <summary>Puts everyone back as we found them.</summary>
@@ -513,14 +643,34 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     {
         // Race and outfit both come off with the same call, and someone can have had one
         // without the other - a Hrothgar with nothing in the pool to wear, say.
-        foreach (var index in applied.Keys.Concat(races.Indices).Distinct().ToList())
+        var touched = applied.Keys.Concat(races.Indices).Distinct().ToList();
+        foreach (var index in touched)
             Restore(index);
 
-        mods.ReleaseAll();
+        // The settings belong to the collections rather than to the people, so they come out by
+        // collection - and then everyone we dressed needs rebuilding to stop wearing them.
+        var released = ReleaseSettings();
+        if (released)
+            foreach (var index in touched)
+                penumbra.Redraw(index);
+
         exclusives.Forget();
         races.Forget();
         applied.Clear();
         lastApplied.Clear();
+    }
+
+    /// <summary>Takes our temporary settings back out of every collection we put them into.
+    /// Returns whether there was anything to take out.</summary>
+    private bool ReleaseSettings()
+    {
+        var collections = state.Collections;
+        foreach (var collection in collections)
+            penumbra.Release(collection);
+
+        state.Forget();
+        settled.Clear();
+        return collections.Count > 0;
     }
 
     /// <summary>Rolls the mod options again for everyone, for when the picks change.</summary>
@@ -528,6 +678,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     {
         mods.Forget();
         exclusives.Forget();
+
+        // What we thought each collection was holding was worked out from the picks that have
+        // just changed, so it is worth nothing now.
+        state.Forget();
+        settled.Clear();
     }
 
     /// <summary>How many of the listed clashing mods have a rival among the others.</summary>
