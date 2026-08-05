@@ -107,8 +107,7 @@ internal sealed class MainWindow : Window
             ImGui.PushID(mod.Directory);
 
             var groups = wardrobe.GroupsOf(mod.Directory);
-            var rolled = groups.Count(g => !mod.SkipGroups.Contains(g.Key)
-                                           && g.Value.Type is PenumbraIpc.GroupType.Single or PenumbraIpc.GroupType.Multi);
+            var rolled = groups.Count(g => !mod.SkipGroups.Contains(g.Key) && ModRoulette.Rollable(g.Value.Type));
 
             var open = ImGui.TreeNode($"{mod.Name}##node");
             ImGui.SameLine();
@@ -128,9 +127,9 @@ internal sealed class MainWindow : Window
 
                 foreach (var (group, (options, type)) in groups)
                 {
-                    if (type is not (PenumbraIpc.GroupType.Single or PenumbraIpc.GroupType.Multi))
+                    if (!ModRoulette.Rollable(type))
                     {
-                        ImGui.TextColored(Dim, $"{group} - not a list of choices, left alone.");
+                        ImGui.TextColored(Dim, $"{group} - an item's own attributes, kept as yours.");
                         continue;
                     }
 
@@ -147,10 +146,12 @@ internal sealed class MainWindow : Window
                     }
 
                     ImGui.SameLine();
-                    ImGui.TextColored(Dim, type == PenumbraIpc.GroupType.Multi
-                        ? $"{options.Length} toggles, any combination"
-                        : $"{options.Length} options, one of them");
+                    ImGui.TextColored(Dim, type == PenumbraIpc.GroupType.Single
+                        ? $"{options.Length} options, one of them"
+                        : $"{options.Length} toggles, any combination");
                 }
+
+                ImGui.TextColored(Dim, "Unticked keeps whatever you have chosen in Penumbra.");
 
                 ImGui.TreePop();
             }

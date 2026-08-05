@@ -36,6 +36,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra)
     {
         groups.Clear();
         applied.Clear();
+        mine.Clear();
     }
 
     /// <summary>Applies everybody's picks. Returns true if this one had to be redrawn.</summary>
@@ -44,10 +45,14 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra)
         if (!config.RandomizeModOptions || config.RandomizedMods.Count == 0 || !penumbra.Available)
             return false;
 
+        // Whatever collection this player is really being drawn with, since a temporary setting
+        // has to carry the groups we are not rolling or they fall back to the mod's defaults.
+        var collection = penumbra.CollectionOf(objectIndex);
+
         var picks = new List<(string Directory, Dictionary<string, IReadOnlyList<string>> Settings)>();
         foreach (var mod in config.RandomizedMods)
         {
-            var chosen = Pick(mod, playerKey);
+            var chosen = Pick(mod, playerKey, Yours(collection, mod.Directory));
             if (chosen.Count > 0)
                 picks.Add((mod.Directory, chosen));
         }
@@ -80,40 +85,73 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra)
     /// One option per group, derived from who is wearing it rather than drawn - so the same
     /// person keeps the same version of the mod tomorrow, the same way their outfit does.
     /// </summary>
-    private Dictionary<string, IReadOnlyList<string>> Pick(ModPick mod, string playerKey)
+    private Dictionary<string, IReadOnlyList<string>> Pick(ModPick mod, string playerKey,
+        IReadOnlyDictionary<string, List<string>> yours)
     {
         var picks = new Dictionary<string, IReadOnlyList<string>>();
 
         foreach (var (group, (options, type)) in GroupsOf(mod.Directory))
         {
-            if (options.Length == 0 || mod.SkipGroups.Contains(group))
+            // Groups we are leaving alone still have to be spelled out. A temporary setting is
+            // built from the mod's defaults, so saying nothing about a group does not leave it
+            // as you set it - it puts it back to whatever the mod author chose.
+            if (options.Length == 0 || mod.SkipGroups.Contains(group) || !Rollable(type))
+            {
+                if (yours.TryGetValue(group, out var mine))
+                    picks[group] = mine;
+
                 continue;
+            }
 
             var seed = Seed(playerKey, mod.Directory, group);
 
-            switch (type)
+            if (type == PenumbraIpc.GroupType.Single)
             {
-                case PenumbraIpc.GroupType.Single:
-                    picks[group] = [options[(int)(seed % (uint)options.Length)]];
-                    break;
-
-                case PenumbraIpc.GroupType.Multi:
-                    // Each option is its own coin, so a multi group can come out with any
-                    // combination of its parts rather than exactly one of them.
-                    var on = new List<string>();
-                    for (var i = 0; i < options.Length; i++)
-                        if ((seed >> i & 1) == 1)
-                            on.Add(options[i]);
-                    picks[group] = on;
-                    break;
-
-                // Imc and Combining groups are not a list of choices to pick from.
-                default:
-                    continue;
+                picks[group] = [options[(int)(seed % (uint)options.Length)]];
+                continue;
             }
+
+            // Multi and Combining both draw as a set of tick boxes and both take a list of the
+            // ones that are on, so each option gets its own coin and any combination can come
+            // up rather than exactly one.
+            var on = new List<string>();
+            for (var i = 0; i < options.Length; i++)
+                if ((seed >> i & 1) == 1)
+                    on.Add(options[i]);
+
+            picks[group] = on;
         }
 
         return picks;
+    }
+
+    /// <summary>
+    /// Imc groups are toggles over an item's own attributes rather than a set of looks, so
+    /// rolling one gets you a broken item rather than a different one. Everything else is a
+    /// list of choices: Combining draws as tick boxes exactly like Multi and takes the same
+    /// list of names, which is why it is in here despite being its own type.
+    /// </summary>
+    public static bool Rollable(PenumbraIpc.GroupType type)
+        => type is PenumbraIpc.GroupType.Single or PenumbraIpc.GroupType.Multi or PenumbraIpc.GroupType.Combining;
+
+    /// <summary>
+    /// What the collection already says about a mod, cached: this is a round trip per mod per
+    /// player and it barely ever changes.
+    /// </summary>
+    private readonly Dictionary<(Guid, string), (DateTime Read, IReadOnlyDictionary<string, List<string>> Settings)> mine = [];
+
+    private IReadOnlyDictionary<string, List<string>> Yours(Guid collection, string modDirectory)
+    {
+        if (collection == Guid.Empty)
+            return new Dictionary<string, List<string>>();
+
+        if (mine.TryGetValue((collection, modDirectory), out var cached)
+            && DateTime.UtcNow - cached.Read < TimeSpan.FromSeconds(30))
+            return cached.Settings;
+
+        var settings = penumbra.CurrentSettings(collection, modDirectory);
+        mine[(collection, modDirectory)] = (DateTime.UtcNow, settings);
+        return settings;
     }
 
     /// <summary>Takes our settings off someone and puts them back as they were.</summary>

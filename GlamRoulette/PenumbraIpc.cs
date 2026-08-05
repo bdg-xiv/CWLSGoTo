@@ -33,6 +33,9 @@ internal sealed class PenumbraIpc
         string, int, int> setForPlayer;
     private readonly ICallGateSubscriber<int, int, int> removeAllForPlayer;
     private readonly ICallGateSubscriber<int, int, object?> redraw;
+    private readonly ICallGateSubscriber<int, (bool ObjectValid, bool IndividualSet, (Guid Id, string Name) Collection)> collectionForObject;
+    private readonly ICallGateSubscriber<Guid, string, string, bool,
+        (int Result, (bool Enabled, int Priority, Dictionary<string, List<string>> Settings, bool Inherited)? Data)> currentSettings;
 
     public PenumbraIpc()
     {
@@ -48,6 +51,48 @@ internal sealed class PenumbraIpc
         removeAllForPlayer = Svc.PluginInterface
             .GetIpcSubscriber<int, int, int>("Penumbra.RemoveAllTemporaryModSettingsPlayer.V5");
         redraw = Svc.PluginInterface.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject.V5");
+        collectionForObject = Svc.PluginInterface
+            .GetIpcSubscriber<int, (bool, bool, (Guid, string))>("Penumbra.GetCollectionForObject.V5");
+        currentSettings = Svc.PluginInterface
+            .GetIpcSubscriber<Guid, string, string, bool, (int, (bool, int, Dictionary<string, List<string>>, bool)?)>(
+                "Penumbra.GetCurrentModSettings.V5");
+    }
+
+    /// <summary>The collection a player is actually being drawn with.</summary>
+    public Guid CollectionOf(int objectIndex)
+    {
+        try
+        {
+            var (valid, _, collection) = collectionForObject.InvokeFunc(objectIndex);
+            return valid ? collection.Id : Guid.Empty;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not read the collection of object {objectIndex}: {ex.Message}");
+            return Guid.Empty;
+        }
+    }
+
+    /// <summary>
+    /// What a mod is set to in a collection, before any of our temporary settings - Penumbra
+    /// leaves those out of this deliberately. Needed because a temporary setting starts from the
+    /// mod's own defaults, so a group we say nothing about does not stay as you left it, it
+    /// reverts. Handing back what the collection says is how "leave this one alone" is done.
+    /// </summary>
+    public IReadOnlyDictionary<string, List<string>> CurrentSettings(Guid collection, string modDirectory)
+    {
+        try
+        {
+            var (result, data) = currentSettings.InvokeFunc(collection, modDirectory, string.Empty, false);
+            if (result == 0 && data is { } settings)
+                return settings.Settings;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not read the settings of {modDirectory}: {ex.Message}");
+        }
+
+        return new Dictionary<string, List<string>>();
     }
 
     public bool Available
