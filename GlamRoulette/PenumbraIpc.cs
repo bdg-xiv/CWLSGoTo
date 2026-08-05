@@ -36,7 +36,9 @@ internal sealed class PenumbraIpc
 
     public PenumbraIpc()
     {
-        apiVersion = Svc.PluginInterface.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion");
+        // Every label but the mod list carries its api version, and asking on the bare name
+        // reaches nobody at all rather than failing loudly.
+        apiVersion = Svc.PluginInterface.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion.V5");
         modList = Svc.PluginInterface.GetIpcSubscriber<Dictionary<string, string>>("Penumbra.GetModList");
         availableSettings = Svc.PluginInterface
             .GetIpcSubscriber<string, string, IReadOnlyDictionary<string, (string[], int)>?>("Penumbra.GetAvailableModSettings.V5");
