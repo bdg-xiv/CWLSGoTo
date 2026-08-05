@@ -1,0 +1,13 @@
+{
+  "Author": "bdg",
+  "Name": "Design From Mod",
+  "Punchline": "A Glamourer design from a mod's changed items, in one click.",
+  "Description": "Puts a button in Penumbra's own mod panel that makes a Glamourer design wearing everything the mod changes. Penumbra already knows which items a mod touches - that is its Changed Items list - and every one of them can be looked up in the game's sheets for the slot it belongs in, so the design builds itself instead of being typed out slot by slot. The button appears under the settings of any mod that changes something wearable, named after the mod, and reports what went where. Equipment only: it never touches a face or colouring. If a mod changes two items for one slot the first is used and the rest are named rather than quietly dropped, and nothing about the mod itself is altered. No window and no command - it lives where the mod does.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "penumbra",
+    "glamourer",
+    "design",
+    "convenience"
+  ]
+}

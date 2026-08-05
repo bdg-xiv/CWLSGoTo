@@ -66,6 +66,7 @@ jobs:
           @{ Project = "MountHeels"; InternalName = "MountHeels" },
           @{ Project = "HuntSpots"; InternalName = "HuntSpots" },
           @{ Project = "PositionalBridge"; InternalName = "PositionalBridge" },
+          @{ Project = "DesignFromMod"; InternalName = "DesignFromMod" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 
