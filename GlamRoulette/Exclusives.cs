@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using ECommons.DalamudServices;
@@ -88,11 +88,9 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
 
         applied[objectIndex] = wanted;
 
+        // The wardrobe redraws once for everything that moved, so nothing is asked for here.
         if (changed)
-        {
-            penumbra.Redraw(objectIndex);
             Svc.Log.Debug($"[GlamRoulette] Object {objectIndex} is on {wanted} alone");
-        }
 
         return changed;
     }

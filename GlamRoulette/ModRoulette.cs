@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using ECommons.DalamudServices;
@@ -75,9 +75,8 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra)
 
         applied[objectIndex] = signature;
 
-        if (changed)
-            penumbra.Redraw(objectIndex);
-
+        // Deliberately not redrawing here. The wardrobe does it once for whatever changed,
+        // rather than this and the clash handling each asking for one.
         return changed;
     }
 

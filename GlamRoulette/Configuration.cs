@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Dalamud.Configuration;
 
@@ -147,6 +147,13 @@ public class Configuration : IPluginConfiguration
     public bool Reapply { get; set; } = true;
 
     public int ReapplySeconds { get; set; } = 30;
+
+    /// <summary>
+    /// How many people may be redrawn in one pass. Changing someone's mods costs a redraw, and
+    /// a crowd arriving together would otherwise take all of theirs in the same frame, which is
+    /// what a freeze is. The rest wait for the next pass a second later.
+    /// </summary>
+    public int RedrawsPerPass { get; set; } = 1;
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 }

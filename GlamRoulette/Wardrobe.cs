@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects.Enums;
@@ -13,7 +13,7 @@ namespace GlamRoulette;
 /// and the whole point here is that it survives them walking away.
 /// </summary>
 internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes, RaceSwap races,
-    ModRoulette mods, Exclusives exclusives)
+    ModRoulette mods, Exclusives exclusives, PenumbraIpc penumbra)
 {
     private readonly Random random = new();
 
@@ -147,22 +147,36 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     public static string KeyOf(IPlayerCharacter player)
         => $"{player.Name.TextValue}@{player.HomeWorld.ValueNullable?.Name.ExtractText() ?? "?"}";
 
-    /// <summary>Every design the folder filter allows, ignoring discipline.</summary>
+    private List<(Guid Id, string Name, string Path)>? pool;
+    private DateTime pooledAt = DateTime.MinValue;
+
+    /// <summary>
+    /// Every design the folder filter allows, ignoring discipline. Held for a few seconds
+    /// because it is a round trip into Glamourer for the whole list, and it was being made once
+    /// per player per pass - and eight times a frame while the settings window was open.
+    /// </summary>
     public List<(Guid Id, string Name, string Path)> Pool()
     {
+        if (pool != null && DateTime.UtcNow - pooledAt < TimeSpan.FromSeconds(5))
+            return pool;
+
         var root = config.DesignFolder.Trim().Trim('/');
-        var pool = new List<(Guid, string, string)>();
+        var fresh = new List<(Guid, string, string)>();
 
         foreach (var (id, data) in glamourer.Designs())
         {
             if (!JobPools.IsInFolder(data.FullPath, root))
                 continue;
 
-            pool.Add((id, data.DisplayName, data.FullPath));
+            fresh.Add((id, data.DisplayName, data.FullPath));
         }
 
-        return pool;
+        pooledAt = DateTime.UtcNow;
+        return pool = fresh;
     }
+
+    /// <summary>Drops the held design list, for when it is known to have changed.</summary>
+    public void ForgetPool() => pool = null;
 
     /// <summary>
     /// The designs a particular discipline may be given: its own subfolder, plus anything
@@ -321,6 +335,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             return;
 
         var present = new HashSet<int>();
+        var redrawn = 0;
 
         foreach (var obj in Svc.Objects)
         {
@@ -370,25 +385,29 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (config.MatchJobCategory && group != JobPools.Group.Unknown)
                 key += "#" + group;
 
-            // Ahead of the outfit for the same reason the race swap is: a mod settings change
-            // only shows on a redraw, and a redraw takes the outfit off again.
-            if (mods.Apply(player.ObjectIndex, key))
-            {
-                applied.Remove(player.ObjectIndex);
-                lastApplied.Remove(player.ObjectIndex);
-                continue;
-            }
-
             // Only your own outfits go stale. Everyone else's are meant to stick.
             if (DesignFor(key, group, isMe ? ExpireMine(key) : null) is not { } design)
                 continue;
 
-            // Which of the clashing mods this outfit needs, before it goes on: switching a mod
-            // redraws them, and a redraw takes the outfit off again.
-            if (exclusives.Apply(player.ObjectIndex, design))
+            // Both of these change mod settings, and a settings change only shows on a redraw.
+            // Done together and redrawn once: a redraw is the expensive part of all this, and
+            // asking for two in a row is what made a new arrival cost half a second.
+            var moved = exclusives.Apply(player.ObjectIndex, design);
+            moved |= mods.Apply(player.ObjectIndex, key);
+
+            if (moved)
             {
+                // The redraw takes the outfit off again, so it goes on next pass rather than
+                // being put on now and immediately thrown away.
+                penumbra.Redraw(player.ObjectIndex);
                 applied.Remove(player.ObjectIndex);
                 lastApplied.Remove(player.ObjectIndex);
+
+                // One arrival's worth of upheaval per pass. A crowd loading at once would
+                // otherwise redraw all of them in the same frame, which is the freeze.
+                if (++redrawn >= config.RedrawsPerPass)
+                    break;
+
                 continue;
             }
 
