@@ -30,6 +30,10 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
     /// </summary>
     private Dictionary<string, HashSet<string>>? rivals;
 
+    /// <summary>How many items each listed mod claims. A mod that exists for one pair of boots
+    /// is more specific about them than an outfit that happens to include a pair.</summary>
+    private Dictionary<string, int>? sizes;
+
     /// <summary>What each object index was last set to, so nobody is redrawn for no reason.</summary>
     private readonly Dictionary<int, string> applied = [];
 
@@ -50,6 +54,7 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
     {
         owners = null;
         rivals = null;
+        sizes = null;
         applied.Clear();
     }
 
@@ -98,24 +103,43 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
     /// <summary>
     /// Which of the listed mods an outfit is wearing, decided by the items in it rather than by
     /// anything having to be paired up by hand: a mod says which items it changes, a design says
-    /// which items it puts on, and the overlap is the answer. The mod with the most of them wins
-    /// if an outfit borrows a piece from more than one.
+    /// which items it puts on, and the overlap is the answer.
+    ///
+    /// Only an item that one mod alone changes actually proves anything. A shared one - the
+    /// boots two mods both replace - proves nothing on its own, so those are counted separately
+    /// and only consulted when nothing else has spoken.
     /// </summary>
     private string? OwnerOf(Guid design)
     {
         owners ??= Build();
 
-        var votes = new Dictionary<string, int>();
+        var proof = new Dictionary<string, int>();
+        var contested = new HashSet<string>();
+
         foreach (var (_, itemId) in dyes.ItemsOf(design))
         {
             if (!owners.TryGetValue(itemId, out var mods))
                 continue;
 
-            foreach (var mod in mods)
-                votes[mod] = votes.GetValueOrDefault(mod) + 1;
+            if (mods.Count == 1)
+                proof[mods[0]] = proof.GetValueOrDefault(mods[0]) + 1;
+            else
+                foreach (var mod in mods)
+                    contested.Add(mod);
         }
 
-        return votes.Count == 0 ? null : votes.MaxBy(v => v.Value).Key;
+        // An outfit wearing pieces only one of them supplies is that one's, however many of the
+        // shared pieces it also wears.
+        if (proof.Count > 0)
+            return proof.MaxBy(v => v.Value).Key;
+
+        if (contested.Count == 0)
+            return null;
+
+        // Nothing but shared pieces: a design wearing the contested boots and none of either
+        // outfit wants the mod that exists for those boots, not the outfit that happens to
+        // include a pair. The one claiming fewest items is the specific one.
+        return contested.MinBy(m => sizes!.GetValueOrDefault(m, int.MaxValue));
     }
 
     private Dictionary<ulong, List<string>> Build()
@@ -129,6 +153,8 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
         }
 
         var built = new Dictionary<ulong, List<string>>();
+        sizes = [];
+
         foreach (var mod in config.ExclusiveMods)
         {
             foreach (var name in penumbra.ChangedItems(mod.Directory))
@@ -140,6 +166,7 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
                     built[id] = mods = [];
 
                 mods.Add(mod.Directory);
+                sizes[mod.Directory] = sizes.GetValueOrDefault(mod.Directory) + 1;
             }
         }
 
