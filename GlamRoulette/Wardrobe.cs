@@ -404,11 +404,16 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             // Both of these change mod settings, and a settings change only shows on a redraw.
             // Done together and redrawn once: a redraw is the expensive part of all this, and
             // asking for two in a row is what made a new arrival cost half a second.
-            var moved = exclusives.Apply(player.ObjectIndex, design);
-            moved |= mods.Apply(player.ObjectIndex, key);
+            var clashed = exclusives.Apply(player.ObjectIndex, design);
+            var moved = clashed | mods.Apply(player.ObjectIndex, key);
 
             if (moved)
             {
+                // Said out loud, because a redraw is the one thing here anybody can see
+                // happening and there is no other way to tell ours from somebody else's.
+                Svc.Log.Information($"[GlamRoulette] Redrawing {key} - " +
+                                    (clashed ? "clashing mods" : "mod options"));
+
                 // The redraw takes the outfit off again, so it goes on next pass rather than
                 // being put on now and immediately thrown away.
                 penumbra.Redraw(player.ObjectIndex);
