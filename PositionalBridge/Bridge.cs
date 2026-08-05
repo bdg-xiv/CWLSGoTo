@@ -27,13 +27,22 @@ internal sealed class Bridge
     private const string NextAction = "RotationSolverReborn.ActionUpdater.NextActionChanged";
 
     /// <summary>
-    /// The button Wrath replaces, per job. One entry for now - Viper's single-target root,
-    /// Steel Fangs - because Viper is where the guessing goes wrong most and one job is enough
-    /// to know whether this holds up.
+    /// The button Wrath replaces for single target, per job - taken from Wrath's own combos
+    /// rather than worked out, so it is the action it really does hook. Every one is the level
+    /// one weaponskill the whole combo hangs off, which is why the base classes are here too:
+    /// three of these belong to Pugilist, Lancer and Rogue rather than to the job.
     /// </summary>
     private static readonly Dictionary<uint, uint> Roots = new()
     {
-        [41] = 34606,
+        [2] = 53,       // Pugilist  - Bootshine
+        [20] = 53,      // Monk
+        [4] = 75,       // Lancer    - True Thrust
+        [22] = 75,      // Dragoon
+        [29] = 2240,    // Rogue     - Spinning Edge
+        [30] = 2240,    // Ninja
+        [34] = 7477,    // Samurai   - Hakaze
+        [39] = 24373,   // Reaper    - Slice
+        [41] = 34606,   // Viper     - Steel Fangs
     };
 
     private readonly ICallGateProvider<uint, object?> channel =

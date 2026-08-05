@@ -44,7 +44,8 @@ internal sealed class MainWindow : Window
 
         if (!bridge.JobSupported)
         {
-            ImGui.TextColored(Dim, "Nothing to do on this job. Viper is the only one wired up so far.");
+            ImGui.TextColored(Dim, "Nothing to do on this job - only the melee have positionals.\n" +
+                                   "Monk, Dragoon, Ninja, Samurai, Reaper and Viper are covered.");
         }
         else
         {
@@ -56,8 +57,8 @@ internal sealed class MainWindow : Window
         ImGui.Separator();
         ImGui.TextWrapped("Avarice will not use this until you tick \"Use Rotation Solver to anticipate " +
                           "positionals\" in its settings, under the anticipation options. That box only " +
-                          "appears once it has heard from something, so stand on a Viper for a moment " +
-                          "and it will be there.");
+                          "appears once it has heard from something, so stand on a melee job for a " +
+                          "moment and it will be there.");
 
         ImGui.Spacing();
         ImGui.TextColored(Dim, "Wrath has no \"what will I cast next\" of its own. This asks the game what\n" +
