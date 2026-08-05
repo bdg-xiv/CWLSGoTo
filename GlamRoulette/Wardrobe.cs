@@ -405,7 +405,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             // Done together and redrawn once: a redraw is the expensive part of all this, and
             // asking for two in a row is what made a new arrival cost half a second.
             var clashed = exclusives.Apply(player.ObjectIndex, design);
-            var moved = clashed | mods.Apply(player.ObjectIndex, key);
+            var moved = clashed | mods.Apply(player.ObjectIndex, key, design);
 
             if (moved)
             {

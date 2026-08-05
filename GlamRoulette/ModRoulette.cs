@@ -12,7 +12,7 @@ namespace GlamRoulette;
 /// Only the mods you name, because a size or a body group has to match the wearer and rolling
 /// that gives you gaps and clipping rather than variety.
 /// </summary>
-internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra)
+internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dyes dyes)
 {
     /// <summary>What each object index is currently set to, so a redraw is only asked for when
     /// something actually changed. A redraw is the expensive part.</summary>
@@ -37,12 +37,65 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra)
         groups.Clear();
         applied.Clear();
         mine.Clear();
+        owners = null;
+    }
+
+    /// <summary>Which listed mod each item belongs to, so an outfit can be asked what it is
+    /// wearing rather than every mod being pushed at everybody.</summary>
+    private Dictionary<ulong, List<string>>? owners;
+
+    private HashSet<string> WornBy(Guid design)
+    {
+        owners ??= BuildOwners();
+
+        var worn = new HashSet<string>();
+        foreach (var (_, itemId) in dyes.ItemsOf(design))
+            if (owners.TryGetValue(itemId, out var mods))
+                worn.UnionWith(mods);
+
+        return worn;
+    }
+
+    private Dictionary<ulong, List<string>> BuildOwners()
+    {
+        var byName = new Dictionary<string, ulong>();
+        foreach (var item in Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Item>())
+        {
+            var name = item.Name.ExtractText();
+            if (name.Length > 0 && item.EquipSlotCategory.RowId != 0)
+                byName.TryAdd(name, item.RowId);
+        }
+
+        var built = new Dictionary<ulong, List<string>>();
+        foreach (var mod in config.RandomizedMods)
+        {
+            foreach (var name in penumbra.ChangedItems(mod.Directory))
+            {
+                if (!byName.TryGetValue(name, out var id))
+                    continue;
+
+                if (!built.TryGetValue(id, out var mods))
+                    built[id] = mods = [];
+
+                mods.Add(mod.Directory);
+            }
+        }
+
+        Svc.Log.Information($"[GlamRoulette] {config.RandomizedMods.Count} rolled mods cover {built.Count} items");
+        return built;
     }
 
     /// <summary>Applies everybody's picks. Returns true if this one had to be redrawn.</summary>
-    public bool Apply(int objectIndex, string playerKey)
+    public bool Apply(int objectIndex, string playerKey, Guid design)
     {
         if (!config.RandomizeModOptions || config.RandomizedMods.Count == 0 || !penumbra.Available)
+            return false;
+
+        // Only the mods this outfit is actually wearing. Rolling the options of all of them for
+        // everybody meant every single person needed a redraw to show settings that had no
+        // bearing on what they had on.
+        var worn = WornBy(design);
+        if (worn.Count == 0)
             return false;
 
         // Whatever collection this player is really being drawn with, since a temporary setting
@@ -50,7 +103,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra)
         var collection = penumbra.CollectionOf(objectIndex);
 
         var picks = new List<(string Directory, Dictionary<string, IReadOnlyList<string>> Settings)>();
-        foreach (var mod in config.RandomizedMods)
+        foreach (var mod in config.RandomizedMods.Where(m => worn.Contains(m.Directory)))
         {
             var chosen = Pick(mod, playerKey, Yours(collection, mod.Directory));
             if (chosen.Count > 0)

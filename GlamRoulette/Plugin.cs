@@ -33,7 +33,7 @@ public sealed class Plugin : IDalamudPlugin
         var dyes = new Dyes(config, glamourer);
         var penumbra = new PenumbraIpc();
         wardrobe = new Wardrobe(config, glamourer, dyes, new RaceSwap(config, glamourer),
-            new ModRoulette(config, penumbra), new Exclusives(config, penumbra, dyes), penumbra);
+            new ModRoulette(config, penumbra, dyes), new Exclusives(config, penumbra, dyes), penumbra);
         wardrobe.StampUnknownAsSeen();
         contextMenu = new PlayerContextMenu(config, wardrobe);
         window = new MainWindow(config, wardrobe, glamourer, dyes, penumbra);
