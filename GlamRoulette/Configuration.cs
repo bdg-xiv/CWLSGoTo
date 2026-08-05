@@ -155,5 +155,13 @@ public class Configuration : IPluginConfiguration
     /// </summary>
     public int RedrawsPerPass { get; set; } = 1;
 
+    /// <summary>
+    /// Redraw someone as soon as their mod settings change, so the change shows at once.
+    /// Turning this off leaves the settings in place to be picked up whenever the game next
+    /// redraws them anyway - a zone change, a gearset, coming back into view. Slower to appear,
+    /// but nothing is ever made to flicker on your account.
+    /// </summary>
+    public bool ForceRedraw { get; set; } = true;
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 }

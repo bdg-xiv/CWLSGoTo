@@ -224,6 +224,20 @@ internal sealed class MainWindow : Window
                              "nothing of yours is changed and it all comes off again.\n" +
                              "Each change costs that person a redraw, unlike a glamour.");
 
+        var force = config.ForceRedraw;
+        if (ImGui.Checkbox("Redraw people as soon as their mods change", ref force))
+        {
+            config.ForceRedraw = force;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("A mod settings change only shows on a redraw, and a redraw is a character\n" +
+                             "being unloaded and put back. That is what makes them pop, and it can\n" +
+                             "disturb things on your own screen while it happens.\n" +
+                             "Untick it and the settings are still set, but wait to be shown until the\n" +
+                             "game reloads that person anyway - a zone change, a gearset, walking back\n" +
+                             "into view. Nothing is ever made to flicker on your account.");
+
         if (!config.RandomizeModOptions)
             return;
 

@@ -407,7 +407,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             var clashed = exclusives.Apply(player.ObjectIndex, design);
             var moved = clashed | mods.Apply(player.ObjectIndex, key, design);
 
-            if (moved)
+            // The settings are in place either way. Forcing the redraw is only about showing
+            // them now rather than whenever the game next reloads that character on its own.
+            if (moved && config.ForceRedraw)
             {
                 // Said out loud, because a redraw is the one thing here anybody can see
                 // happening and there is no other way to tell ours from somebody else's.
