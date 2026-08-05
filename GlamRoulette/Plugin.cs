@@ -33,12 +33,14 @@ public sealed class Plugin : IDalamudPlugin
         glamourer = new GlamourerIpc();
         var dyes = new Dyes(config, glamourer);
         penumbra = new PenumbraIpc();
+        var cplus = new CustomizePlusIpc();
         wardrobe = new Wardrobe(config, glamourer, dyes, new RaceSwap(config, glamourer),
-            new ModRoulette(config, penumbra, dyes), new Exclusives(config, penumbra, dyes), penumbra);
+            new ModRoulette(config, penumbra, dyes), new Exclusives(config, penumbra, dyes), penumbra,
+            new Shapes(config, cplus));
         wardrobe.StampUnknownAsSeen();
         penumbra.OnRestart(OnPenumbraRestart);
         contextMenu = new PlayerContextMenu(config, wardrobe);
-        window = new MainWindow(config, wardrobe, glamourer, dyes, penumbra);
+        window = new MainWindow(config, wardrobe, glamourer, dyes, penumbra, cplus);
         windows.AddWindow(window);
 
         PluginInterface.UiBuilder.Draw += windows.Draw;
@@ -100,7 +102,9 @@ public sealed class Plugin : IDalamudPlugin
 
             case "reroll":
                 var count = wardrobe.RerollEverybody();
-                Svc.Chat.Print($"[Glam Roulette] Re-rolling {count} remembered outfit(s).");
+                var bodies = wardrobe.RerollBodies();
+                Svc.Chat.Print($"[Glam Roulette] Re-rolling {count} remembered outfit(s)"
+                               + (config.RandomizeShapes && bodies > 0 ? $" and {bodies} body/bodies." : "."));
                 return;
 
             case "me":

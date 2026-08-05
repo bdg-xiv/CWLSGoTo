@@ -13,14 +13,19 @@ internal sealed class MainWindow : Window
     private readonly GlamourerIpc glamourer;
     private readonly Dyes dyes;
     private readonly PenumbraIpc penumbra;
+    private readonly CustomizePlusIpc cplus;
 
     private string modFilter = string.Empty;
     private string clashFilter = string.Empty;
 
+    private System.Collections.Generic.IReadOnlyList<(Guid Id, string Name, string Path)>? profiles;
+    private DateTime profilesAt = DateTime.MinValue;
+
     private static readonly Vector4 Dim = new(0.65f, 0.65f, 0.65f, 1f);
     private static readonly Vector4 Bad = new(1f, 0.45f, 0.45f, 1f);
 
-    public MainWindow(Configuration config, Wardrobe wardrobe, GlamourerIpc glamourer, Dyes dyes, PenumbraIpc penumbra)
+    public MainWindow(Configuration config, Wardrobe wardrobe, GlamourerIpc glamourer, Dyes dyes,
+        PenumbraIpc penumbra, CustomizePlusIpc cplus)
         : base("Glam Roulette###GlamRoulette")
     {
         this.config = config;
@@ -28,6 +33,7 @@ internal sealed class MainWindow : Window
         this.glamourer = glamourer;
         this.dyes = dyes;
         this.penumbra = penumbra;
+        this.cplus = cplus;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(360, 220),
@@ -67,6 +73,122 @@ internal sealed class MainWindow : Window
         ImGui.SameLine();
         var count = wardrobe.PoolFor(group).Count;
         ImGui.TextColored(count == 0 ? Bad : Dim, $"{count} design{(count == 1 ? "" : "s")}");
+    }
+
+    /// <summary>
+    /// One Customize+ profile of yours handed to everybody, with the chest rolled per person.
+    /// This one costs nothing to apply - Customize+ works on the bones every frame rather than
+    /// baking anything into a model, and its temporary profiles are filed against the character
+    /// rather than an object, so they survive a zone change on their own.
+    /// </summary>
+    private void DrawShapes()
+    {
+        var on = config.RandomizeShapes;
+        if (ImGui.Checkbox("Randomise body shape", ref on))
+        {
+            config.RandomizeShapes = on;
+            config.Save();
+            if (on)
+                wardrobe.ForgetShapes();
+            else
+                wardrobe.RevertShapes();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Gives everybody the bones of one of your Customize+ profiles, with the\n" +
+                             "chest rolled per person so they are not all the same shape. Follows the\n" +
+                             "player rather than the outfit - what job somebody is on has no business\n" +
+                             "changing their body - and the size is derived from who they are, so it\n" +
+                             "stays put. Costs no redraw at all.\n" +
+                             "It takes the place of any Customize+ profile that person would otherwise\n" +
+                             "have had, yours for them included, and comes off again the moment this\n" +
+                             "is unticked.");
+
+        if (!config.RandomizeShapes)
+            return;
+
+        ImGui.Indent();
+
+        if (!cplus.Available)
+        {
+            ImGui.TextColored(Bad, "Customize+ is not answering, or its render hook did not take.");
+            ImGui.Unindent();
+            return;
+        }
+
+        // Held for a moment, since this is drawn every frame the window is open and reading the
+        // list is a round trip for something that changes when you make a profile.
+        if (profiles == null || DateTime.UtcNow - profilesAt > TimeSpan.FromSeconds(2))
+        {
+            profiles = cplus.Profiles();
+            profilesAt = DateTime.UtcNow;
+        }
+
+        var chosen = profiles.FirstOrDefault(p => p.Id == config.ShapeProfile);
+        var label = chosen.Id != Guid.Empty
+            ? chosen.Name
+            : config.ShapeProfile == Guid.Empty
+                ? "Pick one..."
+                : $"{config.ShapeProfileName} (gone from Customize+)";
+
+        ImGui.SetNextItemWidth(220f);
+        if (ImGui.BeginCombo("Profile", label))
+        {
+            foreach (var (id, name, path) in profiles)
+            {
+                if (ImGui.Selectable(name, id == config.ShapeProfile))
+                {
+                    config.ShapeProfile = id;
+                    config.ShapeProfileName = name;
+                    config.Save();
+                    wardrobe.ForgetShapes();
+                }
+
+                if (ImGui.IsItemHovered() && path.Length > 0 && path != name)
+                    ImGui.SetTooltip(path);
+            }
+
+            ImGui.EndCombo();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Read, never touched. Leave it switched off in Customize+ if you like -\n" +
+                             "we take a copy of its bones rather than turning the profile on.");
+
+        if (config.ShapeProfile == Guid.Empty)
+        {
+            ImGui.TextColored(Dim, "Nothing is applied until a profile is chosen.");
+            ImGui.Unindent();
+            return;
+        }
+
+        // Written as it is dragged, so it can be seen happening, but only saved once it is let
+        // go - the size is part of what each person was given, so the next pass swaps everybody
+        // over on its own without anything having to be taken off.
+        var min = config.ShapeMin;
+        ImGui.SetNextItemWidth(150f);
+        if (ImGui.SliderFloat("Smallest", ref min, 0.5f, 4f, "%.2fx"))
+            config.ShapeMin = min;
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            config.Save();
+
+        var max = config.ShapeMax;
+        ImGui.SetNextItemWidth(150f);
+        if (ImGui.SliderFloat("Biggest", ref max, 0.5f, 4f, "%.2fx"))
+            config.ShapeMax = max;
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            config.Save();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Multiples of the vanilla size, not of the profile's. One is untouched.\n" +
+                             "Both sides match - a size is rolled once per person and both bones get it.\n" +
+                             "If the profile shapes the chest rather than merely enlarging it, that\n" +
+                             "shape is kept and only scaled, so what is rolled is size and not form.");
+
+        var bones = wardrobe.RolledBones;
+        ImGui.TextColored(Dim, bones.Count > 0
+            ? $"Rolling {string.Join(", ", bones.Select(Shapes.NameOf))} - {wardrobe.Shaped} shaped right now."
+            : "That profile leaves the chest alone, so all four chest bones are set on top of it - " +
+              $"{wardrobe.Shaped} shaped right now.");
+
+        ImGui.Unindent();
     }
 
     /// <summary>
@@ -590,6 +712,7 @@ internal sealed class MainWindow : Window
                                  "colour by chance. Off ties them together so that always happens.");
         }
 
+        DrawShapes();
         DrawModOptions();
         DrawExclusives();
 
@@ -631,7 +754,9 @@ internal sealed class MainWindow : Window
         if (ImGui.Button("Re-roll everyone"))
         {
             var count = wardrobe.RerollEverybody();
-            ECommons.DalamudServices.Svc.Chat.Print($"[Glam Roulette] Re-rolling {count} remembered outfit(s).");
+            var bodies = wardrobe.RerollBodies();
+            ECommons.DalamudServices.Svc.Chat.Print($"[Glam Roulette] Re-rolling {count} remembered outfit(s)"
+                + (config.RandomizeShapes && bodies > 0 ? $" and {bodies} body/bodies." : "."));
         }
 
         if (config.IncludeMe)

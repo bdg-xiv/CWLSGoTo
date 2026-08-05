@@ -13,7 +13,7 @@ namespace GlamRoulette;
 /// and the whole point here is that it survives them walking away.
 /// </summary>
 internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes, RaceSwap races,
-    ModRoulette mods, Exclusives exclusives, PenumbraIpc penumbra)
+    ModRoulette mods, Exclusives exclusives, PenumbraIpc penumbra, Shapes shapes)
 {
     private readonly Random random = new();
 
@@ -251,15 +251,26 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// have been seen on, not only the one they are standing in. Kept outfits are left alone;
     /// they are meant to be immovable, and unpinning is right there in the same menu.
     /// </summary>
-    public bool Reroll(string key)
+    public bool Reroll(string key, bool body = true)
     {
         var player = PlayerOf(key);
         var stale = config.Assignments.Keys
             .Where(k => (k == player || k.StartsWith(player + "#", StringComparison.Ordinal)) && !IsPinned(k))
             .ToList();
 
+        // Their body goes back in the pack too, whether or not they had an outfit to lose - it is
+        // rolled off the plain name and world, and it is one of the things a re-roll is for.
+        if (body)
+        {
+            Rolled(player);
+            shapes.Forget(player);
+        }
+
         if (stale.Count == 0)
+        {
+            config.Save();
             return false;
+        }
 
         foreach (var k in stale)
         {
@@ -353,7 +364,31 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return Reroll(key);
     }
 
-    /// <summary>Re-rolls everyone except the outfits that were explicitly kept.</summary>
+    /// <summary>
+    /// Re-rolls every body except the ones whose outfit was explicitly kept. Separate from the
+    /// outfits, because most of what re-deals those is the design pool changing - a dye weight,
+    /// a folder - and none of that is a reason for everybody to change shape.
+    /// </summary>
+    public int RerollBodies()
+    {
+        var players = config.Assignments.Keys
+            .Where(k => !IsPinned(k))
+            .Select(PlayerOf)
+            .Distinct()
+            .ToList();
+
+        foreach (var player in players)
+            Rolled(player);
+
+        config.Save();
+
+        // Not released - the size is part of what each person was given, so the next pass sees
+        // it has changed and swaps them straight over.
+        shapes.Reload();
+        return players.Count;
+    }
+
+    /// <summary>Re-rolls everyone's outfit except the ones that were explicitly kept.</summary>
     public int RerollEverybody()
     {
         var stale = config.Assignments.Keys.Where(k => !IsPinned(k)).ToList();
@@ -378,6 +413,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             return;
 
         Prune();
+        shapes.Watch();
 
         var me = Svc.Objects.LocalPlayer;
         if (me == null)
@@ -433,8 +469,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
             // Written in memory every pass but only saved on the prune tick - the config is
             // not worth rewriting once a second for a timestamp.
-            config.LastSeen[KeyOf(player)] = DateTime.UtcNow;
+            var person = KeyOf(player);
+            config.LastSeen[person] = DateTime.UtcNow;
             seenDirty = true;
+
+            // Their body, which follows the player rather than the outfit: what job somebody is
+            // on has no business changing their shape. Nothing here costs a redraw - Customize+
+            // works on the bones every frame - so it is done before anything that might not
+            // happen this pass.
+            shapes.Apply(player.ObjectIndex, person, config.Rolls.GetValueOrDefault(person));
 
             // The discipline is part of the key when pools are split, so switching from a
             // warrior to a weaver gets an outfit from the right pool instead of keeping the
@@ -509,8 +552,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             {
                 // The design was deleted in Glamourer since we noted it down. Forget the
                 // assignment so the next pass draws a fresh one rather than failing forever.
+                // Only the outfit: a design you deleted says nothing about anybody's body.
                 Svc.Log.Information($"[GlamRoulette] {key}'s design no longer exists, re-rolling them");
-                Reroll(key);
+                Reroll(key, body: false);
             }
         }
 
@@ -656,9 +700,22 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         exclusives.Forget();
         races.Forget();
+        shapes.ReleaseAll();
         applied.Clear();
         lastApplied.Clear();
     }
+
+    /// <summary>Hands the shapes out again, for when the profile changes.</summary>
+    public void ForgetShapes() => shapes.Reload();
+
+    /// <summary>Takes the shapes back off, for when the whole thing is switched off.</summary>
+    public void RevertShapes() => shapes.ReleaseAll();
+
+    /// <summary>The chest bones of the chosen profile that are being rolled, for the window to
+    /// name - which of them a profile uses is its own business.</summary>
+    public IReadOnlyCollection<string> RolledBones => shapes.Rolling;
+
+    public int Shaped => shapes.Shaped;
 
     /// <summary>Takes our temporary settings back out of every collection we put them into.
     /// Returns whether there was anything to take out.</summary>

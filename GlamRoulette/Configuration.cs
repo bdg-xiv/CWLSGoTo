@@ -95,6 +95,21 @@ public class Configuration : IPluginConfiguration
     /// <summary>Roll the second dye channel separately instead of matching the first.</summary>
     public bool DyeSecondChannel { get; set; } = true;
 
+    /// <summary>Give everybody the bones of one Customize+ profile, with the chest rolled per
+    /// person.</summary>
+    public bool RandomizeShapes { get; set; }
+
+    /// <summary>Which profile of yours the bones come from.</summary>
+    public Guid ShapeProfile { get; set; } = Guid.Empty;
+
+    /// <summary>Kept so a profile that has been deleted in Customize+ still has a name to show
+    /// rather than a bare id.</summary>
+    public string ShapeProfileName { get; set; } = string.Empty;
+
+    // The two ends of the chest roll, as multiples of the vanilla size. One is untouched.
+    public float ShapeMin { get; set; } = 1f;
+    public float ShapeMax { get; set; } = 2f;
+
     /// <summary>Roll the option dropdowns on the mods named below, per player.</summary>
     public bool RandomizeModOptions { get; set; }
 
