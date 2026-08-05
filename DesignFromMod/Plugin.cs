@@ -18,7 +18,10 @@ public sealed class Plugin : IDalamudPlugin
 {
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
-    private readonly Bridge bridge = new();
+    // Built in the constructor rather than here. A field initializer runs before the
+    // constructor body, which is where ECommons is started, so anything here asking for
+    // Svc.PluginInterface would be asking before there is one.
+    private readonly Bridge bridge;
     private readonly ICallGateSubscriber<string, object?> postSettingsDraw;
     private readonly Action<string> handler;
 
@@ -32,6 +35,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         ECommonsMain.Init(pluginInterface, this);
 
+        bridge = new Bridge();
         handler = Draw;
         postSettingsDraw = Svc.PluginInterface.GetIpcSubscriber<string, object?>("Penumbra.PostSettingsDraw");
         postSettingsDraw.Subscribe(handler);
