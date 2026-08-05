@@ -12,7 +12,7 @@ namespace GlamRoulette;
 /// object index, because an index is only meaningful for as long as the player stays loaded
 /// and the whole point here is that it survives them walking away.
 /// </summary>
-internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes, RaceSwap races)
+internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes, RaceSwap races, ModRoulette mods)
 {
     private readonly Random random = new();
 
@@ -369,6 +369,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (config.MatchJobCategory && group != JobPools.Group.Unknown)
                 key += "#" + group;
 
+            // Ahead of the outfit for the same reason the race swap is: a mod settings change
+            // only shows on a redraw, and a redraw takes the outfit off again.
+            if (mods.Apply(player.ObjectIndex, key))
+            {
+                applied.Remove(player.ObjectIndex);
+                lastApplied.Remove(player.ObjectIndex);
+                continue;
+            }
+
             // Only your own outfits go stale. Everyone else's are meant to stick.
             if (DesignFor(key, group, isMe ? ExpireMine(key) : null) is not { } design)
                 continue;
@@ -415,6 +424,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         }
 
         races.Sweep(present);
+        mods.Sweep(present);
     }
 
     /// <summary>Puts everyone back as we found them.</summary>
@@ -425,10 +435,18 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         foreach (var index in applied.Keys.Concat(races.Indices).Distinct().ToList())
             Restore(index);
 
+        mods.ReleaseAll();
         races.Forget();
         applied.Clear();
         lastApplied.Clear();
     }
+
+    /// <summary>Rolls the mod options again for everyone, for when the picks change.</summary>
+    public void ForgetMods() => mods.Forget();
+
+    /// <summary>A mod's option groups, for the window to list.</summary>
+    public IReadOnlyDictionary<string, (string[] Options, PenumbraIpc.GroupType Type)> GroupsOf(string modDirectory)
+        => mods.GroupsOf(modDirectory);
 
     /// <summary>Stops taking part yourself, without disturbing anybody else.</summary>
     public void RevertMe()

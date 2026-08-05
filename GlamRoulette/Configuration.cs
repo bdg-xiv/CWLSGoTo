@@ -4,6 +4,18 @@ using Dalamud.Configuration;
 
 namespace GlamRoulette;
 
+/// <summary>A mod whose options get rolled, and the groups within it left alone.</summary>
+public class ModPick
+{
+    public string Directory { get; set; } = string.Empty;
+
+    /// <summary>Kept for the window, so a mod that has been uninstalled still has a name to
+    /// show rather than a bare folder.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    public HashSet<string> SkipGroups { get; set; } = [];
+}
+
 public class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 1;
@@ -72,6 +84,14 @@ public class Configuration : IPluginConfiguration
 
     /// <summary>Roll the second dye channel separately instead of matching the first.</summary>
     public bool DyeSecondChannel { get; set; } = true;
+
+    /// <summary>Roll the option dropdowns on the mods named below, per player.</summary>
+    public bool RandomizeModOptions { get; set; }
+
+    /// <summary>Which mods are fair game. Named one by one rather than "everything enabled":
+    /// a size or body group has to match the wearer, and rolling one of those gives you gaps
+    /// and clipping rather than variety.</summary>
+    public List<ModPick> RandomizedMods { get; set; } = [];
 
     // How often each tier comes up, relative to the others. There are far more standard dyes
     // than metallic ones, so the metallic weight has to be well above parity just to break

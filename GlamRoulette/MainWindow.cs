@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
@@ -11,17 +12,21 @@ internal sealed class MainWindow : Window
     private readonly Wardrobe wardrobe;
     private readonly GlamourerIpc glamourer;
     private readonly Dyes dyes;
+    private readonly PenumbraIpc penumbra;
+
+    private string modFilter = string.Empty;
 
     private static readonly Vector4 Dim = new(0.65f, 0.65f, 0.65f, 1f);
     private static readonly Vector4 Bad = new(1f, 0.45f, 0.45f, 1f);
 
-    public MainWindow(Configuration config, Wardrobe wardrobe, GlamourerIpc glamourer, Dyes dyes)
+    public MainWindow(Configuration config, Wardrobe wardrobe, GlamourerIpc glamourer, Dyes dyes, PenumbraIpc penumbra)
         : base("Glam Roulette###GlamRoulette")
     {
         this.config = config;
         this.wardrobe = wardrobe;
         this.glamourer = glamourer;
         this.dyes = dyes;
+        this.penumbra = penumbra;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(360, 220),
@@ -61,6 +66,131 @@ internal sealed class MainWindow : Window
         ImGui.SameLine();
         var count = wardrobe.PoolFor(group).Count;
         ImGui.TextColored(count == 0 ? Bad : Dim, $"{count} design{(count == 1 ? "" : "s")}");
+    }
+
+    /// <summary>
+    /// The mods whose dropdowns get rolled, picked out one at a time. Deliberately not "every
+    /// mod that is on": a size or body group has to match the wearer, and rolling one of those
+    /// is how you get gaps instead of variety.
+    /// </summary>
+    private void DrawModOptions()
+    {
+        var on = config.RandomizeModOptions;
+        if (ImGui.Checkbox("Randomise mod options", ref on))
+        {
+            config.RandomizeModOptions = on;
+            config.Save();
+            if (!on)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Rolls the dropdowns Penumbra shows on a mod - the material, the colour,\n" +
+                             "which parts are on - so two people in the same mod are not in the same\n" +
+                             "version of it. Set against the player rather than your collection, so\n" +
+                             "nothing of yours is changed and it all comes off again.\n" +
+                             "Each change costs that person a redraw, unlike a glamour.");
+
+        if (!config.RandomizeModOptions)
+            return;
+
+        ImGui.Indent();
+
+        if (!penumbra.Available)
+        {
+            ImGui.TextColored(Bad, "Penumbra is not answering - nothing can be rolled.");
+            ImGui.Unindent();
+            return;
+        }
+
+        foreach (var mod in config.RandomizedMods.ToList())
+        {
+            ImGui.PushID(mod.Directory);
+
+            var groups = wardrobe.GroupsOf(mod.Directory);
+            var rolled = groups.Count(g => !mod.SkipGroups.Contains(g.Key)
+                                           && g.Value.Type is PenumbraIpc.GroupType.Single or PenumbraIpc.GroupType.Multi);
+
+            var open = ImGui.TreeNode($"{mod.Name}##node");
+            ImGui.SameLine();
+            ImGui.TextColored(rolled == 0 ? Bad : Dim, $"{rolled} group{(rolled == 1 ? "" : "s")} rolled");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Remove"))
+            {
+                config.RandomizedMods.Remove(mod);
+                config.Save();
+                wardrobe.RevertAll();
+            }
+
+            if (open)
+            {
+                if (groups.Count == 0)
+                    ImGui.TextColored(Dim, "No option groups - nothing here to roll.");
+
+                foreach (var (group, (options, type)) in groups)
+                {
+                    if (type is not (PenumbraIpc.GroupType.Single or PenumbraIpc.GroupType.Multi))
+                    {
+                        ImGui.TextColored(Dim, $"{group} - not a list of choices, left alone.");
+                        continue;
+                    }
+
+                    var include = !mod.SkipGroups.Contains(group);
+                    if (ImGui.Checkbox($"{group}##{group}", ref include))
+                    {
+                        if (include)
+                            mod.SkipGroups.Remove(group);
+                        else
+                            mod.SkipGroups.Add(group);
+
+                        config.Save();
+                        wardrobe.ForgetMods();
+                    }
+
+                    ImGui.SameLine();
+                    ImGui.TextColored(Dim, type == PenumbraIpc.GroupType.Multi
+                        ? $"{options.Length} toggles, any combination"
+                        : $"{options.Length} options, one of them");
+                }
+
+                ImGui.TreePop();
+            }
+
+            ImGui.PopID();
+        }
+
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputTextWithHint("##modfilter", "Find a mod to add...", ref modFilter, 100);
+
+        if (modFilter.Trim().Length >= 2)
+        {
+            var needle = modFilter.Trim();
+            var shown = 0;
+
+            foreach (var (directory, name) in penumbra.Mods())
+            {
+                if (shown >= 8)
+                    break;
+                if (name.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                if (config.RandomizedMods.Any(m => m.Directory == directory))
+                    continue;
+
+                shown++;
+                if (!ImGui.Button($"{name}##add{directory}"))
+                    continue;
+
+                config.RandomizedMods.Add(new ModPick { Directory = directory, Name = name });
+                config.Save();
+                modFilter = string.Empty;
+                wardrobe.ForgetMods();
+                break;
+            }
+
+            if (shown == 0)
+                ImGui.TextColored(Dim, "Nothing matching that is left to add.");
+        }
+
+        ImGui.Unindent();
     }
 
     public override void Draw()
@@ -287,6 +417,8 @@ internal sealed class MainWindow : Window
                 ImGui.SetTooltip("The two channels are rolled independently and can land on the same\n" +
                                  "colour by chance. Off ties them together so that always happens.");
         }
+
+        DrawModOptions();
 
         var remember = config.RememberMinutes;
         if (ImGui.SliderInt("Forget after (minutes)", ref remember, 0, 240))

@@ -31,10 +31,12 @@ public sealed class Plugin : IDalamudPlugin
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         glamourer = new GlamourerIpc();
         var dyes = new Dyes(config, glamourer);
-        wardrobe = new Wardrobe(config, glamourer, dyes, new RaceSwap(config, glamourer));
+        var penumbra = new PenumbraIpc();
+        wardrobe = new Wardrobe(config, glamourer, dyes, new RaceSwap(config, glamourer),
+            new ModRoulette(config, penumbra));
         wardrobe.StampUnknownAsSeen();
         contextMenu = new PlayerContextMenu(config, wardrobe);
-        window = new MainWindow(config, wardrobe, glamourer, dyes);
+        window = new MainWindow(config, wardrobe, glamourer, dyes, penumbra);
         windows.AddWindow(window);
 
         PluginInterface.UiBuilder.Draw += windows.Draw;
