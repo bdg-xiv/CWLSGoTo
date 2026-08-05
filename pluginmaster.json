@@ -503,6 +503,31 @@
   },
   {
     "Author": "bdg",
+    "Name": "Positional Bridge",
+    "InternalName": "PositionalBridge",
+    "AssemblyVersion": "0.0.0.1",
+    "Description": "Avarice can draw its positional cone from a rotation plugin's next action instead of guessing, but it listens on one channel only - an event named for Rotation Solver Reborn - and Wrath publishes nothing of the kind. Wrath does not need to: it works by hooking the game's adjusted-action lookup, which is why your combo button turns into the next step. Asking the game that same question goes through Wrath's hook and comes back with the action it has picked, so this hands that over and Avarice points at where the button is really going rather than at where the textbook rotation would have gone. Off-global abilities are ignored so the cone does not blink out between weaves. Viper only for now, which is where the guessing goes wrong most. Tick \"Use Rotation Solver to anticipate positionals\" in Avarice once it has heard from this. Toggle the window with /posbridge.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "avarice",
+      "wrath",
+      "positional",
+      "melee"
+    ],
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "Punchline": "Avarice points where Wrath is actually going.",
+    "AcceptsFeedback": true,
+    "RepoUrl": "https://github.com/bdg-xiv/CWLSGoTo",
+    "DownloadLinkInstall": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/PositionalBridge.zip",
+    "DownloadLinkUpdate": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/PositionalBridge.zip",
+    "DownloadLinkTesting": "https://github.com/bdg-xiv/CWLSGoTo/releases/download/latest/PositionalBridge.zip"
+  },
+  {
+    "Author": "bdg",
     "Name": "CBT",
     "InternalName": "Automaton",
     "AssemblyVersion": "69.193.0.25",
