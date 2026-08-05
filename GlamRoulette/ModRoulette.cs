@@ -101,7 +101,22 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         {
             // Yours carries the groups we are not rolling: a temporary setting is built from the
             // mod's own defaults, so a group left unsaid reverts rather than staying put.
-            var chosen = Pick(mod, playerKey, Yours(collection, mod.Directory));
+            var yours = Yours(collection, mod.Directory);
+
+            // Which makes reading them the thing everything else rests on. If we could not, then
+            // rolling the two groups you asked for would quietly put every other group in the mod
+            // back to whatever its author chose - your body size among them, and a body size that
+            // does not match its wearer is a mesh that stops halfway. Not rolling this one mod is
+            // the smaller failure by a long way.
+            if (yours.Count == 0 && GroupsOf(mod.Directory).Count > 0)
+            {
+                Svc.Log.Warning($"[GlamRoulette] Could not read your own settings for " +
+                                $"{(mod.Name.Length > 0 ? mod.Name : mod.Directory)}, so it is being " +
+                                "left alone rather than reset to the mod's defaults");
+                continue;
+            }
+
+            var chosen = Pick(mod, playerKey, yours);
             if (chosen.Count > 0)
                 picks.Add((mod.Directory, chosen));
         }
@@ -201,7 +216,13 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
             return cached.Settings;
 
         var settings = penumbra.CurrentSettings(collection, modDirectory);
-        mine[(collection, modDirectory)] = (DateTime.UtcNow, settings);
+
+        // A read that came back with nothing is not worth holding onto for half a minute - it is
+        // either a mod with no groups at all, which costs nothing to ask about again, or a failure
+        // we would rather retry than keep believing.
+        if (settings.Count > 0)
+            mine[(collection, modDirectory)] = (DateTime.UtcNow, settings);
+
         return settings;
     }
 
