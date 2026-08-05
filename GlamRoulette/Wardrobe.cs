@@ -336,6 +336,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         var present = new HashSet<int>();
         var redrawn = 0;
+        var spent = false;
 
         foreach (var obj in Svc.Objects)
         {
@@ -357,6 +358,14 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             }
 
             present.Add(player.ObjectIndex);
+
+            // Someone who has only just come into view reads with no world and no job for a
+            // moment. Both go into the key an outfit is remembered against, so acting now means
+            // dressing them as "Name@?" and then again as "Name@Coeurl#Tank" once the rest
+            // arrives - two keys, two outfits, and it looks like the roulette re-rolling them
+            // over and over. They are worth waiting a pass for.
+            if (player.ClassJob.RowId == 0 || player.HomeWorld.ValueNullable is null)
+                continue;
 
             // Ahead of dressing them, and worth a pass of its own when it first lands: changing
             // race redraws the character, and a redraw takes the outfit off again. Better to
@@ -389,6 +398,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (DesignFor(key, group, isMe ? ExpireMine(key) : null) is not { } design)
                 continue;
 
+            if (spent)
+                continue;
+
             // Both of these change mod settings, and a settings change only shows on a redraw.
             // Done together and redrawn once: a redraw is the expensive part of all this, and
             // asking for two in a row is what made a new arrival cost half a second.
@@ -404,9 +416,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 lastApplied.Remove(player.ObjectIndex);
 
                 // One arrival's worth of upheaval per pass. A crowd loading at once would
-                // otherwise redraw all of them in the same frame, which is the freeze.
+                // otherwise redraw all of them in the same frame, which is the freeze. Not a
+                // break: leaving the loop early would leave everyone after this out of the
+                // present set below, and they would be forgotten and started over next pass.
                 if (++redrawn >= config.RedrawsPerPass)
-                    break;
+                    spent = true;
 
                 continue;
             }
