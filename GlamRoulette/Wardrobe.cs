@@ -248,7 +248,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             return false;
 
         foreach (var k in stale)
+        {
             config.Assignments.Remove(k);
+            Rolled(k);
+        }
 
         config.Save();
 
@@ -264,6 +267,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         return true;
     }
+
+    /// <summary>Counts a re-roll, so the colours come out different even if the same design
+    /// comes back round.</summary>
+    private void Rolled(string key) => config.Rolls[key] = config.Rolls.GetValueOrDefault(key) + 1;
 
     private static string PlayerOf(string key)
     {
@@ -300,6 +307,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         var previous = config.Assignments.TryGetValue(key, out var worn) ? worn : (Guid?)null;
         config.Assignments.Remove(key);
+        Rolled(key);
         config.MyOutfitSince[key] = now;
         config.Save();
         return previous;
@@ -334,7 +342,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         var count = stale.Count;
 
         foreach (var key in stale)
+        {
             config.Assignments.Remove(key);
+            Rolled(key);
+        }
 
         config.Save();
         applied.Clear();
@@ -445,7 +456,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 // otherwise redraw all of them in the same frame, which is the freeze. Not a
                 // break: leaving the loop early would leave everyone after this out of the
                 // present set below, and they would be forgotten and started over next pass.
-                if (++redrawn >= config.RedrawsPerPass)
+                if (!config.RedrawAllAtOnce && ++redrawn >= config.RedrawsPerPass)
                     spent = true;
 
                 continue;
@@ -473,7 +484,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
                 // Has to follow every apply, not just the first: applying the design puts the
                 // design's own dyes back on, so the re-dye would be undone by the next pass.
-                dyes.Apply(player.ObjectIndex, key, design);
+                dyes.Apply(player.ObjectIndex, key, design, config.Rolls.GetValueOrDefault(key));
             }
             else if (result == GlamourerIpc.Result.DesignNotFound)
             {

@@ -238,6 +238,23 @@ internal sealed class MainWindow : Window
                              "game reloads that person anyway - a zone change, a gearset, walking back\n" +
                              "into view. Nothing is ever made to flicker on your account.");
 
+        if (config.ForceRedraw)
+        {
+            ImGui.Indent();
+            var atOnce = config.RedrawAllAtOnce;
+            if (ImGui.Checkbox("All at once rather than one a second", ref atOnce))
+            {
+                config.RedrawAllAtOnce = atOnce;
+                config.Save();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("A crowd arriving together settles in one go instead of trickling in,\n" +
+                                 "at the price of taking every redraw in the same frame - which is a\n" +
+                                 "freeze as long as there are people to get through.\n" +
+                                 "One a second is slower to look right but never stutters.");
+            ImGui.Unindent();
+        }
+
         if (!config.RandomizeModOptions)
             return;
 

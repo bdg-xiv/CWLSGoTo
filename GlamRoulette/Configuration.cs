@@ -163,5 +163,17 @@ public class Configuration : IPluginConfiguration
     /// </summary>
     public bool ForceRedraw { get; set; } = true;
 
+    /// <summary>Redraw everyone who needs it in the same pass rather than one a second. Faster
+    /// to settle, at the price of taking every redraw in one frame.</summary>
+    public bool RedrawAllAtOnce { get; set; }
+
+    /// <summary>
+    /// How many times each outfit has been re-rolled. The colours are worked out from who is
+    /// wearing what rather than drawn, which is what keeps them from shimmering - but it also
+    /// means the same design always comes back the same colour. This goes into that sum, so a
+    /// re-roll is a fresh set of colours even when the same design comes up again.
+    /// </summary>
+    public Dictionary<string, int> Rolls { get; set; } = [];
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using ECommons.DalamudServices;
@@ -162,7 +162,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
     public void Forget() => items.Clear();
 
     /// <summary>Dyes an outfit that has just been applied.</summary>
-    public void Apply(int objectIndex, string playerKey, Guid design)
+    public void Apply(int objectIndex, string playerKey, Guid design, int roll)
     {
         if (!config.RandomizeDyes)
             return;
@@ -174,8 +174,8 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
         // separately produced a harlequin; a single pair reads as an outfit someone dyed.
         // The two channels are rolled independently, so they can land on the same colour
         // by chance, which is fine - that is a plain single-dyed outfit.
-        var first = Pick(Seed(playerKey, design, 0));
-        var second = config.DyeSecondChannel ? Pick(Seed(playerKey, design, 1)) : first;
+        var first = Pick(Seed(playerKey, design, roll, 0));
+        var second = config.DyeSecondChannel ? Pick(Seed(playerKey, design, roll, 1)) : first;
 
         foreach (var (slot, itemId) in ItemsOf(design))
             glamourer.Dye(objectIndex, slot, itemId, [first, second]);
@@ -186,7 +186,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
     /// dye is derived rather than drawn. String.GetHashCode is randomised per process and
     /// would give someone a new palette on every restart, hence the hand-rolled one.
     /// </summary>
-    private static uint Seed(string playerKey, Guid design, byte channel)
+    private static uint Seed(string playerKey, Guid design, int roll, byte channel)
     {
         unchecked
         {
@@ -196,6 +196,9 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
                 hash = (hash ^ c) * 16777619u;
 
             foreach (var b in design.ToByteArray())
+                hash = (hash ^ b) * 16777619u;
+
+            foreach (var b in BitConverter.GetBytes(roll))
                 hash = (hash ^ b) * 16777619u;
 
             hash = (hash ^ channel) * 16777619u;
