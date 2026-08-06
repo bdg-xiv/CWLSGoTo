@@ -354,6 +354,67 @@ internal sealed class MainWindow : Window
         ImGui.TreePop();
     }
 
+    private string tryOnFilter = string.Empty;
+
+    /// <summary>
+    /// Puts a named outfit on yourself instead of waiting for it to come up. Everything below the
+    /// outfit is still dealt as usual - the colours, the shoes, the options on the mods it is
+    /// built from - so what you get is one of them as somebody would actually be dealt it, which
+    /// is the only way to see whether it holds together. Picking the one you have on already
+    /// deals it again with a fresh set of options.
+    /// </summary>
+    private void DrawTryOn()
+    {
+        var pool = wardrobe.Pool();
+        if (pool.Count == 0)
+            return;
+
+        var worn = wardrobe.MyDesign;
+        var current = worn is { } design && pool.FirstOrDefault(d => d.Id == design) is { Name.Length: > 0 } mine
+            ? mine.Path
+            : "nothing of mine";
+
+        ImGui.SetNextItemWidth(260f);
+        if (ImGui.BeginCombo("Try one on##tryon", current))
+        {
+            ImGui.SetNextItemWidth(-1f);
+            ImGui.InputTextWithHint("##tryonfilter", "Find...", ref tryOnFilter, 100);
+
+            var needle = tryOnFilter.Trim();
+            foreach (var (id, _, path) in pool
+                         .Where(d => needle.Length == 0
+                                     || d.Path.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0)
+                         .OrderBy(d => d.Path, StringComparer.OrdinalIgnoreCase))
+            {
+                if (!ImGui.Selectable($"{path}##try{id}", id == worn))
+                    continue;
+
+                // Nothing to put it on otherwise - the pass skips you entirely - so this is
+                // taken as asking for that as well rather than quietly doing nothing.
+                if (!config.IncludeMe)
+                {
+                    config.IncludeMe = true;
+                    ECommons.DalamudServices.Svc.Chat.Print(
+                        "[Glam Roulette] Taking a turn yourself, since you asked for an outfit.");
+                }
+
+                if (wardrobe.WearMyself(id))
+                    ECommons.DalamudServices.Svc.Chat.Print($"[Glam Roulette] Putting {path} on you.");
+
+                tryOnFilter = string.Empty;
+                break;
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Deals you one you name rather than one drawn for you. The colours, the\n" +
+                             "shoes and the options on its mods are all still rolled, so it arrives\n" +
+                             "the way somebody would actually be dealt it.\n" +
+                             "Picking the one you have on already deals it again, rolled afresh.");
+    }
+
     /// <summary>
     /// The mods whose dropdowns get rolled, picked out one at a time. Deliberately not "every
     /// mod that is on": a size or body group has to match the wearer, and rolling one of those
@@ -955,6 +1016,8 @@ internal sealed class MainWindow : Window
         ImGui.SameLine();
         if (ImGui.Button("Put everyone back"))
             wardrobe.RevertAll();
+
+        DrawTryOn();
 
         ImGui.Spacing();
         ImGui.TextColored(Dim, "Right-click a player's name for \"Re-roll outfit\" to re-roll just them.");

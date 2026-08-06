@@ -402,6 +402,54 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return dealt;
     }
 
+    /// <summary>The outfit you have on right now, if the roulette gave you one.</summary>
+    public Guid? MyDesign
+    {
+        get
+        {
+            var me = Svc.Objects.LocalPlayer;
+            return me != null && config.Assignments.TryGetValue(KeyFor(me), out var design) ? design : null;
+        }
+    }
+
+    /// <summary>
+    /// Puts one particular outfit on yourself rather than waiting for it to come up. Everything
+    /// downstream of the outfit is still dealt - the colours, the shoes, the options on the mods
+    /// it is built from - so this is a way of seeing one of them as somebody would actually be
+    /// dealt it, not a way of bypassing the roulette.
+    ///
+    /// Asking for the one you already have re-rolls it, since the roll counter goes up either
+    /// way. That is the point of it as a way of trying something on: the same outfit twice is
+    /// two different sets of options.
+    /// </summary>
+    public bool WearMyself(Guid design)
+    {
+        var me = Svc.Objects.LocalPlayer;
+        if (me == null)
+            return false;
+
+        // The role-keyed one, because that is the key the pass will look you up under.
+        var key = KeyFor(me);
+        config.Assignments[key] = design;
+
+        // Its clock starts now, or an outfit put on by hand could be rotated off within the
+        // minute for having been dealt at whatever time the last one was.
+        config.MyOutfitSince[key] = DateTime.UtcNow;
+        Rolled(key);
+        config.Save();
+
+        // What we think you are wearing, so the next pass dresses you again rather than deciding
+        // there is nothing to do.
+        settled.Remove(key);
+        foreach (var index in applied.Where(a => a.Value.Key == key).Select(a => a.Key).ToList())
+        {
+            applied.Remove(index);
+            lastApplied.Remove(index);
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// Re-rolls every body except the ones whose outfit was explicitly kept. Separate from the
     /// outfits, because most of what re-deals those is the design pool changing - a dye weight,
