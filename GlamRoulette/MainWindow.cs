@@ -587,6 +587,21 @@ internal sealed class MainWindow : Window
             ImGui.Unindent();
         }
 
+        var drift = config.AllowDrift;
+        if (ImGui.Checkbox("Let other people's options drift", ref drift))
+        {
+            config.AllowDrift = drift;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Penumbra's temporary settings belong to a collection rather than to a\n" +
+                             "person, so a mod worn by a dozen people at once has them taking turns to\n" +
+                             "redraw each other back to their own roll. Whatever any of them was last\n" +
+                             "rebuilt with was a set somebody was meant to be seen in, and nobody can\n" +
+                             "tell which of a dozen strangers had which toggle - so this takes it and\n" +
+                             "spares the redraw. Everyone still gets their own roll the first time.\n" +
+                             "Never applies to you: yours is the one outfit somebody is watching.");
+
         if (!config.RandomizeModOptions)
             return;
 

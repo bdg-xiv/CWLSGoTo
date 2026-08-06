@@ -21,14 +21,23 @@ namespace GlamRoulette;
 /// </summary>
 internal sealed class CollectionState
 {
-    private readonly Dictionary<(Guid Collection, string Mod), string> written = [];
+    private readonly Dictionary<(Guid Collection, string Mod), (string Signature, bool Enabled)> written = [];
 
     /// <summary>Whether a collection is already set the way somebody wants it.</summary>
     public bool Holds(Guid collection, string mod, string signature)
-        => written.TryGetValue((collection, mod), out var current) && current == signature;
+        => written.TryGetValue((collection, mod), out var current) && current.Signature == signature;
 
-    public void Wrote(Guid collection, string mod, string signature)
-        => written[(collection, mod)] = signature;
+    /// <summary>
+    /// Whether the collection has this mod switched on to some set of options of our choosing,
+    /// never mind whose. Anything we wrote is a set somebody was meant to be seen in, so for
+    /// anyone but you it is a good enough answer to have been rebuilt into - which is the whole
+    /// of what lets a crowd sharing one mod stop taking turns to redraw each other.
+    /// </summary>
+    public bool Carries(Guid collection, string mod)
+        => written.TryGetValue((collection, mod), out var current) && current.Enabled;
+
+    public void Wrote(Guid collection, string mod, string signature, bool enabled)
+        => written[(collection, mod)] = (signature, enabled);
 
     /// <summary>Every collection we have put something into, for taking it all back out.</summary>
     public IReadOnlyList<Guid> Collections

@@ -601,7 +601,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             {
                 if (!settled.TryGetValue(key, out var mark))
                 {
-                    if (!Settle(character, key, design, shoe, draw, ref spent, ref redrawn))
+                    // Never settled: they get their own roll, whoever they are. This is the one
+                    // that buys the variety, and it is one redraw per person per mod, once.
+                    if (!Settle(character, key, design, shoe, draw, false, ref spent, ref redrawn))
                         continue;
                 }
                 else if (mark.Pending)
@@ -614,8 +616,20 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 else if (mark.Draw != draw)
                 {
                     // Something rebuilt them - a zone change, a gearset, someone else's
-                    // business. Whatever they were carrying went with the old model.
-                    if (!Settle(character, key, design, shoe, draw, ref spent, ref redrawn))
+                    // business. Whatever they were carrying went with the old model, and what
+                    // they were rebuilt with is whatever the collection holds now.
+                    //
+                    // For anybody but you that is somebody else's roll of the same mod, which
+                    // is a set of options they were meant to be seen in - not theirs, but not
+                    // wrong either, and nobody can tell which of a dozen strangers had which
+                    // armband. Taking it saves the redraw that would otherwise be answered by
+                    // the next person's redraw, and theirs by the next, which is where a mod
+                    // worn by thirteen people at once goes.
+                    //
+                    // Yours is never let go: it is the one outfit somebody is watching, and
+                    // having it change out from under you is the bug rather than the fix.
+                    var drifting = config.AllowDrift && !isMe;
+                    if (!Settle(character, key, design, shoe, draw, drifting, ref spent, ref redrawn))
                         continue;
                 }
                 else
@@ -757,7 +771,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// done enough of that already.
     /// </summary>
     private bool Settle(ICharacter character, string key, Guid design, uint? shoe, nint draw,
-        ref bool spent, ref int redrawn)
+        bool drifting, ref bool spent, ref int redrawn)
     {
         // Which collection they are really being drawn with. Asked for only when something has
         // actually rebuilt them, since it is a round trip and the answer rarely changes.
@@ -768,7 +782,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         // in it but not the collection's settings, so whoever's options were loaded before the
         // teleport comes back correct on the other side without being touched - which is most of
         // a hunt train, most of the time.
-        var missing = wishes.Where(w => !state.Holds(collection, w.Mod, w.Signature)).ToList();
+        //
+        // While drifting, a mod we already have switched on to something counts as answered
+        // whoever it was answered for. Only the ones that have to be off are still insisted on:
+        // a mod switched off to stop it fighting another is not interchangeable with the same
+        // mod switched on, and letting that one drift is two outfits over the same item.
+        var missing = wishes
+            .Where(w => !state.Holds(collection, w.Mod, w.Signature)
+                        && !(drifting && w.Enabled && state.Carries(collection, w.Mod)))
+            .ToList();
 
         if (missing.Count == 0)
         {
@@ -783,7 +805,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         foreach (var (mod, enabled, options, signature) in missing)
             if (penumbra.Apply(character.ObjectIndex, mod, enabled, options))
-                state.Wrote(collection, mod, signature);
+                state.Wrote(collection, mod, signature, enabled);
 
         // The settings are in place either way. Forcing the redraw is only about showing them now
         // rather than whenever the game next reloads that character on its own.

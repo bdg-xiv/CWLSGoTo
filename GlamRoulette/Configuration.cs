@@ -215,6 +215,15 @@ public class Configuration : IPluginConfiguration
     public bool RedrawAllAtOnce { get; set; }
 
     /// <summary>
+    /// Let other people keep whatever options they were last rebuilt with instead of being put
+    /// back to their own. Penumbra's temporary settings belong to a collection rather than to a
+    /// person, so a mod worn by a dozen people at once has them taking turns to redraw each other
+    /// back to their own roll - and what any of them was rebuilt with was a set somebody was
+    /// meant to be seen in anyway. Never applies to you.
+    /// </summary>
+    public bool AllowDrift { get; set; } = true;
+
+    /// <summary>
     /// How many times each outfit has been re-rolled. The colours are worked out from who is
     /// wearing what rather than drawn, which is what keeps them from shimmering - but it also
     /// means the same design always comes back the same colour. This goes into that sum, so a
