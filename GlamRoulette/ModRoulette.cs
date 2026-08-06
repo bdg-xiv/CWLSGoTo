@@ -31,6 +31,99 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         groups.Clear();
         mine.Clear();
         owners = null;
+        companions.Clear();
+    }
+
+    /// <summary>
+    /// What an option says it needs installed alongside it, as it is written. Holo's outfits do
+    /// this: one of the colours is "Effect - Requires Effect Selector modpack", and the effect
+    /// itself lives in a separate mod that this option's files only point at. Picking it without
+    /// the other mod switched on gets you nothing at all.
+    /// </summary>
+    public static string? Requirement(string option)
+    {
+        var at = option.IndexOf("requires", StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+            return null;
+
+        var rest = option[(at + "requires".Length)..].Trim(' ', ':', '-', '(', ')', '[', ']', '.', ',');
+        return rest.Length > 0 ? rest : null;
+    }
+
+    /// <summary>Resolved requirements, since it is a walk of the whole mod list per option and
+    /// the answer only changes when something is installed or renamed.</summary>
+    private readonly Dictionary<string, (string Directory, string Name)?> companions = [];
+
+    /// <summary>The installed mod an option needs, if it names one and it is there.</summary>
+    public (string Directory, string Name)? CompanionOf(string option)
+    {
+        if (companions.TryGetValue(option, out var known))
+            return known;
+
+        return companions[option] = Resolve(option);
+    }
+
+    /// <summary>
+    /// Matches what the option asks for against the mods you have, on words rather than on the
+    /// whole string - "Requires Effect Selector modpack" has to find "[Holo] Effect, Piercing
+    /// Selector V1.5.1op", which contains every word it asked for and a few of its own. Where
+    /// several would do, the one carrying the fewest words of its own wins as the closest thing
+    /// to what was asked for.
+    /// </summary>
+    private (string Directory, string Name)? Resolve(string option)
+    {
+        if (Requirement(option) is not { } asked)
+            return null;
+
+        var need = Words(asked).Where(w => w is not ("modpack" or "mod" or "pack" or "the")).ToList();
+        if (need.Count == 0)
+            return null;
+
+        (string Directory, string Name)? best = null;
+        var fewest = int.MaxValue;
+
+        foreach (var (directory, name) in penumbra.Mods())
+        {
+            var words = Words(name);
+            if (!need.All(words.Contains) || words.Count >= fewest)
+                continue;
+
+            best = (directory, name);
+            fewest = words.Count;
+        }
+
+        if (best is { } found)
+            Svc.Log.Information($"[GlamRoulette] \"{option}\" wants {found.Name}, so it will be " +
+                                "switched on and rolled for whoever draws that option");
+        else
+            Svc.Log.Information($"[GlamRoulette] \"{option}\" wants \"{asked}\", which is not installed " +
+                                "under any name I can match");
+
+        return best;
+    }
+
+    /// <summary>The words in a name, lowercased. Punctuation is a separator rather than part of
+    /// anything, so "Effect, Piercing" and "Effect Piercing" read the same.</summary>
+    private static HashSet<string> Words(string text)
+    {
+        var words = new HashSet<string>();
+        var start = -1;
+
+        for (var i = 0; i <= text.Length; i++)
+        {
+            if (i < text.Length && char.IsLetterOrDigit(text[i]))
+            {
+                if (start < 0)
+                    start = i;
+            }
+            else if (start >= 0)
+            {
+                words.Add(text[start..i].ToLowerInvariant());
+                start = -1;
+            }
+        }
+
+        return words;
     }
 
     /// <summary>Which listed mod each item belongs to, so an outfit can be asked what it is
@@ -96,7 +189,9 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         if (worn.Count == 0)
             return [];
 
-        var picks = new List<(string, IReadOnlyDictionary<string, IReadOnlyList<string>>)>();
+        var picks = new List<(string Mod, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)>();
+        var needed = new HashSet<string>();
+
         foreach (var mod in config.RandomizedMods.Where(m => worn.Contains(m.Directory)))
         {
             // Yours carries the groups we are not rolling: a temporary setting is built from the
@@ -119,6 +214,35 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
             var chosen = Pick(mod, playerKey, yours, roll);
             if (chosen.Count > 0)
                 picks.Add((mod.Directory, chosen));
+
+            // An option that only points at files in another mod is nothing on its own. Whoever
+            // draws one gets that mod as well, switched on and rolled like any other - so the
+            // effect varies person to person rather than everybody wearing the same one - and
+            // nobody else has it forced on them for an option they did not draw.
+            foreach (var option in chosen.SelectMany(g => g.Value))
+                if (CompanionOf(option) is { } companion)
+                    needed.Add(companion.Directory);
+        }
+
+        foreach (var directory in needed.Where(d => picks.All(p => p.Mod != d)))
+        {
+            // Its own entry if you have made it one, so its options can be narrowed the way any
+            // other mod's can. Without one it is simply rolled whole.
+            var pick = config.RandomizedMods.FirstOrDefault(m => m.Directory == directory)
+                       ?? new ModPick { Directory = directory };
+
+            var theirs = Yours(collection, directory);
+
+            // The same guard as above, but only where it can bite: a group we are not rolling is
+            // one that has to be carried over from what the collection says, and if that could
+            // not be read it would revert to the mod's defaults instead. With nothing skipped
+            // every group is spoken for and there is nothing to lose.
+            if (pick.SkipGroups.Count > 0 && theirs.Count == 0 && GroupsOf(directory).Count > 0)
+                continue;
+
+            var rolled = Pick(pick, playerKey, theirs, roll);
+            if (rolled.Count > 0)
+                picks.Add((directory, rolled));
         }
 
         return picks;

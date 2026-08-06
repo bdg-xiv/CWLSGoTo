@@ -312,7 +312,27 @@ internal sealed class MainWindow : Window
         foreach (var option in options)
         {
             var on = allowed?.Contains(option) ?? true;
-            if (!ImGui.Checkbox($"{option}##{group}{option}", ref on))
+            var changed = ImGui.Checkbox($"{option}##{group}{option}", ref on);
+
+            // Options that are only a pointer at another mod's files. Said here rather than left
+            // to be found out by picking one and seeing nothing happen.
+            if (ModRoulette.Requirement(option) is { } asked)
+            {
+                var companion = wardrobe.CompanionOf(option);
+                ImGui.SameLine();
+                ImGui.TextColored(companion == null ? Bad : Dim,
+                    companion == null ? "not installed" : "+ rolled too");
+
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip(companion is { } found
+                        ? $"Needs {found.Name}, which shows nothing until it is on.\n" +
+                          "Whoever draws this option gets that mod switched on and its own\n" +
+                          "options rolled with it, so the effect varies person to person."
+                        : $"Wants \"{asked}\", and nothing installed matches that name.\n" +
+                          "Drawing this option would show nothing at all.");
+            }
+
+            if (!changed)
                 continue;
 
             // The absent-means-everything shorthand has to become a real set the moment one is

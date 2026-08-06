@@ -897,6 +897,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     public IReadOnlyDictionary<string, (string[] Options, PenumbraIpc.GroupType Type)> GroupsOf(string modDirectory)
         => mods.GroupsOf(modDirectory);
 
+    /// <summary>The mod an option says it needs alongside it, for the window to name.</summary>
+    public (string Directory, string Name)? CompanionOf(string option) => mods.CompanionOf(option);
+
     /// <summary>Stops taking part yourself, without disturbing anybody else.</summary>
     public void RevertMe()
     {
