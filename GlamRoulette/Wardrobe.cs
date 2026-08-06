@@ -30,10 +30,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// The model each player's mod settings were settled against. A temporary setting only shows
     /// on the model built after it, so the one question worth asking is whether this is still that
     /// model - the pointer changes on every redraw, ours or the game's, and nothing else has to be
-    /// looked at while it has not. Zero means we have just asked for a rebuild and whatever turns
-    /// up next is the one we asked for.
+    /// looked at while it has not.
+    ///
+    /// Pending means we have asked for a rebuild and Draw is the model we asked it to replace.
+    /// A redraw takes longer than a pass, so the next look very often still finds the old model;
+    /// taking that as the rebuild is what had everybody churning, because the real one landed a
+    /// pass later, read as somebody else's doing, and bought another redraw. Only a pointer that
+    /// has actually changed is the one we asked for.
     /// </summary>
-    private readonly Dictionary<string, nint> settled = [];
+    private readonly Dictionary<string, (nint Draw, bool Pending, DateTime Touched)> settled = [];
 
     private readonly CollectionState state = new();
 
@@ -504,23 +509,28 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             var draw = ModelOf(player);
             if (draw != 0)
             {
-                if (!settled.TryGetValue(key, out var since))
+                if (!settled.TryGetValue(key, out var mark))
                 {
                     if (!Settle(player, key, design, draw, ref spent, ref redrawn))
                         continue;
                 }
-                else if (since == 0)
+                else if (mark.Pending)
                 {
-                    // The rebuild we asked for. It was built from what had just been written,
-                    // so it is theirs by construction and needs no checking.
-                    settled[key] = draw;
+                    // Still the model we asked to have replaced, so the rebuild has not landed
+                    // yet. Waiting costs a pass; taking this one costs a redraw a pass later.
+                    if (draw != mark.Draw)
+                        settled[key] = (draw, false, DateTime.UtcNow);
                 }
-                else if (since != draw)
+                else if (mark.Draw != draw)
                 {
                     // Something rebuilt them - a zone change, a gearset, someone else's
                     // business. Whatever they were carrying went with the old model.
                     if (!Settle(player, key, design, draw, ref spent, ref redrawn))
                         continue;
+                }
+                else
+                {
+                    settled[key] = (mark.Draw, false, DateTime.UtcNow);
                 }
             }
 
@@ -566,10 +576,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             lastApplied.Remove(index);
         }
 
-        // Their model went with them, so what it was settled against means nothing now. What
-        // does survive is what the collection was left holding, and that is kept - it is what
-        // lets somebody walk back in, or a whole zone reload, without costing a redraw.
-        foreach (var key in settled.Keys.Where(k => !here.Contains(k)).ToList())
+        // Dropped on age rather than on being missing from a single pass. Somebody skipped for
+        // a moment - mid race change, customize data not read yet, out of the table while being
+        // rebuilt - is not somebody who left, and forgetting them meant working them out again
+        // from scratch, finding the collection had moved on, and buying a redraw for it. That
+        // was most of the churn. A pointer held too long costs nothing: it will simply not match
+        // when they come back, and they settle again.
+        var stale = DateTime.UtcNow.AddMinutes(-5);
+        foreach (var key in settled.Where(s => !here.Contains(s.Key) && s.Value.Touched < stale)
+                     .Select(s => s.Key).ToList())
             settled.Remove(key);
 
         races.Sweep(present);
@@ -596,7 +611,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         if (missing.Count == 0)
         {
-            settled[key] = draw;
+            settled[key] = (draw, false, DateTime.UtcNow);
             return true;
         }
 
@@ -613,7 +628,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         // rather than whenever the game next reloads that character on its own.
         if (!config.ForceRedraw)
         {
-            settled[key] = draw;
+            settled[key] = (draw, false, DateTime.UtcNow);
             return true;
         }
 
@@ -626,7 +641,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         penumbra.Redraw(player.ObjectIndex);
         applied.Remove(player.ObjectIndex);
         lastApplied.Remove(player.ObjectIndex);
-        settled[key] = 0;
+
+        // The model we are replacing, so the rebuild can be told from it.
+        settled[key] = (draw, true, DateTime.UtcNow);
 
         if (!config.RedrawAllAtOnce && ++redrawn >= config.RedrawsPerPass)
             spent = true;
