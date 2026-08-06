@@ -37,12 +37,12 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     /// wearing rather than every mod being pushed at everybody.</summary>
     private Dictionary<ulong, List<string>>? owners;
 
-    private HashSet<string> WornBy(Guid design)
+    private HashSet<string> WornBy(Guid design, uint? shoe)
     {
         owners ??= BuildOwners();
 
         var worn = new HashSet<string>();
-        foreach (var (_, itemId) in dyes.ItemsOf(design))
+        foreach (var (_, itemId) in dyes.ItemsWorn(design, shoe))
             if (owners.TryGetValue(itemId, out var mods))
                 worn.UnionWith(mods);
 
@@ -84,7 +84,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     /// one redraw rather than two.
     /// </summary>
     public IReadOnlyList<(string Mod, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)> Plan(
-        Guid collection, string playerKey, Guid design)
+        Guid collection, string playerKey, Guid design, uint? shoe)
     {
         if (!config.RandomizeModOptions || config.RandomizedMods.Count == 0 || !penumbra.Available)
             return [];
@@ -92,7 +92,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         // Only the mods this outfit is actually wearing. Rolling the options of all of them for
         // everybody meant every single person needed a redraw to show settings that had no
         // bearing on what they had on.
-        var worn = WornBy(design);
+        var worn = WornBy(design, shoe);
         if (worn.Count == 0)
             return [];
 

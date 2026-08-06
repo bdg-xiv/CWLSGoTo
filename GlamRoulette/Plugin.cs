@@ -32,15 +32,16 @@ public sealed class Plugin : IDalamudPlugin
         config = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         glamourer = new GlamourerIpc();
         var dyes = new Dyes(config, glamourer);
+        var shoes = new Shoes(config);
         penumbra = new PenumbraIpc();
         var cplus = new CustomizePlusIpc();
         wardrobe = new Wardrobe(config, glamourer, dyes, new RaceSwap(config, glamourer),
             new ModRoulette(config, penumbra, dyes), new Exclusives(config, penumbra, dyes), penumbra,
-            new Shapes(config, cplus));
+            new Shapes(config, cplus), shoes);
         wardrobe.StampUnknownAsSeen();
         penumbra.OnRestart(OnPenumbraRestart);
         contextMenu = new PlayerContextMenu(config, wardrobe);
-        window = new MainWindow(config, wardrobe, glamourer, dyes, penumbra, cplus);
+        window = new MainWindow(config, wardrobe, glamourer, dyes, penumbra, cplus, shoes);
         windows.AddWindow(window);
 
         PluginInterface.UiBuilder.Draw += windows.Draw;

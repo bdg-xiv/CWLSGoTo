@@ -58,12 +58,12 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
     /// Nothing is sent from here - the wardrobe collects this together with the rolled options
     /// and writes both at once, so one person costs one redraw rather than two.
     /// </summary>
-    public IReadOnlyList<(string Mod, bool Enabled)> Plan(Guid design)
+    public IReadOnlyList<(string Mod, bool Enabled)> Plan(Guid design, uint? shoe)
     {
         if (config.ExclusiveMods.Count < 2 || !penumbra.Available)
             return [];
 
-        var wanted = OwnerOf(design);
+        var wanted = OwnerOf(design, shoe);
 
         // No idea which of them this outfit belongs to - leave every one of them alone rather
         // than guessing and turning off the one that was working.
@@ -95,14 +95,14 @@ internal sealed class Exclusives(Configuration config, PenumbraIpc penumbra, Dye
     /// boots two mods both replace - proves nothing on its own, so those are counted separately
     /// and only consulted when nothing else has spoken.
     /// </summary>
-    private string? OwnerOf(Guid design)
+    private string? OwnerOf(Guid design, uint? shoe)
     {
         owners ??= Build();
 
         var proof = new Dictionary<string, int>();
         var contested = new HashSet<string>();
 
-        foreach (var (_, itemId) in dyes.ItemsOf(design))
+        foreach (var (_, itemId) in dyes.ItemsWorn(design, shoe))
         {
             if (!owners.TryGetValue(itemId, out var mods))
                 continue;

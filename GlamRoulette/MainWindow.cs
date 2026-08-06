@@ -14,6 +14,7 @@ internal sealed class MainWindow : Window
     private readonly Dyes dyes;
     private readonly PenumbraIpc penumbra;
     private readonly CustomizePlusIpc cplus;
+    private readonly Shoes shoes;
 
     private string modFilter = string.Empty;
     private string clashFilter = string.Empty;
@@ -25,13 +26,14 @@ internal sealed class MainWindow : Window
     private static readonly Vector4 Bad = new(1f, 0.45f, 0.45f, 1f);
 
     public MainWindow(Configuration config, Wardrobe wardrobe, GlamourerIpc glamourer, Dyes dyes,
-        PenumbraIpc penumbra, CustomizePlusIpc cplus)
+        PenumbraIpc penumbra, CustomizePlusIpc cplus, Shoes shoes)
         : base("Glam Roulette###GlamRoulette")
     {
         this.config = config;
         this.wardrobe = wardrobe;
         this.glamourer = glamourer;
         this.dyes = dyes;
+        this.shoes = shoes;
         this.penumbra = penumbra;
         this.cplus = cplus;
         SizeConstraints = new WindowSizeConstraints
@@ -337,6 +339,125 @@ internal sealed class MainWindow : Window
     /// mod that is on": a size or body group has to match the wearer, and rolling one of those
     /// is how you get gaps instead of variety.
     /// </summary>
+    private string shoeFilter = string.Empty;
+    private string shoeDesignFilter = string.Empty;
+
+    /// <summary>
+    /// A pool of shoes to deal out in place of the ones a design specifies, and the designs
+    /// that want it. Per design rather than for all of them, because on most outfits the shoes
+    /// are part of the outfit - it is only the ones built around a bare leg where a pair is
+    /// worth varying, and varying them there beats keeping a near-identical design per pair.
+    /// </summary>
+    private void DrawShoes()
+    {
+        var on = config.RollShoes;
+        if (ImGui.Checkbox("Deal out shoes", ref on))
+        {
+            config.RollShoes = on;
+            config.Save();
+            wardrobe.ForgetPool();
+        }
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Replaces the shoes on the designs you name below with a pair from\n" +
+                             "the pool, one per person, the same way their dyes are decided.");
+
+        if (!config.RollShoes)
+            return;
+
+        ImGui.Indent();
+
+        ImGui.TextColored(Dim, config.ShoePool.Count == 0
+            ? "No shoes in the pool yet - nothing will change."
+            : $"{config.ShoePool.Count} pair(s) in the pool, on {config.RollShoesFor.Count} design(s).");
+
+        foreach (var item in config.ShoePool.ToList())
+        {
+            if (ImGui.SmallButton($"x##shoe{item}"))
+            {
+                config.ShoePool.Remove(item);
+                config.Save();
+            }
+
+            ImGui.SameLine();
+            ImGui.TextUnformatted(shoes.NameOf(item));
+        }
+
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputTextWithHint("##shoefilter", "Find shoes to add...", ref shoeFilter, 100);
+
+        if (shoeFilter.Trim().Length >= 2)
+        {
+            var needle = shoeFilter.Trim();
+            var shown = 0;
+
+            foreach (var (id, name) in shoes.Catalogue())
+            {
+                if (shown >= 8)
+                    break;
+                if (name.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0 || config.ShoePool.Contains(id))
+                    continue;
+
+                shown++;
+                if (!ImGui.Button($"{name}##addshoe{id}"))
+                    continue;
+
+                config.ShoePool.Add(id);
+                config.Save();
+                shoeFilter = string.Empty;
+                break;
+            }
+
+            if (shown == 0)
+                ImGui.TextColored(Dim, "Nothing matching that is left to add.");
+        }
+
+        // The designs that want it, named the same way mods are.
+        foreach (var design in config.RollShoesFor.ToList())
+        {
+            if (ImGui.SmallButton($"x##shoedesign{design}"))
+            {
+                config.RollShoesFor.Remove(design);
+                config.Save();
+            }
+
+            ImGui.SameLine();
+            var known = wardrobe.Pool().FirstOrDefault(d => d.Id == design);
+            ImGui.TextUnformatted(known.Name ?? design.ToString());
+        }
+
+        ImGui.SetNextItemWidth(180f);
+        ImGui.InputTextWithHint("##shoedesignfilter", "Find a design to add...", ref shoeDesignFilter, 100);
+
+        if (shoeDesignFilter.Trim().Length >= 2)
+        {
+            var needle = shoeDesignFilter.Trim();
+            var shown = 0;
+
+            foreach (var (id, name, _) in wardrobe.Pool())
+            {
+                if (shown >= 8)
+                    break;
+                if (name.IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0 || config.RollShoesFor.Contains(id))
+                    continue;
+
+                shown++;
+                if (!ImGui.Button($"{name}##addshoedesign{id}"))
+                    continue;
+
+                config.RollShoesFor.Add(id);
+                config.Save();
+                shoeDesignFilter = string.Empty;
+                break;
+            }
+
+            if (shown == 0)
+                ImGui.TextColored(Dim, "Nothing matching that is left to add.");
+        }
+
+        ImGui.Unindent();
+    }
+
     private void DrawModOptions()
     {
         var on = config.RandomizeModOptions;
@@ -728,6 +849,7 @@ internal sealed class MainWindow : Window
         }
 
         DrawShapes();
+        DrawShoes();
         DrawModOptions();
         DrawExclusives();
 

@@ -13,7 +13,7 @@ namespace GlamRoulette;
 /// and the whole point here is that it survives them walking away.
 /// </summary>
 internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dyes dyes, RaceSwap races,
-    ModRoulette mods, Exclusives exclusives, PenumbraIpc penumbra, Shapes shapes)
+    ModRoulette mods, Exclusives exclusives, PenumbraIpc penumbra, Shapes shapes, Shoes shoes)
 {
     private readonly Random random = new();
 
@@ -22,7 +22,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// know what to revert, can tell a re-apply from a first apply, and can see at once when the
     /// game has rebuilt somebody and taken the outfit off with the old model.
     /// </summary>
-    private readonly Dictionary<int, (string Key, Guid Design, nint Draw)> applied = [];
+    private readonly Dictionary<int, (string Key, Guid Design, uint? Shoe, nint Draw)> applied = [];
 
     private readonly Dictionary<int, DateTime> lastApplied = [];
 
@@ -498,6 +498,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
             here.Add(key);
 
+            // Worked out here rather than at the moment they are put on, because what an
+            // outfit is wearing decides which mods get rolled for it and which of a clashing
+            // pair it belongs to - a rolled pair of heels can be the whole reason a mod is in
+            // play, so it has to be known before any of that is settled.
+            var shoe = shoes.For(key, design, config.Rolls.GetValueOrDefault(key));
+
             // Mod settings only show on the model built after them, so the one question worth
             // asking is whether this is still the model they were settled against. While it is,
             // there is nothing to work out and nothing to send.
@@ -511,7 +517,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             {
                 if (!settled.TryGetValue(key, out var mark))
                 {
-                    if (!Settle(player, key, design, draw, ref spent, ref redrawn))
+                    if (!Settle(player, key, design, shoe, draw, ref spent, ref redrawn))
                         continue;
                 }
                 else if (mark.Pending)
@@ -525,7 +531,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 {
                     // Something rebuilt them - a zone change, a gearset, someone else's
                     // business. Whatever they were carrying went with the old model.
-                    if (!Settle(player, key, design, draw, ref spent, ref redrawn))
+                    if (!Settle(player, key, design, shoe, draw, ref spent, ref redrawn))
                         continue;
                 }
                 else
@@ -535,7 +541,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             }
 
             if (applied.TryGetValue(player.ObjectIndex, out var current)
-                && current.Key == key && current.Design == design && current.Draw == draw)
+                && current.Key == key && current.Design == design && current.Shoe == shoe && current.Draw == draw)
             {
                 if (!config.Reapply)
                     continue;
@@ -552,11 +558,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
             if (result is GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone)
             {
-                applied[player.ObjectIndex] = (key, design, draw);
+                applied[player.ObjectIndex] = (key, design, shoe, draw);
 
                 // Has to follow every apply, not just the first: applying the design puts the
                 // design's own dyes back on, so the re-dye would be undone by the next pass.
-                dyes.Apply(player.ObjectIndex, key, design, config.Rolls.GetValueOrDefault(key));
+                dyes.Apply(player.ObjectIndex, key, design, config.Rolls.GetValueOrDefault(key), shoe);
             }
             else if (result == GlamourerIpc.Result.DesignNotFound)
             {
@@ -595,13 +601,13 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// left for a later pass, either because they are being rebuilt or because this pass has
     /// done enough of that already.
     /// </summary>
-    private bool Settle(IPlayerCharacter player, string key, Guid design, nint draw,
+    private bool Settle(IPlayerCharacter player, string key, Guid design, uint? shoe, nint draw,
         ref bool spent, ref int redrawn)
     {
         // Which collection they are really being drawn with. Asked for only when something has
         // actually rebuilt them, since it is a round trip and the answer rarely changes.
         var collection = penumbra.CollectionOf(player.ObjectIndex);
-        var wishes = Wishes(collection, key, design);
+        var wishes = Wishes(collection, key, design, shoe);
 
         // Only what the collection is not already holding. A zone change throws away every model
         // in it but not the collection's settings, so whoever's options were loaded before the
@@ -657,15 +663,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// switched off to stop it fighting is not one whose options are worth rolling.
     /// </summary>
     private List<(string Mod, bool Enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> Options, string Signature)>
-        Wishes(Guid collection, string key, Guid design)
+        Wishes(Guid collection, string key, Guid design, uint? shoe)
     {
         var none = new Dictionary<string, IReadOnlyList<string>>();
         var wishes = new Dictionary<string, (bool Enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)>();
 
-        foreach (var (mod, enabled) in exclusives.Plan(design))
+        foreach (var (mod, enabled) in exclusives.Plan(design, shoe))
             wishes[mod] = (enabled, none);
 
-        foreach (var (mod, options) in mods.Plan(collection, key, design))
+        foreach (var (mod, options) in mods.Plan(collection, key, design, shoe))
         {
             if (wishes.TryGetValue(mod, out var already) && !already.Enabled)
                 continue;

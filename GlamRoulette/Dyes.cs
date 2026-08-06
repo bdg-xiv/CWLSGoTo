@@ -161,9 +161,38 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
 
     public void Forget() => items.Clear();
 
-    /// <summary>Dyes an outfit that has just been applied.</summary>
-    public void Apply(int objectIndex, string playerKey, Guid design, int roll)
+    /// <summary>
+    /// What an outfit actually puts on somebody: the design's own items, with the feet swapped
+    /// for a rolled pair when they have been given one. Everything that asks what an outfit is
+    /// wearing goes through here - the dyeing, which mods it wants rolled, and which of a
+    /// clashing pair it belongs to - so a rolled pair of shoes counts as worn everywhere rather
+    /// than only where it is put on.
+    /// </summary>
+    public List<(byte Slot, ulong ItemId)> ItemsWorn(Guid design, uint? shoe)
     {
+        var worn = ItemsOf(design);
+        if (shoe is not { } item)
+            return worn;
+
+        var swapped = worn.Where(w => w.Slot != Feet).ToList();
+        swapped.Add((Feet, item));
+        return swapped;
+    }
+
+    private const byte Feet = 8;
+
+    /// <summary>Dyes an outfit that has just been applied, and puts the rolled shoes on with
+    /// the same call - a slot is set by naming its item, which is what dyeing does anyway.</summary>
+    public void Apply(int objectIndex, string playerKey, Guid design, int roll, uint? shoe)
+    {
+        // The shoes still have to go on even when nothing is being re-dyed, so this is not a
+        // dye-only pass any more.
+        if (shoe is { } only && (!config.RandomizeDyes || Palette().Length == 0))
+        {
+            glamourer.Dye(objectIndex, Feet, only, [0, 0]);
+            return;
+        }
+
         if (!config.RandomizeDyes)
             return;
 
@@ -177,7 +206,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
         var first = Pick(Seed(playerKey, design, roll, 0));
         var second = config.DyeSecondChannel ? Pick(Seed(playerKey, design, roll, 1)) : first;
 
-        foreach (var (slot, itemId) in ItemsOf(design))
+        foreach (var (slot, itemId) in ItemsWorn(design, shoe))
             glamourer.Dye(objectIndex, slot, itemId, [first, second]);
     }
 

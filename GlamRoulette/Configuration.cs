@@ -110,6 +110,19 @@ public class Configuration : IPluginConfiguration
     public float ShapeMin { get; set; } = 1f;
     public float ShapeMax { get; set; } = 2f;
 
+    /// <summary>Deal out shoes from a pool instead of the ones a design specifies.</summary>
+    public bool RollShoes { get; set; }
+
+    /// <summary>The shoes that may be dealt, by item id.</summary>
+    public List<uint> ShoePool { get; set; } = [];
+
+    /// <summary>
+    /// The designs whose shoes are rolled. Named one at a time rather than "all of them": on
+    /// most outfits the shoes are part of the outfit, and only the ones built around a bare leg
+    /// are worth varying.
+    /// </summary>
+    public HashSet<Guid> RollShoesFor { get; set; } = [];
+
     /// <summary>Roll the option dropdowns on the mods named below, per player.</summary>
     public bool RandomizeModOptions { get; set; }
 
