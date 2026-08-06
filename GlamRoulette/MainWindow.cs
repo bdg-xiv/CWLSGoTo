@@ -774,7 +774,7 @@ internal sealed class MainWindow : Window
             config.IncludeRetainers = retainers;
             config.Save();
             if (!retainers)
-                wardrobe.RevertAll();
+                wardrobe.RevertKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.Retainer);
         }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Yours and anybody else's standing at a summoning bell, by the same\n" +
@@ -787,7 +787,8 @@ internal sealed class MainWindow : Window
             config.IncludeNpcs = npcs;
             config.Save();
             if (!npcs)
-                wardrobe.RevertAll();
+                wardrobe.RevertKind(Dalamud.Game.ClientState.Objects.Enums.ObjectKind.EventNpc,
+                    Dalamud.Game.ClientState.Objects.Enums.ObjectKind.BattleNpc);
         }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Only the ones built on a playable body - a design is a list of gear for\n" +

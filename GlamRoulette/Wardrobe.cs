@@ -835,6 +835,24 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         lastApplied.Clear();
     }
 
+    /// <summary>
+    /// Puts back only the ones of a given kind, for when retainers or NPCs stop being dealt to.
+    /// Reverting the lot would work too, but everyone else would be undressed and dressed again
+    /// on the next pass for no reason - and that is a flicker on every screen in sight of you.
+    /// </summary>
+    public void RevertKind(params ObjectKind[] kinds)
+    {
+        foreach (var index in applied.Keys.ToList())
+        {
+            if (Svc.Objects[index] is not { } obj || Array.IndexOf(kinds, obj.ObjectKind) < 0)
+                continue;
+
+            Restore(index);
+            applied.Remove(index);
+            lastApplied.Remove(index);
+        }
+    }
+
     /// <summary>Hands the shapes out again, for when the profile changes.</summary>
     public void ForgetShapes() => shapes.Reload();
 
