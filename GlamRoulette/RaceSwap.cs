@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects.Enums;
-using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 
 namespace GlamRoulette;
@@ -35,18 +35,18 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     /// they are already Elezen the same request costs nothing: Glamourer compares it against
     /// what is drawn, finds no difference, and skips the redraw.
     /// </summary>
-    public bool Handle(IPlayerCharacter player)
+    public bool Handle(ICharacter character)
     {
         if (!config.SwapHrothgarFemales || !glamourer.Available)
             return false;
 
-        if (!IsFemaleHrothgar(player))
+        if (!IsFemaleHrothgar(character))
         {
-            asked.Remove(player.ObjectIndex);
+            asked.Remove(character.ObjectIndex);
             return false;
         }
 
-        var index = player.ObjectIndex;
+        var index = character.ObjectIndex;
         var fresh = !asked.ContainsKey(index);
 
         if (!fresh)
@@ -63,12 +63,12 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
 
         if (result is not (GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone))
         {
-            Svc.Log.Debug($"[GlamRoulette] Could not turn {Wardrobe.KeyOf(player)} into an Elezen: {result}");
+            Svc.Log.Debug($"[GlamRoulette] Could not turn {Wardrobe.KeyOf(character)} into an Elezen: {result}");
             return false;
         }
 
         if (fresh)
-            Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(player)} is an Elezen now");
+            Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(character)} is an Elezen now");
 
         return fresh;
     }
@@ -88,9 +88,9 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     /// Glamourer changes the model without rewriting this - so someone already swapped still
     /// reads as a Hrothgar here. That is what makes them findable again after a redraw.
     /// </summary>
-    private static bool IsFemaleHrothgar(IPlayerCharacter player)
+    private static bool IsFemaleHrothgar(ICharacter character)
     {
-        var customize = player.Customize;
+        var customize = character.Customize;
         return customize.Length > (int)CustomizeIndex.Gender
                && customize[(int)CustomizeIndex.Race] == Hrothgar
                && customize[(int)CustomizeIndex.Gender] == Female;

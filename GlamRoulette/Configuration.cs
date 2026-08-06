@@ -40,6 +40,16 @@ public class Configuration : IPluginConfiguration
     /// look like, and your own glamour is presumably one you picked.</summary>
     public bool IncludeMe { get; set; }
 
+    /// <summary>Deal to retainers as well as to players.</summary>
+    public bool IncludeRetainers { get; set; } = true;
+
+    /// <summary>
+    /// Deal to NPCs as well. Only ever the ones built on a playable body - a design is a list of
+    /// gear for a human skeleton, and there is nothing sensible to put it on otherwise - and most
+    /// of them have no class, so they draw from the whole pool rather than from a discipline's.
+    /// </summary>
+    public bool IncludeNpcs { get; set; } = true;
+
     /// <summary>
     /// How long one of your own outfits lasts before it goes back in the pack. Only yours:
     /// everybody else keeps theirs so they stay recognisable, but a random glamour of your own

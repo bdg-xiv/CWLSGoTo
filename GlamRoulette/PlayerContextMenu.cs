@@ -1,5 +1,6 @@
 using System;
-using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Gui.ContextMenu;
 using Dalamud.Game.Text.SeStringHandling;
 using ECommons.DalamudServices;
@@ -31,11 +32,16 @@ internal sealed class PlayerContextMenu : IDisposable
             if (args.Target is not MenuTargetDefault { TargetName.Length: > 0 } target)
                 return;
 
+            // A retainer or an NPC has no world to be from, so the name alone is what they are
+            // known by - but only when they are one of the ones being dealt to. Everything else
+            // in a city has a context menu too, and none of them want this on it.
             var world = target.TargetHomeWorld.ValueNullable?.Name.ExtractText();
-            if (string.IsNullOrEmpty(world))
-                return;
+            var player = string.IsNullOrEmpty(world)
+                ? target.TargetObject is ICharacter other && Dealt(other) ? Wardrobe.KeyOf(other) : null
+                : $"{target.TargetName}@{world}";
 
-            var player = $"{target.TargetName}@{world}";
+            if (player == null)
+                return;
 
             args.AddMenuItem(new MenuItem
             {
@@ -47,7 +53,7 @@ internal sealed class PlayerContextMenu : IDisposable
             // Keeping is per outfit, so it needs the role they are on right now rather than
             // just their name. Without the object in front of us there is no role to read,
             // and pinning the player as a whole would keep more than was asked for.
-            if (target.TargetObject is not IPlayerCharacter character)
+            if (target.TargetObject is not ICharacter character)
                 return;
 
             var key = wardrobe.KeyFor(character);
@@ -66,6 +72,15 @@ internal sealed class PlayerContextMenu : IDisposable
             Svc.Log.Error(ex, "Failed to build the context menu entry");
         }
     }
+
+    /// <summary>Whether this one is being dealt to at all, for the worldless ones.</summary>
+    private bool Dealt(ICharacter character)
+        => character.ObjectKind switch
+        {
+            ObjectKind.Retainer => config.IncludeRetainers,
+            ObjectKind.EventNpc or ObjectKind.BattleNpc => config.IncludeNpcs,
+            _ => false,
+        };
 
     private void TogglePinned(string key)
     {

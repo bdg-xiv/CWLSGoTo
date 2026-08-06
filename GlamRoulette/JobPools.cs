@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Types;
 
 namespace GlamRoulette;
 
@@ -37,10 +37,13 @@ internal static class JobPools
     /// Role alone cannot tell a bard from a black mage - the game files both under ranged -
     /// so the discipline breaks that tie: ranged plus Disciple of Magic is a caster, ranged
     /// plus Disciple of War is a physical ranged.
+    ///
+    /// Most NPCs have no class at all and come back unknown, which is what puts them in front of
+    /// the whole pool rather than one discipline's share of it.
     /// </summary>
-    public static Group GroupOf(IPlayerCharacter player)
+    public static Group GroupOf(ICharacter character)
     {
-        if (player.ClassJob.ValueNullable is not { } job)
+        if (character.ClassJob.ValueNullable is not { } job)
             return Group.Unknown;
 
         var category = job.ClassJobCategory.RowId;

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Types;
 using ECommons.DalamudServices;
 
 namespace GlamRoulette;
@@ -50,10 +51,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     public int Kept => config.Pinned.Count;
 
     /// <summary>The assignment key for a player as they are right now, role included.</summary>
-    public string KeyFor(IPlayerCharacter player)
+    public string KeyFor(ICharacter character)
     {
-        var group = JobPools.GroupOf(player);
-        var key = KeyOf(player);
+        var group = JobPools.GroupOf(character);
+        var key = KeyOf(character);
         return config.MatchJobCategory && group != JobPools.Group.Unknown ? key + "#" + group : key;
     }
 
@@ -163,8 +164,19 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                             $"{config.RememberMinutes} minutes");
     }
 
-    public static string KeyOf(IPlayerCharacter player)
-        => $"{player.Name.TextValue}@{player.HomeWorld.ValueNullable?.Name.ExtractText() ?? "?"}";
+    /// <summary>
+    /// Who an outfit is remembered against. A player is their name and world; the other two have
+    /// no world to be from, so they get a word in its place - which also keeps them from ever
+    /// colliding with a player who happens to share the name.
+    /// </summary>
+    public static string KeyOf(ICharacter character)
+        => character switch
+        {
+            IPlayerCharacter player
+                => $"{player.Name.TextValue}@{player.HomeWorld.ValueNullable?.Name.ExtractText() ?? "?"}",
+            { ObjectKind: ObjectKind.Retainer } => $"{character.Name.TextValue}@retainer",
+            _ => $"{character.Name.TextValue}@npc",
+        };
 
     private List<(Guid Id, string Name, string Path)>? pool;
     private DateTime pooledAt = DateTime.MinValue;
@@ -247,9 +259,16 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         var chosen = pool[random.Next(pool.Count)].Id;
         config.Assignments[key] = chosen;
-        config.Save();
+
+        // Written once at the end of the pass rather than here. Walking into a city deals to
+        // everybody in it at once, and each save is the whole config serialised out to disk -
+        // forty of those in one frame is a stutter you can feel.
+        dealtDirty = true;
         return chosen;
     }
+
+    /// <summary>Somebody was dealt an outfit this pass, so the config wants writing.</summary>
+    private bool dealtDirty;
 
     /// <summary>
     /// Throws away this player's outfits so the next pass picks new ones - every role they
@@ -445,50 +464,52 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         foreach (var obj in Svc.Objects)
         {
-            if (obj is not IPlayerCharacter player)
+            if (obj is not ICharacter character)
                 continue;
 
             // Yourself is governed by its own setting and nothing else. You are in your own
             // party, so leaving party members alone would otherwise quietly cancel it the
             // moment anyone grouped with you.
-            var isMe = player.GameObjectId == me.GameObjectId;
-            if (isMe)
-            {
-                if (!config.IncludeMe)
-                    continue;
-            }
-            else if (config.SkipParty && InParty(player))
-            {
+            var isMe = character.GameObjectId == me.GameObjectId;
+            if (!Eligible(character, isMe))
                 continue;
-            }
 
-            present.Add(player.ObjectIndex);
+            present.Add(character.ObjectIndex);
 
             // Someone who has only just come into view reads with no world and no job for a
             // moment. Both go into the key an outfit is remembered against, so acting now means
             // dressing them as "Name@?" and then again as "Name@Coeurl#Tank" once the rest
             // arrives - two keys, two outfits, and it looks like the roulette re-rolling them
             // over and over. They are worth waiting a pass for.
-            if (player.ClassJob.RowId == 0 || player.HomeWorld.ValueNullable is null)
+            //
+            // Only players: an NPC having no class is not a slow read, it is simply an NPC, and
+            // waiting for one to turn up would leave every last one of them undressed.
+            if (character is IPlayerCharacter loading
+                && (loading.ClassJob.RowId == 0 || loading.HomeWorld.ValueNullable is null))
+                continue;
+
+            // Nothing to hang an outfit on. Every key here is built out of the name, and the
+            // nameless ones are scenery rather than anybody.
+            if (character.Name.TextValue.Length == 0)
                 continue;
 
             // Ahead of dressing them, and worth a pass of its own when it first lands: changing
             // race redraws the character, and a redraw takes the outfit off again. Better to
             // let the next pass dress the Elezen than to dress a Hrothgar who is about to stop
             // being one.
-            if (races.Handle(player))
+            if (races.Handle(character))
             {
-                applied.Remove(player.ObjectIndex);
-                lastApplied.Remove(player.ObjectIndex);
+                applied.Remove(character.ObjectIndex);
+                lastApplied.Remove(character.ObjectIndex);
                 continue;
             }
 
-            if (config.FemaleOnly && !IsFemale(player))
+            if (config.FemaleOnly && !IsFemale(character))
                 continue;
 
             // Written in memory every pass but only saved on the prune tick - the config is
             // not worth rewriting once a second for a timestamp.
-            var person = KeyOf(player);
+            var person = KeyOf(character);
             config.LastSeen[person] = DateTime.UtcNow;
             seenDirty = true;
 
@@ -496,13 +517,14 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             // on has no business changing their shape. Nothing here costs a redraw - Customize+
             // works on the bones every frame - so it is done before anything that might not
             // happen this pass.
-            shapes.Apply(player.ObjectIndex, person, config.Rolls.GetValueOrDefault(person));
+            shapes.Apply(character.ObjectIndex, person, config.Rolls.GetValueOrDefault(person));
 
             // The discipline is part of the key when pools are split, so switching from a
             // warrior to a weaver gets an outfit from the right pool instead of keeping the
-            // one they were given as a warrior.
-            var group = JobPools.GroupOf(player);
-            var key = KeyOf(player);
+            // one they were given as a warrior. Anyone with no class at all - which is most
+            // NPCs - falls through to the whole pool.
+            var group = JobPools.GroupOf(character);
+            var key = person;
             if (config.MatchJobCategory && group != JobPools.Group.Unknown)
                 key += "#" + group;
 
@@ -526,12 +548,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             // leave them undressed - Glamourer holds an outfit for a character who has yet to
             // appear and puts it on as they do, which is how they come into view already
             // wearing it rather than changing a second later.
-            var draw = ModelOf(player);
+            var draw = ModelOf(character);
             if (draw != 0)
             {
                 if (!settled.TryGetValue(key, out var mark))
                 {
-                    if (!Settle(player, key, design, shoe, draw, ref spent, ref redrawn))
+                    if (!Settle(character, key, design, shoe, draw, ref spent, ref redrawn))
                         continue;
                 }
                 else if (mark.Pending)
@@ -545,7 +567,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 {
                     // Something rebuilt them - a zone change, a gearset, someone else's
                     // business. Whatever they were carrying went with the old model.
-                    if (!Settle(player, key, design, shoe, draw, ref spent, ref redrawn))
+                    if (!Settle(character, key, design, shoe, draw, ref spent, ref redrawn))
                         continue;
                 }
                 else
@@ -554,7 +576,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 }
             }
 
-            if (applied.TryGetValue(player.ObjectIndex, out var current)
+            if (applied.TryGetValue(character.ObjectIndex, out var current)
                 && current.Key == key && current.Design == design && current.Shoe == shoe && current.Draw == draw)
             {
                 if (!config.Reapply)
@@ -562,21 +584,21 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
                 // Anything that redraws a character drops the design, and Glamourer will not
                 // put it back by itself, so this quietly nails it back on.
-                if (lastApplied.TryGetValue(player.ObjectIndex, out var when)
+                if (lastApplied.TryGetValue(character.ObjectIndex, out var when)
                     && DateTime.UtcNow - when < TimeSpan.FromSeconds(config.ReapplySeconds))
                     continue;
             }
 
-            var result = glamourer.Apply(design, player.ObjectIndex);
-            lastApplied[player.ObjectIndex] = DateTime.UtcNow;
+            var result = glamourer.Apply(design, character.ObjectIndex);
+            lastApplied[character.ObjectIndex] = DateTime.UtcNow;
 
             if (result is GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone)
             {
-                applied[player.ObjectIndex] = (key, design, shoe, draw);
+                applied[character.ObjectIndex] = (key, design, shoe, draw);
 
                 // Has to follow every apply, not just the first: applying the design puts the
                 // design's own dyes back on, so the re-dye would be undone by the next pass.
-                dyes.Apply(player.ObjectIndex, key, design, config.Rolls.GetValueOrDefault(key), shoe);
+                dyes.Apply(character.ObjectIndex, key, design, config.Rolls.GetValueOrDefault(key), shoe);
             }
             else if (result == GlamourerIpc.Result.DesignNotFound)
             {
@@ -586,6 +608,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 Svc.Log.Information($"[GlamRoulette] {key}'s design no longer exists, re-rolling them");
                 Reroll(key, body: false);
             }
+        }
+
+        if (dealtDirty)
+        {
+            dealtDirty = false;
+            config.Save();
         }
 
         // Forget people who have left, so they get re-applied on sight rather than being
@@ -611,16 +639,81 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     }
 
     /// <summary>
+    /// Whether this one gets a turn at all. Players are the default; retainers and NPCs are each
+    /// switched on separately, and both only while they are built on a playable body.
+    /// </summary>
+    private bool Eligible(ICharacter character, bool isMe)
+    {
+        switch (character.ObjectKind)
+        {
+            case ObjectKind.Pc when isMe:
+                if (!config.IncludeMe)
+                    return false;
+                break;
+
+            case ObjectKind.Pc:
+                if (config.SkipParty && InParty(character))
+                    return false;
+                break;
+
+            case ObjectKind.Retainer:
+                if (!config.IncludeRetainers)
+                    return false;
+                break;
+
+            case ObjectKind.EventNpc or ObjectKind.BattleNpc:
+                if (!config.IncludeNpcs)
+                    return false;
+                break;
+
+            // Minions, mounts, ornaments, treasure coffers. Nothing there to dress.
+            default:
+                return false;
+        }
+
+        return IsPlayerLike(character);
+    }
+
+    /// <summary>Which of the game's character models are the playable one, read once.</summary>
+    private static HashSet<uint>? humanModels;
+
+    /// <summary>
+    /// Whether this one is a playable body rather than a beast. The game's own ModelChara sheet
+    /// says which: type 1 is the human model, the one built out of a customize array, and it is
+    /// the only one a design's gear means anything on. Everything else - a goobbue, an amalj'aa,
+    /// the dragon somebody is riding - has its own model with its own slots, and dressing it is
+    /// at best nothing happening.
+    ///
+    /// Read straight off the object rather than off what is drawn, so someone still loading in is
+    /// judged correctly instead of being passed over for having no model yet. Failing to read the
+    /// sheet at all lets everyone through: this is here to spare the odd monster, not to be the
+    /// thing that quietly stops anybody being dressed.
+    /// </summary>
+    private static unsafe bool IsPlayerLike(ICharacter character)
+    {
+        humanModels ??= Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.ModelChara>()
+            .Where(m => m.Type == 1)
+            .Select(m => m.RowId)
+            .ToHashSet();
+
+        if (humanModels.Count == 0)
+            return true;
+
+        var native = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)character.Address;
+        return native != null && humanModels.Contains((uint)native->ModelContainer.ModelCharaId);
+    }
+
+    /// <summary>
     /// Brings one player's mods to what their outfit wants. Returns false when they are to be
     /// left for a later pass, either because they are being rebuilt or because this pass has
     /// done enough of that already.
     /// </summary>
-    private bool Settle(IPlayerCharacter player, string key, Guid design, uint? shoe, nint draw,
+    private bool Settle(ICharacter character, string key, Guid design, uint? shoe, nint draw,
         ref bool spent, ref int redrawn)
     {
         // Which collection they are really being drawn with. Asked for only when something has
         // actually rebuilt them, since it is a round trip and the answer rarely changes.
-        var collection = penumbra.CollectionOf(player.ObjectIndex);
+        var collection = penumbra.CollectionOf(character.ObjectIndex);
         var wishes = Wishes(collection, key, design, shoe, config.Rolls.GetValueOrDefault(key));
 
         // Only what the collection is not already holding. A zone change throws away every model
@@ -641,7 +734,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             return false;
 
         foreach (var (mod, enabled, options, signature) in missing)
-            if (penumbra.Apply(player.ObjectIndex, mod, enabled, options))
+            if (penumbra.Apply(character.ObjectIndex, mod, enabled, options))
                 state.Wrote(collection, mod, signature);
 
         // The settings are in place either way. Forcing the redraw is only about showing them now
@@ -658,9 +751,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         // The redraw takes the outfit off with the old model, so it goes on next pass rather
         // than being put on now and immediately thrown away.
-        penumbra.Redraw(player.ObjectIndex);
-        applied.Remove(player.ObjectIndex);
-        lastApplied.Remove(player.ObjectIndex);
+        penumbra.Redraw(character.ObjectIndex);
+        applied.Remove(character.ObjectIndex);
+        lastApplied.Remove(character.ObjectIndex);
 
         // The model we are replacing, so the rebuild can be told from it.
         settled[key] = (draw, true, DateTime.UtcNow);
@@ -713,9 +806,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// a mod setting is baked into, so a new one means everything they were carrying is gone -
     /// which is the whole of what a zone change does to a crowd.
     /// </summary>
-    private static unsafe nint ModelOf(IPlayerCharacter player)
+    private static unsafe nint ModelOf(ICharacter character)
     {
-        var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)player.Address;
+        var native = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)character.Address;
         return native == null ? 0 : (nint)native->DrawObject;
     }
 
@@ -812,17 +905,17 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         glamourer.Revert(index);
     }
 
-    private static bool InParty(IPlayerCharacter player)
-        => Svc.Party.Any(member => member.GameObject?.GameObjectId == player.GameObjectId);
+    private static bool InParty(ICharacter character)
+        => Svc.Party.Any(member => member.GameObject?.GameObjectId == character.GameObjectId);
 
     /// <summary>
     /// Gender lives at index 1 of the customize data, 0 male and 1 female. A character whose
     /// data has not streamed in yet reads as nothing rather than as male, so it is skipped and
     /// picked up on a later pass instead of being wrongly dressed or wrongly spared.
     /// </summary>
-    private static bool IsFemale(IPlayerCharacter player)
+    private static bool IsFemale(ICharacter character)
     {
-        var customize = player.Customize;
+        var customize = character.Customize;
         return customize.Length > (int)CustomizeIndex.Gender
                && customize[(int)CustomizeIndex.Gender] == 1;
     }

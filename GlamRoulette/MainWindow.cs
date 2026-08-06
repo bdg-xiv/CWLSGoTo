@@ -768,6 +768,33 @@ internal sealed class MainWindow : Window
             config.Save();
         }
 
+        var retainers = config.IncludeRetainers;
+        if (ImGui.Checkbox("Deal to retainers", ref retainers))
+        {
+            config.IncludeRetainers = retainers;
+            config.Save();
+            if (!retainers)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Yours and anybody else's standing at a summoning bell, by the same\n" +
+                             "rules as everyone. A retainer with a class draws from that\n" +
+                             "discipline's pool; one without draws from the whole thing.");
+
+        var npcs = config.IncludeNpcs;
+        if (ImGui.Checkbox("Deal to NPCs", ref npcs))
+        {
+            config.IncludeNpcs = npcs;
+            config.Save();
+            if (!npcs)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Only the ones built on a playable body - a design is a list of gear for\n" +
+                             "a human skeleton, so beasts and beast tribes are passed over. Hardly any\n" +
+                             "of them have a class, so they draw from the whole pool.\n" +
+                             "A city has a lot of NPCs in it; this is the noisiest thing here.");
+
         var includeMe = config.IncludeMe;
         if (ImGui.Checkbox("Take a turn myself", ref includeMe))
         {
