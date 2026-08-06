@@ -80,7 +80,8 @@ public class MainWindow : Window
         if (Svc.Commands.Commands.ContainsKey("/glamroulette"))
         {
             ImGui.SameLine();
-            Chore("Re-roll me", "Deals yourself another outfit from Glam Roulette.\n"
+            Chore("Re-roll me", "Deals yourself another everything from Glam Roulette: outfit,\n"
+                + "colours, shoes, the options on the mods it is built from, and your body.\n"
                 + "Only does anything if you have it taking a turn on yourself.",
                 () => Chat.ExecuteCommand("/glamroulette me"));
         }

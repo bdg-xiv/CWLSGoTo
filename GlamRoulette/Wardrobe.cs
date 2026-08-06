@@ -366,7 +366,21 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         foreach (var stamp in config.MyOutfitSince.Keys.Where(k => PlayerOf(k) == key).ToList())
             config.MyOutfitSince[stamp] = DateTime.UtcNow;
 
-        return Reroll(key);
+        var dealt = Reroll(key);
+
+        // And the body. That one follows the player rather than the outfit - what job somebody
+        // is on has no business changing their shape - so it counts against the bare name and
+        // world, and Reroll, which works through the per-job keys, never reaches it. Asking for
+        // another of everything and getting the same body back is not another of everything.
+        if (config.RandomizeShapes && !IsPinned(key))
+        {
+            Rolled(key);
+            shapes.Forget(key);
+            config.Save();
+            dealt = true;
+        }
+
+        return dealt;
     }
 
     /// <summary>
