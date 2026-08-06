@@ -84,7 +84,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     /// one redraw rather than two.
     /// </summary>
     public IReadOnlyList<(string Mod, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)> Plan(
-        Guid collection, string playerKey, Guid design, uint? shoe)
+        Guid collection, string playerKey, Guid design, uint? shoe, int roll)
     {
         if (!config.RandomizeModOptions || config.RandomizedMods.Count == 0 || !penumbra.Available)
             return [];
@@ -116,7 +116,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
                 continue;
             }
 
-            var chosen = Pick(mod, playerKey, yours);
+            var chosen = Pick(mod, playerKey, yours, roll);
             if (chosen.Count > 0)
                 picks.Add((mod.Directory, chosen));
         }
@@ -129,7 +129,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     /// person keeps the same version of the mod tomorrow, the same way their outfit does.
     /// </summary>
     private Dictionary<string, IReadOnlyList<string>> Pick(ModPick mod, string playerKey,
-        IReadOnlyDictionary<string, List<string>> yours)
+        IReadOnlyDictionary<string, List<string>> yours, int roll)
     {
         var picks = new Dictionary<string, IReadOnlyList<string>>();
 
@@ -146,7 +146,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
                 continue;
             }
 
-            var seed = Seed(playerKey, mod.Directory, group);
+            var seed = Seed(playerKey, mod.Directory, group, roll);
             var allowed = mod.Allowed(group);
 
             if (PicksOne(type))
@@ -171,9 +171,9 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
             for (var i = 0; i < options.Length; i++)
             {
                 var option = options[i];
-                var roll = allowed == null || allowed.Contains(option);
+                var rolled = allowed == null || allowed.Contains(option);
 
-                if (roll ? (seed >> i & 1) == 1 : mineOn.Contains(option))
+                if (rolled ? (seed >> i & 1) == 1 : mineOn.Contains(option))
                     on.Add(option);
             }
 
@@ -226,9 +226,16 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         return settings;
     }
 
-    /// <summary>Same hand-rolled hash the dyes use: String.GetHashCode is randomised per
-    /// process and would give everyone a new set of options on every restart.</summary>
-    private static uint Seed(string playerKey, string modDirectory, string group)
+    /// <summary>
+    /// Same hand-rolled hash the dyes use: String.GetHashCode is randomised per process and
+    /// would give everyone a new set of options on every restart.
+    ///
+    /// The roll counter is in the sum so that a fresh outfit comes with a fresh version of the
+    /// mod it is built on. Without it a re-roll changed the design and the dyes and left the
+    /// material and the toggles exactly as they were, which is not what dealing somebody another
+    /// outfit is supposed to mean.
+    /// </summary>
+    private static uint Seed(string playerKey, string modDirectory, string group, int roll)
     {
         unchecked
         {
@@ -240,6 +247,8 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
                 hash = (hash ^ c) * 16777619u;
             foreach (var c in group)
                 hash = (hash ^ c) * 16777619u;
+            foreach (var b in BitConverter.GetBytes(roll))
+                hash = (hash ^ b) * 16777619u;
 
             return hash;
         }

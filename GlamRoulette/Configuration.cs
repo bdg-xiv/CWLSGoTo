@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Configuration;
 
 namespace GlamRoulette;
@@ -202,6 +203,28 @@ public class Configuration : IPluginConfiguration
     /// re-roll is a fresh set of colours even when the same design comes up again.
     /// </summary>
     public Dictionary<string, int> Rolls { get; set; } = [];
+
+    /// <summary>
+    /// Takes the serialiser's own leavings back out. Newtonsoft writes a "$type" key alongside a
+    /// dictionary's real contents when it is told to record types, and reading it back turns that
+    /// into an option group by that name. Harmless - no mod has a group called $type, so nothing
+    /// ever matched it - but it shows up in the window's counts and in anything printed, and a
+    /// list of your choices should only have your choices in it.
+    /// </summary>
+    public void Tidy()
+    {
+        var removed = 0;
+        foreach (var mod in RandomizedMods.Concat(ExclusiveMods))
+        {
+            if (mod.GroupOptions.Remove("$type"))
+                removed++;
+
+            removed += mod.SkipGroups.Remove("$type") ? 1 : 0;
+        }
+
+        if (removed > 0)
+            Save();
+    }
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 }

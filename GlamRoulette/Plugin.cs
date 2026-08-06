@@ -38,6 +38,7 @@ public sealed class Plugin : IDalamudPlugin
         wardrobe = new Wardrobe(config, glamourer, dyes, new RaceSwap(config, glamourer),
             new ModRoulette(config, penumbra, dyes), new Exclusives(config, penumbra, dyes), penumbra,
             new Shapes(config, cplus), shoes);
+        config.Tidy();
         wardrobe.StampUnknownAsSeen();
         penumbra.OnRestart(OnPenumbraRestart);
         contextMenu = new PlayerContextMenu(config, wardrobe);

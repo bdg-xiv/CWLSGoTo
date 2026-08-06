@@ -607,7 +607,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         // Which collection they are really being drawn with. Asked for only when something has
         // actually rebuilt them, since it is a round trip and the answer rarely changes.
         var collection = penumbra.CollectionOf(player.ObjectIndex);
-        var wishes = Wishes(collection, key, design, shoe);
+        var wishes = Wishes(collection, key, design, shoe, config.Rolls.GetValueOrDefault(key));
 
         // Only what the collection is not already holding. A zone change throws away every model
         // in it but not the collection's settings, so whoever's options were loaded before the
@@ -640,7 +640,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         // Said out loud, because a redraw is the one thing here anybody can see happening and
         // there is no other way to tell ours from somebody else's.
-        Svc.Log.Information($"[GlamRoulette] Redrawing {key} for {missing.Count} mod(s)");
+        Svc.Log.Information($"[GlamRoulette] Redrawing {key} for {string.Join(", ", missing.Select(m => m.Mod))}");
 
         // The redraw takes the outfit off with the old model, so it goes on next pass rather
         // than being put on now and immediately thrown away.
@@ -663,7 +663,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// switched off to stop it fighting is not one whose options are worth rolling.
     /// </summary>
     private List<(string Mod, bool Enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> Options, string Signature)>
-        Wishes(Guid collection, string key, Guid design, uint? shoe)
+        Wishes(Guid collection, string key, Guid design, uint? shoe, int roll)
     {
         var none = new Dictionary<string, IReadOnlyList<string>>();
         var wishes = new Dictionary<string, (bool Enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)>();
@@ -671,7 +671,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         foreach (var (mod, enabled) in exclusives.Plan(design, shoe))
             wishes[mod] = (enabled, none);
 
-        foreach (var (mod, options) in mods.Plan(collection, key, design, shoe))
+        foreach (var (mod, options) in mods.Plan(collection, key, design, shoe, roll))
         {
             if (wishes.TryGetValue(mod, out var already) && !already.Enabled)
                 continue;
