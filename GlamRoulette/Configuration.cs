@@ -17,6 +17,14 @@ public class ModPick
     public HashSet<string> SkipGroups { get; set; } = [];
 
     /// <summary>
+    /// Roll groups that offer the same options as one, so a colour spread over seven pieces of an
+    /// outfit comes out the same colour on all seven rather than a patchwork. On, because a mod
+    /// that asks the same question about each piece is asking about the outfit, and answering it
+    /// seven different ways is the odd reading of it. Mods with nothing alike are unaffected.
+    /// </summary>
+    public bool LinkGroups { get; set; } = true;
+
+    /// <summary>
     /// Which of a group's options are in play, by group. A group that is not in here has all of
     /// its options in play - the usual case, and what a freshly added mod starts as.
     /// </summary>

@@ -948,6 +948,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// <summary>The mod an option says it needs alongside it, for the window to name.</summary>
     public (string Directory, string Name)? CompanionOf(string option) => mods.CompanionOf(option);
 
+    /// <summary>Which of a mod's groups answer as one, for the window to show.</summary>
+    public IReadOnlyList<(string Key, IReadOnlyList<string> Shared, IReadOnlyList<string> Groups)> LinksOf(ModPick mod)
+        => mods.LinksOf(mod);
+
     /// <summary>Stops taking part yourself, without disturbing anybody else.</summary>
     public void RevertMe()
     {

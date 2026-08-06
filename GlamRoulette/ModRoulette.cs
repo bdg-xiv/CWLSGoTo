@@ -32,6 +32,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         mine.Clear();
         owners = null;
         companions.Clear();
+        links.Clear();
     }
 
     /// <summary>
@@ -249,6 +250,89 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     }
 
     /// <summary>
+    /// The groups of a mod that are rolled as one, and the options they can agree on. Two groups
+    /// belong together when one's options are all among the other's, which is what one set of
+    /// colours spread over seven pieces of an outfit looks like - the odd piece simply missing a
+    /// shade. A group with a single option is left out; it would be a subset of everything.
+    ///
+    /// What they can agree on is what all of them offer. A shade two of the seven have never
+    /// heard of cannot be the answer for all seven, so it stops coming up while they are linked -
+    /// which is the price of the outfit matching, and worth saying out loud in the window.
+    /// </summary>
+    public IReadOnlyList<(string Key, IReadOnlyList<string> Shared, IReadOnlyList<string> Groups)> LinksOf(ModPick mod)
+    {
+        if (links.TryGetValue(mod.Directory, out var cached))
+            return cached;
+
+        // Compared on what can actually come up rather than on everything a group holds. Two
+        // groups whose full lists nest but whose ticked options have nothing in common are not
+        // one question asked twice, they are two questions - Demon Queen's toggles are exactly
+        // that, and matching on the full lists put them together with no answer to give.
+        var groups = GroupsOf(mod.Directory)
+            .Where(g => Rollable(g.Value.Type) && !mod.SkipGroups.Contains(g.Key) && g.Value.Options.Length > 1)
+            .ToDictionary(g => g.Key, g => Pool(mod, g.Key, g.Value.Options));
+
+        var names = groups.Keys.Where(n => groups[n].Length > 1).ToList();
+        var parent = names.ToDictionary(n => n, n => n);
+
+        string Find(string name) => parent[name] == name ? name : parent[name] = Find(parent[name]);
+
+        for (var i = 0; i < names.Count; i++)
+        for (var j = i + 1; j < names.Count; j++)
+        {
+            var a = new HashSet<string>(groups[names[i]]);
+            var b = new HashSet<string>(groups[names[j]]);
+            if (a.IsSubsetOf(b) || b.IsSubsetOf(a))
+                parent[Find(names[i])] = Find(names[j]);
+        }
+
+        var built = new List<(string, IReadOnlyList<string>, IReadOnlyList<string>)>();
+
+        foreach (var cluster in names.GroupBy(Find).Where(c => c.Count() > 1))
+        {
+            var members = cluster.OrderBy(n => n, StringComparer.Ordinal).ToList();
+
+            // In the order of the first group's own list, so the same cluster reads the same way
+            // twice and a seed means the same thing tomorrow.
+            var shared = groups[members[0]]
+                .Where(o => members.All(m => groups[m].Contains(o)))
+                .ToList();
+
+            // Nothing all of them offer is nothing to answer with, so they are not a cluster
+            // after all and each goes back to a roll of its own.
+            if (shared.Count > 0)
+                built.Add((string.Join(" + ", members), shared, members));
+        }
+
+        return links[mod.Directory] = built;
+    }
+
+    private readonly Dictionary<string, IReadOnlyList<(string Key, IReadOnlyList<string> Shared, IReadOnlyList<string> Groups)>> links = [];
+
+    /// <summary>Where an option sits in a list, or -1. IReadOnlyList has no IndexOf of its
+    /// own and the lists here are a handful of names long.</summary>
+    private static int IndexIn(IReadOnlyList<string>? list, string option)
+    {
+        for (var i = 0; i < (list?.Count ?? 0); i++)
+            if (list![i] == option)
+                return i;
+
+        return -1;
+    }
+
+    /// <summary>What a group may draw from: the options left ticked, or all of them, since
+    /// unticking every one is not a state worth honouring.</summary>
+    private static string[] Pool(ModPick mod, string group, string[] options)
+    {
+        var allowed = mod.Allowed(group);
+        if (allowed == null)
+            return options;
+
+        var pool = options.Where(allowed.Contains).ToArray();
+        return pool.Length == 0 ? options : pool;
+    }
+
+    /// <summary>
     /// One option per group, derived from who is wearing it rather than drawn - so the same
     /// person keeps the same version of the mod tomorrow, the same way their outfit does.
     /// </summary>
@@ -256,6 +340,15 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         IReadOnlyDictionary<string, List<string>> yours, int roll)
     {
         var picks = new Dictionary<string, IReadOnlyList<string>>();
+
+        // Which groups answer together, by group. A cluster with nothing in common is no cluster:
+        // there is no answer that would suit all of it, so each of them goes back to its own roll.
+        var linked = new Dictionary<string, (string Key, IReadOnlyList<string> Shared)>();
+        if (mod.LinkGroups)
+            foreach (var (key, shared, members) in LinksOf(mod))
+                if (shared.Count > 0)
+                    foreach (var member in members)
+                        linked[member] = (key, shared);
 
         foreach (var (group, (options, type)) in GroupsOf(mod.Directory))
         {
@@ -270,19 +363,22 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
                 continue;
             }
 
-            var seed = Seed(playerKey, mod.Directory, group, roll);
             var allowed = mod.Allowed(group);
+            var link = linked.TryGetValue(group, out var found) ? found : default;
+
+            // Linked groups answer off one roll of the cluster rather than one of their own, so
+            // every piece of the outfit lands on the same colour.
+            var seed = link.Key != null
+                ? Seed(playerKey, mod.Directory, link.Key, roll)
+                : Seed(playerKey, mod.Directory, group, roll);
 
             if (PicksOne(type))
             {
                 // Narrowed to the options that were left ticked, so a mod with forty variants
                 // can be held to the handful worth seeing. Unticking every one of them would
                 // leave nothing to draw from, which is not a state worth honouring.
-                var pool = allowed == null ? options : options.Where(allowed.Contains).ToArray();
-                if (pool.Length == 0)
-                    pool = options;
-
-                picks[group] = [pool[(int)(seed % (uint)pool.Length)]];
+                var pool = link.Shared ?? Pool(mod, group, options);
+                picks[group] = [pool[(int)(seed % (uint)pool.Count)]];
                 continue;
             }
 
@@ -292,12 +388,21 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
             var mineOn = yours.TryGetValue(group, out var current) ? new HashSet<string>(current) : [];
             var on = new List<string>();
 
+            // Held separately, because a linked group still has to answer for anything the rest
+            // of its cluster has never heard of, and that has to be its own coin.
+            var own = link.Key != null ? Seed(playerKey, mod.Directory, group, roll) : seed;
+
             for (var i = 0; i < options.Length; i++)
             {
                 var option = options[i];
                 var rolled = allowed == null || allowed.Contains(option);
 
-                if (rolled ? (seed >> i & 1) == 1 : mineOn.Contains(option))
+                // A linked option takes its coin from where it sits in the shared list rather
+                // than in this group's, so the same one comes up the same way in all of them.
+                var at = IndexIn(link.Shared, option);
+                var bit = at >= 0 ? seed >> at & 1 : own >> i & 1;
+
+                if (rolled ? bit == 1 : mineOn.Contains(option))
                     on.Add(option);
             }
 

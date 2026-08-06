@@ -622,6 +622,37 @@ internal sealed class MainWindow : Window
                 if (groups.Count == 0)
                     ImGui.TextColored(Dim, "No option groups - nothing here to roll.");
 
+                var together = mod.LinkGroups;
+                if (ImGui.Checkbox("Roll matching groups together##link", ref together))
+                {
+                    mod.LinkGroups = together;
+                    config.Save();
+                    wardrobe.ForgetMods();
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Groups offering the same options answer as one, so a colour spread\n" +
+                                     "over seven pieces of an outfit comes out the same on all seven\n" +
+                                     "instead of a patchwork. Only what all of them offer can come up -\n" +
+                                     "a shade two of the seven have not got cannot be the answer for all.");
+
+                // Which groups it has decided answer as one, said out loud: it is worked out from
+                // the options rather than told, so it has to be visible to be trusted.
+                var links = mod.LinkGroups
+                    ? wardrobe.LinksOf(mod)
+                    : [];
+
+                foreach (var (_, shared, members) in links)
+                {
+                    ImGui.Indent();
+                    ImGui.TextColored(Dim, $"{string.Join(", ", members)} - as one, from {shared.Count} option"
+                                           + (shared.Count == 1 ? "" : "s"));
+                    if (shared.Count > 0 && ImGui.IsItemHovered())
+                        ImGui.SetTooltip("They can agree on:\n  " + string.Join("\n  ", shared));
+                    ImGui.Unindent();
+                }
+
+                var inLink = links.SelectMany(l => l.Groups).ToHashSet();
+
                 foreach (var (group, (options, type)) in groups)
                 {
                     if (!ModRoulette.Rollable(type))
@@ -652,6 +683,12 @@ internal sealed class MainWindow : Window
                     ImGui.TextColored(Dim, type == PenumbraIpc.GroupType.Single
                         ? $"- picks ONE of {live}"
                         : $"- flips EACH of {live}");
+
+                    if (inLink.Contains(group))
+                    {
+                        ImGui.SameLine();
+                        ImGui.TextColored(Dim, "- linked");
+                    }
 
                     if (live != options.Length)
                     {
