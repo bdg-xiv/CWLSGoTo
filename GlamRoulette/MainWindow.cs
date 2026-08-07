@@ -354,166 +354,169 @@ internal sealed class MainWindow : Window
         ImGui.TreePop();
     }
 
-    private string oddsFilter = string.Empty;
-    private string dyeOddsFilter = string.Empty;
-
     /// <summary>
-    /// How often each outfit comes up against the others in its pool. Everything is a one until
-    /// you say otherwise, so a pool nobody has touched draws evenly and this is a list of the
-    /// opinions you have had rather than a number per design to keep up to date.
+    /// How often each outfit comes up against the others in its pool, listed whole and split by
+    /// the folder it sits in - which is the pool it is actually drawn from, so the grouping is
+    /// the thing that decides the odds rather than a tidy way of showing them.
     /// </summary>
     private void DrawDesignOdds()
     {
-        var pool = wardrobe.Pool();
-        var weighted = pool.Count(d => wardrobe.IsWeighted(d.Id));
-
-        if (!ImGui.TreeNode($"Odds##designodds"))
+        if (!ImGui.TreeNode("Odds##designodds"))
             return;
 
-        ImGui.TextColored(Dim, weighted == 0
-            ? "Every outfit is equally likely. Two is twice as often as a one, zero is never."
-            : $"{weighted} outfit(s) weighted. Two is twice as often as a one, zero is never.");
+        ImGui.TextColored(Dim, "Two is twice as often as a one, zero is never dealt.");
 
-        ImGui.SetNextItemWidth(220f);
-        ImGui.InputTextWithHint("##oddsfilter", "Find an outfit...", ref oddsFilter, 100);
-
-        var needle = oddsFilter.Trim();
-        var shown = pool
-            .Where(d => wardrobe.IsWeighted(d.Id)
-                        || (needle.Length > 0 && d.Path.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0))
-            .OrderBy(d => d.Path, StringComparer.OrdinalIgnoreCase)
+        var root = config.DesignFolder.Trim().Trim('/');
+        var folders = wardrobe.Pool()
+            .GroupBy(d => FolderOf(d.Path, root))
+            .OrderBy(g => g.Key.Length == 0 ? string.Empty : g.Key, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (shown.Count == 0)
-            ImGui.TextColored(Dim, "Nothing weighted yet - search for an outfit to give it odds.");
+        if (folders.Count == 0)
+            ImGui.TextColored(Bad, "No designs in that folder.");
 
-        foreach (var (id, _, path) in shown)
+        foreach (var folder in folders)
         {
-            ImGui.PushID(id.ToString());
+            var loose = folder.Key.Length == 0;
+            var total = folder.Sum(d => (long)wardrobe.WeightOf(d.Id));
 
-            // Right there beside the number, because deciding how often you want to see an
-            // outfit means seeing it, and hunting for it in the other list to do that is how
-            // you end up guessing instead.
-            if (ImGui.SmallButton("Wear"))
+            if (!ImGui.TreeNode($"{(loose ? "shared with everyone" : folder.Key)}##f{folder.Key}"))
+                continue;
+
+            ImGui.TextColored(Dim, $"{folder.Count()} outfit(s), {total} share(s) between them");
+
+            foreach (var (id, name, _) in folder.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
             {
-                if (!config.IncludeMe)
+                ImGui.PushID(id.ToString());
+
+                // Right beside the number, because deciding how often you want to see an outfit
+                // means seeing it, and going to find it elsewhere to do that is how you guess.
+                if (ImGui.SmallButton("Wear"))
+                    WearNow(id, name);
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Deals it to you now, rolled as anybody would get it.");
+
+                ImGui.SameLine();
+                var weight = wardrobe.WeightOf(id);
+                ImGui.SetNextItemWidth(90f);
+                if (ImGui.InputInt("##weight", ref weight))
                 {
-                    config.IncludeMe = true;
-                    ECommons.DalamudServices.Svc.Chat.Print(
-                        "[Glam Roulette] Taking a turn yourself, since you asked for an outfit.");
-                }
-
-                if (wardrobe.WearMyself(id))
-                    ECommons.DalamudServices.Svc.Chat.Print($"[Glam Roulette] Putting {path} on you.");
-            }
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Deals it to you now, rolled as anybody would get it.");
-
-            ImGui.SameLine();
-            var weight = wardrobe.WeightOf(id);
-            ImGui.SetNextItemWidth(90f);
-            if (ImGui.InputInt("##weight", ref weight))
-            {
-                config.DesignWeights[id] = Math.Max(0, weight);
-                config.Save();
-                wardrobe.ForgetPool();
-            }
-
-            ImGui.SameLine();
-            if (wardrobe.IsWeighted(id))
-            {
-                if (ImGui.SmallButton("Reset"))
-                {
-                    config.DesignWeights.Remove(id);
+                    config.DesignWeights[id] = Math.Max(0, weight);
                     config.Save();
                     wardrobe.ForgetPool();
                 }
+
+                // Against its own folder rather than the whole pool - that is the draw it is
+                // really in, and a number that is true is worth more than one that is tidy.
                 ImGui.SameLine();
+                ImGui.TextColored(Dim, total > 0 ? $"{wardrobe.WeightOf(id) / (float)total:P1}" : "never");
+                ImGui.SameLine();
+                ImGui.TextUnformatted(name);
+                ImGui.PopID();
             }
 
-            ImGui.TextColored(Dim, $"{wardrobe.ShareOf(id):P1}");
-            ImGui.SameLine();
-            ImGui.TextUnformatted(path);
-            ImGui.PopID();
+            ImGui.TreePop();
         }
 
-        ImGui.TextDisabled("Shares are against the whole pool. Split into role folders they will differ.");
         ImGui.TreePop();
     }
 
+    /// <summary>Puts one on yourself, taking a turn if you were not.</summary>
+    private void WearNow(Guid design, string name)
+    {
+        if (!config.IncludeMe)
+        {
+            config.IncludeMe = true;
+            ECommons.DalamudServices.Svc.Chat.Print(
+                "[Glam Roulette] Taking a turn yourself, since you asked for an outfit.");
+        }
+
+        if (wardrobe.WearMyself(design))
+            ECommons.DalamudServices.Svc.Chat.Print($"[Glam Roulette] Putting {name} on you.");
+    }
+
+    /// <summary>The folder a design sits in, below the design folder. Empty for one sitting
+    /// loose in the root, which is the pool everybody shares.</summary>
+    private static string FolderOf(string path, string root)
+    {
+        var rest = root.Length > 0 && path.Length > root.Length ? path[(root.Length + 1)..] : path;
+        var cut = rest.LastIndexOf('/');
+        return cut < 0 ? string.Empty : rest[..cut];
+    }
+
     /// <summary>
-    /// How often one particular dye comes up. A dye named here answers for itself and its tier
-    /// stops speaking for it, which is the only way to say "that one twice as often" or "never
-    /// that one" while a tier is otherwise the smallest thing there is.
+    /// How often each dye comes up, listed whole and split by tier. A dye given a number of its
+    /// own answers for itself and its tier stops speaking for it, which is the only way to say
+    /// "that one twice as often" while a tier is otherwise the smallest thing there is.
     /// </summary>
     private void DrawDyeOdds()
     {
         if (!ImGui.TreeNode("Particular dyes##dyeodds"))
             return;
 
-        var all = dyes.All;
-        var named = all.Count(d => dyes.IsNamed(d.Id));
-
-        ImGui.TextColored(Dim, named == 0
-            ? "Every dye goes by its tier. Name one here and it answers for itself."
-            : $"{named} dye(s) weighted by name; the rest go by their tier.");
-
-        ImGui.SetNextItemWidth(220f);
-        ImGui.InputTextWithHint("##dyeoddsfilter", "Find a dye...", ref dyeOddsFilter, 100);
-
-        var needle = dyeOddsFilter.Trim();
-        var shown = all
-            .Where(d => dyes.IsNamed(d.Id)
-                        || (needle.Length > 0 && d.Name.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0))
-            .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (shown.Count == 0)
-            ImGui.TextColored(Dim, "Nothing named yet - search for a dye to weight it.");
+        ImGui.TextColored(Dim, "A dye given a number here answers for itself instead of its tier.");
 
         var stains = ECommons.DalamudServices.Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
 
-        foreach (var (id, name, tier) in shown)
+        foreach (var tier in new[] { Dyes.Tier.Metallic, Dyes.Tier.Premium, Dyes.Tier.Standard })
         {
-            ImGui.PushID(id);
+            var inTier = dyes.All.Where(d => d.Tier == tier)
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            if (inTier.Count == 0)
+                continue;
 
-            // The name of a dye is not its colour, and picking colours off a list of names is
-            // guesswork - so the colour the game has for it goes next to the name.
-            if (stains.GetRowOrDefault(id) is { } stain)
-            {
-                var packed = stain.Color;
-                ImGui.ColorButton($"##swatch{id}", new Vector4(
-                        (packed >> 16 & 0xFF) / 255f, (packed >> 8 & 0xFF) / 255f, (packed & 0xFF) / 255f, 1f),
-                    ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoPicker, new Vector2(16, 16));
-                ImGui.SameLine();
-            }
+            if (!ImGui.TreeNode($"{tier}##t{tier}"))
+                continue;
 
-            var weight = dyes.WeightOf(id);
-            ImGui.SetNextItemWidth(90f);
-            // No re-roll: a colour is worked out from the same sum every pass, so changing what
-            // the sum weighs changes the colour on its own. Throwing away everybody's outfit
-            // because a number was typed into a dye box would be a strange price for it.
-            if (ImGui.InputInt("##dyeweight", ref weight))
-            {
-                config.DyeWeights[id] = Math.Max(0, weight);
-                config.Save();
-            }
+            ImGui.TextColored(Dim, $"{inTier.Count} dye(s), {dyes.Share(tier):P0} of rolls between them");
 
-            ImGui.SameLine();
-            if (dyes.IsNamed(id))
+            foreach (var (id, name, _) in inTier)
             {
-                if (ImGui.SmallButton("Reset"))
+                ImGui.PushID(id);
+
+                // The name of a dye is not its colour, and choosing colours off a list of names
+                // is guesswork - so the colour the game has for it goes beside the name.
+                if (stains.GetRowOrDefault(id) is { } stain)
                 {
-                    config.DyeWeights.Remove(id);
+                    var packed = stain.Color;
+                    ImGui.ColorButton($"##swatch{id}", new Vector4(
+                            (packed >> 16 & 0xFF) / 255f, (packed >> 8 & 0xFF) / 255f, (packed & 0xFF) / 255f, 1f),
+                        ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoPicker, new Vector2(16, 16));
+                    ImGui.SameLine();
+                }
+
+                // No re-roll: a colour is worked out from the same sum every pass, so changing
+                // what the sum weighs changes the colour on its own. Throwing away everybody's
+                // outfit because a number was typed into a dye box would be a strange price.
+                var weight = dyes.WeightOf(id);
+                ImGui.SetNextItemWidth(90f);
+                if (ImGui.InputInt("##dyeweight", ref weight))
+                {
+                    config.DyeWeights[id] = Math.Max(0, weight);
                     config.Save();
                 }
+
                 ImGui.SameLine();
+                if (dyes.IsNamed(id))
+                {
+                    if (ImGui.SmallButton("Tier"))
+                    {
+                        config.DyeWeights.Remove(id);
+                        config.Save();
+                    }
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip("Hands it back to its tier.");
+
+                    ImGui.SameLine();
+                }
+
+                ImGui.TextColored(Dim, $"{dyes.ShareOf(id):P2}");
+                ImGui.SameLine();
+                ImGui.TextUnformatted(name);
+                ImGui.PopID();
             }
 
-            ImGui.TextColored(Dim, $"{dyes.ShareOf(id):P2}");
-            ImGui.SameLine();
-            ImGui.TextUnformatted($"{name} ({tier.ToString().ToLowerInvariant()})");
-            ImGui.PopID();
+            ImGui.TreePop();
         }
 
         ImGui.TreePop();
