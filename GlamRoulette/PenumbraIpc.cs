@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Plugin.Ipc;
 using ECommons.DalamudServices;
 
@@ -202,9 +203,20 @@ internal sealed class PenumbraIpc
                 (false, enabled, 0, settings), "Glam Roulette", 0);
 
             if (result == 0)
+            {
+                refused.Remove(modDirectory);
                 return true;
+            }
 
-            Svc.Log.Debug($"[GlamRoulette] Penumbra refused {modDirectory} for object {objectIndex}: {result}");
+            // A refusal is not a one-off. Nothing was written, so the collection never comes to
+            // hold what the wearer wants, and every rebuild asks again and buys another redraw -
+            // a mod that Penumbra will not take is a person who is redrawn forever. That was
+            // noted at Debug, which Dalamud's log does not carry, so the loop was visible and
+            // its cause was not. Once per mod per answer, so it cannot become the log.
+            if (refused.Add(modDirectory))
+                Svc.Log.Warning($"[GlamRoulette] Penumbra would not set {modDirectory}: {result}. " +
+                                $"Asked for {Describe(enabled, settings)}");
+
             return false;
         }
         catch (Exception ex)
@@ -213,6 +225,16 @@ internal sealed class PenumbraIpc
             return false;
         }
     }
+
+    /// <summary>Mods Penumbra has already turned down, so it is said once rather than every
+    /// pass for as long as the wearer stands there.</summary>
+    private readonly HashSet<string> refused = [];
+
+    /// <summary>What we asked for, for a refusal to be read against the mod's own groups.</summary>
+    private static string Describe(bool enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> settings)
+        => enabled
+            ? string.Join("; ", settings.Select(s => $"{s.Key} = [{string.Join(", ", s.Value)}]"))
+            : "off";
 
     /// <summary>Takes every temporary setting back out of a collection.</summary>
     public void Release(Guid collection)
