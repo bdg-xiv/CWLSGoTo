@@ -19,6 +19,7 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     public const byte Hrothgar = 7;
     public const byte Elezen = 2;
 
+    private const byte Male = 0;
     private const byte Female = 1;
 
     /// <summary>Object indices we have asked about, and when, so a re-ask is spaced out rather
@@ -35,12 +36,34 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     /// they are already Elezen the same request costs nothing: Glamourer compares it against
     /// what is drawn, finds no difference, and skips the redraw.
     /// </summary>
-    public bool Handle(ICharacter character)
+    /// <summary>
+    /// Whether this one is a man we are going to show as a woman. Asked by the wardrobe as well
+    /// as here: Glamourer changes the model without rewriting the customize data underneath, so
+    /// somebody already turned still reads as a man, and the female-only rule would pass them
+    /// over for being what they no longer look like.
+    /// </summary>
+    public bool Feminising(ICharacter character)
     {
-        if (!config.SwapHrothgarFemales || !glamourer.Available)
+        var customize = character.Customize;
+        if (customize.Length <= (int)CustomizeIndex.Gender || customize[(int)CustomizeIndex.Gender] != Male)
             return false;
 
-        if (!IsFemaleHrothgar(character))
+        return character.ObjectKind == ObjectKind.Pc ? config.TurnMalePlayers : config.TurnMaleNpcs;
+    }
+
+    public bool Handle(ICharacter character)
+    {
+        if (!glamourer.Available)
+            return false;
+
+        var turning = Feminising(character);
+
+        // The Hrothgar swap is about women, and one we are about to make is one of them - so a
+        // male Hrothgar becomes an Elezen woman in a single change rather than becoming a
+        // Hrothgar woman first and being moved again on the pass after.
+        var elezen = config.SwapHrothgarFemales && IsHrothgar(character) && (turning || IsFemale(character));
+
+        if (!turning && !elezen)
         {
             asked.Remove(character.ObjectIndex);
             return false;
@@ -58,17 +81,23 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
                 return false;
         }
 
-        var result = glamourer.SetClan(index, Elezen, config.HrothgarFemaleClan);
+        var result = glamourer.SetLook(index,
+            elezen ? Elezen : null,
+            elezen ? config.HrothgarFemaleClan : null,
+            turning ? Female : null);
+
         asked[index] = DateTime.UtcNow;
 
         if (result is not (GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone))
         {
-            Svc.Log.Debug($"[GlamRoulette] Could not turn {Wardrobe.KeyOf(character)} into an Elezen: {result}");
+            Svc.Log.Debug($"[GlamRoulette] Could not change {Wardrobe.KeyOf(character)}: {result}");
             return false;
         }
 
         if (fresh)
-            Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(character)} is an Elezen now");
+            Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(character)} is "
+                                + (elezen && turning ? "an Elezen woman now"
+                                    : elezen ? "an Elezen now" : "a woman now"));
 
         return fresh;
     }
@@ -88,11 +117,17 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     /// Glamourer changes the model without rewriting this - so someone already swapped still
     /// reads as a Hrothgar here. That is what makes them findable again after a redraw.
     /// </summary>
-    private static bool IsFemaleHrothgar(ICharacter character)
+    private static bool IsHrothgar(ICharacter character)
+    {
+        var customize = character.Customize;
+        return customize.Length > (int)CustomizeIndex.Race
+               && customize[(int)CustomizeIndex.Race] == Hrothgar;
+    }
+
+    private static bool IsFemale(ICharacter character)
     {
         var customize = character.Customize;
         return customize.Length > (int)CustomizeIndex.Gender
-               && customize[(int)CustomizeIndex.Race] == Hrothgar
                && customize[(int)CustomizeIndex.Gender] == Female;
     }
 }

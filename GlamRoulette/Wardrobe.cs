@@ -552,7 +552,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 continue;
             }
 
-            if (config.FemaleOnly && !IsFemale(character))
+            // Someone being shown as a woman counts as one here. Glamourer changes the model
+            // without rewriting the customize data underneath, so they still read as a man in
+            // what we can see - and passing them over would mean turning them and then dressing
+            // nobody, which is the worst of both.
+            if (config.FemaleOnly && !IsFemale(character) && !races.Feminising(character))
                 continue;
 
             // Written in memory every pass but only saved on the prune tick - the config is

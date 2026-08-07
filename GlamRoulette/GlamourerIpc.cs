@@ -144,18 +144,21 @@ internal sealed class GlamourerIpc
             (ulong)(ApplyFlag.Equipment | ApplyFlag.Customization)));
 
     /// <summary>
-    /// Moves someone to another clan, and nothing else. Their state is read back and handed
-    /// straight to Glamourer with every customization switched off bar the clan, so the only
-    /// thing being asked for is the change of race.
+    /// Moves someone to another clan or gender, and nothing else. Their state is read back and
+    /// handed straight to Glamourer with every customization switched off bar the ones named, so
+    /// the only thing being asked for is what was asked for.
     ///
     /// Deliberately not spelling out the face, hair or anything else: Glamourer runs its own
-    /// fix-up when a design changes clan, and it is the one that knows which of those the new
-    /// clan actually has. It even knows Hrothgar faces are numbered four higher than everyone
+    /// fix-up on either change, and it is the one that knows which of those the new clan or
+    /// gender actually has. It even knows Hrothgar faces are numbered four higher than everyone
     /// else's, which is exactly the trap here. Whatever carries over sensibly - colouring,
     /// build - carries over, and the rest lands on something valid.
     /// </summary>
-    public Result SetClan(int objectIndex, byte race, byte clan)
+    public Result SetLook(int objectIndex, byte? race, byte? clan, byte? gender)
     {
+        if (race == null && clan == null && gender == null)
+            return Result.NothingDone;
+
         try
         {
             var (result, state) = getState.InvokeFunc(objectIndex, 0);
@@ -170,15 +173,21 @@ internal sealed class GlamourerIpc
                     entry["Apply"] = false;
 
             // Race and clan have to agree or the state is rejected as nonsense before it gets
-            // anywhere near being applied.
-            if (!Set(customize, "Race", race) || !Set(customize, "Clan", clan))
+            // anywhere near being applied. Gender stands on its own, and both of them are asked
+            // for together when both apply, so a man who is also a Hrothgar costs one redraw
+            // rather than one for each.
+            if (race != null && !Set(customize, "Race", race.Value))
+                return Result.ActorNotHuman;
+            if (clan != null && !Set(customize, "Clan", clan.Value))
+                return Result.ActorNotHuman;
+            if (gender != null && !Set(customize, "Gender", gender.Value))
                 return Result.ActorNotHuman;
 
             return Call(() => applyState.InvokeFunc(state, objectIndex, 0, (ulong)ApplyFlag.Customization));
         }
         catch (Exception ex)
         {
-            Svc.Log.Warning($"[GlamRoulette] Could not change the clan of object {objectIndex}: {ex.Message}");
+            Svc.Log.Warning($"[GlamRoulette] Could not change the look of object {objectIndex}: {ex.Message}");
             return Result.Unavailable;
         }
     }

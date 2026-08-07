@@ -111,6 +111,16 @@ public class Configuration : IPluginConfiguration
     /// <summary>Show female Hrothgar as Elezen instead.</summary>
     public bool SwapHrothgarFemales { get; set; } = true;
 
+    /// <summary>
+    /// Show men as women. Separate for players and NPCs because they are separate decisions: a
+    /// city is mostly men who are scenery, and the people around you are not. Whoever is turned
+    /// counts as a woman for the female-only rule as well, or they would be changed and then
+    /// passed over for still reading as men in the data Glamourer does not rewrite.
+    /// </summary>
+    public bool TurnMalePlayers { get; set; }
+
+    public bool TurnMaleNpcs { get; set; }
+
     /// <summary>Which Elezen clan they become. Penumbra.GameData.Enums.SubRace: 3 is Wildwood,
     /// 4 is Duskwight.</summary>
     public byte HrothgarFemaleClan { get; set; } = 3;

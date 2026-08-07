@@ -890,6 +890,36 @@ internal sealed class MainWindow : Window
                 wardrobe.RevertAll();
         }
 
+        var turnPlayers = config.TurnMalePlayers;
+        if (ImGui.Checkbox("Men turn up as women", ref turnPlayers))
+        {
+            config.TurnMalePlayers = turnPlayers;
+            config.Save();
+            // Switching it on needs nothing - the next pass finds them. Switching it off has to
+            // put them back, since nothing else undoes a change that is already applied.
+            if (!turnPlayers)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Changes their gender on your screen only, so the designs have somebody\n" +
+                             "to go on. Glamourer picks a face and hair the other gender actually has\n" +
+                             "- the numbers do not carry across - so colouring and build follow them\n" +
+                             "over and the face will not match. This redraws them once.\n" +
+                             "They count as women for \"female characters only\" from then on.");
+
+        var turnNpcs = config.TurnMaleNpcs;
+        if (ImGui.Checkbox("Men among the NPCs too", ref turnNpcs))
+        {
+            config.TurnMaleNpcs = turnNpcs;
+            config.Save();
+            if (!turnNpcs)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("The same for NPCs, which is a separate decision: a city is mostly men,\n" +
+                             "and every one of them turned is a redraw and an outfit.\n" +
+                             "Only has an effect while NPCs are being dealt to at all.");
+
         var hroth = config.SwapHrothgarFemales;
         if (ImGui.Checkbox("Female Hrothgar turn up as Elezen", ref hroth))
         {
