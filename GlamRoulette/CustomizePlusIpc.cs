@@ -105,23 +105,24 @@ internal sealed class CustomizePlusIpc
         }
     }
 
-    /// <summary>Gives one character a set of bones of their own. Returns the id it was filed
-    /// under, which is how it comes off again after they have walked away.</summary>
-    public Guid? Apply(int objectIndex, string profileJson)
+    /// <summary>
+    /// Gives one character a set of bones of their own. Returns the id it was filed under, which
+    /// is how it comes off again after they have walked away, and the answer Customize+ gave -
+    /// 0 is done, 1 is "no such character", 2 is a profile it could not read. The caller gets the
+    /// code rather than a log line, because whether a refusal is worth mentioning depends on who
+    /// it was for and how often it has happened.
+    /// </summary>
+    public (Guid? Id, int Result) Apply(int objectIndex, string profileJson)
     {
         try
         {
             var (result, id) = setTemporary.InvokeFunc((ushort)objectIndex, profileJson);
-            if (result == 0)
-                return id;
-
-            Svc.Log.Debug($"[GlamRoulette] Customize+ refused object {objectIndex}: {result}");
-            return null;
+            return (result == 0 ? id : null, result);
         }
         catch (Exception ex)
         {
             Svc.Log.Warning($"[GlamRoulette] Could not shape object {objectIndex}: {ex.Message}");
-            return null;
+            return (null, -1);
         }
     }
 

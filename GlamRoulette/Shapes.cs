@@ -46,6 +46,10 @@ internal sealed class Shapes(Configuration config, CustomizePlusIpc cplus)
     /// and there is nothing to put back afterwards.</summary>
     private readonly Dictionary<string, (string Signature, Guid Id, DateTime Seen)> given = [];
 
+    /// <summary>Who Customize+ has already turned down, so it is said once rather than every
+    /// pass for as long as they stand there.</summary>
+    private readonly HashSet<string> refused = [];
+
     private bool wasAvailable;
     private DateTime nextPrune = DateTime.MinValue;
 
@@ -137,10 +141,19 @@ internal sealed class Shapes(Configuration config, CustomizePlusIpc cplus)
 
         // Nothing to take off first - Customize+ drops whatever temporary profile that character
         // already had as it files the new one, so the old id is gone by the time this returns.
-        var id = cplus.Apply(objectIndex, new JObject { ["Bones"] = profile }.ToString());
+        var (id, result) = cplus.Apply(objectIndex, new JObject { ["Bones"] = profile }.ToString());
         if (id is not { } assigned)
-            return;
+        {
+            // Once per person rather than once a second. This is retried on every pass, and a
+            // refusal that repeats forever would be the only thing in the log - but a refusal
+            // that never gets mentioned at all is worse, which is what it was.
+            if (refused.Add(playerKey))
+                Svc.Log.Warning($"[GlamRoulette] Customize+ would not shape {playerKey}: {result}");
 
+            return;
+        }
+
+        refused.Remove(playerKey);
         given[playerKey] = (signature, assigned, DateTime.UtcNow);
         Svc.Log.Debug($"[GlamRoulette] {playerKey} is {size:F2}x");
     }
@@ -253,6 +266,7 @@ internal sealed class Shapes(Configuration config, CustomizePlusIpc cplus)
         bones = null;
         loaded = Guid.Empty;
         given.Clear();
+        refused.Clear();
     }
 
     /// <summary>Takes everybody's back off.</summary>
