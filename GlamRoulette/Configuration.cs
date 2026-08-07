@@ -25,6 +25,14 @@ public class ModPick
     public bool LinkGroups { get; set; } = true;
 
     /// <summary>
+    /// What to set this mod's priority to, or null to keep whatever it has in Penumbra. Setting
+    /// options at all means saying a priority, so the choice is between carrying yours across and
+    /// naming one here - and naming one is how a mod that has to win its files against another
+    /// keeps doing so while we are rolling it.
+    /// </summary>
+    public int? Priority { get; set; }
+
+    /// <summary>
     /// Which of a group's options are in play, by group. A group that is not in here has all of
     /// its options in play - the usual case, and what a freshly added mod starts as.
     /// </summary>

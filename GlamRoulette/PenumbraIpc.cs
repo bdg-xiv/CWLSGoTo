@@ -120,20 +120,21 @@ internal sealed class PenumbraIpc
     /// mod's own defaults, so a group we say nothing about does not stay as you left it, it
     /// reverts. Handing back what the collection says is how "leave this one alone" is done.
     /// </summary>
-    public IReadOnlyDictionary<string, List<string>> CurrentSettings(Guid collection, string modDirectory)
+    public (int Priority, IReadOnlyDictionary<string, List<string>> Settings) CurrentSettings(
+        Guid collection, string modDirectory)
     {
         try
         {
             var (result, data) = currentSettings.InvokeFunc(collection, modDirectory, string.Empty, false);
             if (result == 0 && data is { } settings)
-                return settings.Settings;
+                return (settings.Priority, settings.Settings);
         }
         catch (Exception ex)
         {
             Svc.Log.Warning($"[GlamRoulette] Could not read the settings of {modDirectory}: {ex.Message}");
         }
 
-        return new Dictionary<string, List<string>>();
+        return (0, new Dictionary<string, List<string>>());
     }
 
     public bool Available
@@ -194,13 +195,19 @@ internal sealed class PenumbraIpc
     /// hand. Only the model built after this call carries the change, which is what makes it
     /// per-person despite the collection being shared.
     /// </summary>
-    public bool Apply(int objectIndex, string modDirectory, bool enabled,
+    /// <summary>
+    /// Priority is part of the setting rather than something a temporary one leaves alone, so it
+    /// has to be said every time. Saying zero - which this used to - flattens whatever you gave
+    /// the mod in Penumbra, and a mod that only wins its files by outranking another loses them
+    /// the moment we touch it.
+    /// </summary>
+    public bool Apply(int objectIndex, string modDirectory, bool enabled, int priority,
         IReadOnlyDictionary<string, IReadOnlyList<string>> settings)
     {
         try
         {
             var result = setForPlayer.InvokeFunc(objectIndex, modDirectory, string.Empty,
-                (false, enabled, 0, settings), "Glam Roulette", 0);
+                (false, enabled, priority, settings), "Glam Roulette", 0);
 
             if (result == 0)
             {
@@ -215,7 +222,7 @@ internal sealed class PenumbraIpc
             // its cause was not. Once per mod per answer, so it cannot become the log.
             if (refused.Add(modDirectory))
                 Svc.Log.Warning($"[GlamRoulette] Penumbra would not set {modDirectory}: {result}. " +
-                                $"Asked for {Describe(enabled, settings)}");
+                                $"Asked for priority {priority}, {Describe(enabled, settings)}");
 
             return false;
         }

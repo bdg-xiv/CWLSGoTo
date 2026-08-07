@@ -177,7 +177,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     /// collects this alongside the clash handling and writes both at once, so one person costs
     /// one redraw rather than two.
     /// </summary>
-    public IReadOnlyList<(string Mod, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)> Plan(
+    public IReadOnlyList<(string Mod, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)> Plan(
         Guid collection, string playerKey, Guid design, uint? shoe, int roll)
     {
         if (!config.RandomizeModOptions || config.RandomizedMods.Count == 0 || !penumbra.Available)
@@ -190,14 +190,15 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         if (worn.Count == 0)
             return [];
 
-        var picks = new List<(string Mod, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)>();
+        var picks = new List<(string Mod, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)>();
         var needed = new HashSet<string>();
 
         foreach (var mod in config.RandomizedMods.Where(m => worn.Contains(m.Directory)))
         {
             // Yours carries the groups we are not rolling: a temporary setting is built from the
-            // mod's own defaults, so a group left unsaid reverts rather than staying put.
-            var yours = Yours(collection, mod.Directory);
+            // mod's own defaults, so a group left unsaid reverts rather than staying put. The
+            // priority comes across the same way and for the same reason.
+            var (priority, yours) = Yours(collection, mod.Directory);
 
             // Which makes reading them the thing everything else rests on. If we could not, then
             // rolling the two groups you asked for would quietly put every other group in the mod
@@ -214,7 +215,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
 
             var chosen = Pick(mod, playerKey, yours, roll);
             if (chosen.Count > 0)
-                picks.Add((mod.Directory, chosen));
+                picks.Add((mod.Directory, mod.Priority ?? priority, chosen));
 
             // An option that only points at files in another mod is nothing on its own. Whoever
             // draws one gets that mod as well, switched on and rolled like any other - so the
@@ -232,7 +233,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
             var pick = config.RandomizedMods.FirstOrDefault(m => m.Directory == directory)
                        ?? new ModPick { Directory = directory };
 
-            var theirs = Yours(collection, directory);
+            var (priority, theirs) = Yours(collection, directory);
 
             // The same guard as above, but only where it can bite: a group we are not rolling is
             // one that has to be carried over from what the collection says, and if that could
@@ -243,7 +244,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
 
             var rolled = Pick(pick, playerKey, theirs, roll);
             if (rolled.Count > 0)
-                picks.Add((directory, rolled));
+                picks.Add((directory, pick.Priority ?? priority, rolled));
         }
 
         return picks;
@@ -433,26 +434,26 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     /// What the collection already says about a mod, cached: this is a round trip per mod per
     /// player and it barely ever changes.
     /// </summary>
-    private readonly Dictionary<(Guid, string), (DateTime Read, IReadOnlyDictionary<string, List<string>> Settings)> mine = [];
+    private readonly Dictionary<(Guid, string), (DateTime Read, int Priority, IReadOnlyDictionary<string, List<string>> Settings)> mine = [];
 
-    private IReadOnlyDictionary<string, List<string>> Yours(Guid collection, string modDirectory)
+    private (int Priority, IReadOnlyDictionary<string, List<string>> Settings) Yours(Guid collection, string modDirectory)
     {
         if (collection == Guid.Empty)
-            return new Dictionary<string, List<string>>();
+            return (0, new Dictionary<string, List<string>>());
 
         if (mine.TryGetValue((collection, modDirectory), out var cached)
             && DateTime.UtcNow - cached.Read < TimeSpan.FromSeconds(30))
-            return cached.Settings;
+            return (cached.Priority, cached.Settings);
 
-        var settings = penumbra.CurrentSettings(collection, modDirectory);
+        var (priority, settings) = penumbra.CurrentSettings(collection, modDirectory);
 
         // A read that came back with nothing is not worth holding onto for half a minute - it is
         // either a mod with no groups at all, which costs nothing to ask about again, or a failure
         // we would rather retry than keep believing.
         if (settings.Count > 0)
-            mine[(collection, modDirectory)] = (DateTime.UtcNow, settings);
+            mine[(collection, modDirectory)] = (DateTime.UtcNow, priority, settings);
 
-        return settings;
+        return (priority, settings);
     }
 
     /// <summary>

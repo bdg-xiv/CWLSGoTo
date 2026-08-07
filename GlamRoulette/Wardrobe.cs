@@ -803,8 +803,8 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         if (spent)
             return false;
 
-        foreach (var (mod, enabled, options, signature) in missing)
-            if (penumbra.Apply(character.ObjectIndex, mod, enabled, options))
+        foreach (var (mod, enabled, priority, options, signature) in missing)
+            if (penumbra.Apply(character.ObjectIndex, mod, enabled, priority, options))
                 state.Wrote(collection, mod, signature, enabled);
 
         // The settings are in place either way. Forcing the redraw is only about showing them now
@@ -839,34 +839,38 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// options merged into one list so a person costs one redraw rather than two. Off wins: a mod
     /// switched off to stop it fighting is not one whose options are worth rolling.
     /// </summary>
-    private List<(string Mod, bool Enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> Options, string Signature)>
+    private List<(string Mod, bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Options, string Signature)>
         Wishes(Guid collection, string key, Guid design, uint? shoe, int roll)
     {
         var none = new Dictionary<string, IReadOnlyList<string>>();
-        var wishes = new Dictionary<string, (bool Enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)>();
+        var wishes = new Dictionary<string, (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)>();
 
+        // Priority does not matter for one being switched off, and there is nothing to carry it
+        // from either - the clash list says only which of a pair belongs to this outfit.
         foreach (var (mod, enabled) in exclusives.Plan(design, shoe))
-            wishes[mod] = (enabled, none);
+            wishes[mod] = (enabled, 0, none);
 
-        foreach (var (mod, options) in mods.Plan(collection, key, design, shoe, roll))
+        foreach (var (mod, priority, options) in mods.Plan(collection, key, design, shoe, roll))
         {
             if (wishes.TryGetValue(mod, out var already) && !already.Enabled)
                 continue;
 
-            wishes[mod] = (true, options);
+            wishes[mod] = (true, priority, options);
         }
 
         return wishes
-            .Select(w => (w.Key, w.Value.Enabled, w.Value.Options, Signature(w.Value.Enabled, w.Value.Options)))
+            .Select(w => (w.Key, w.Value.Enabled, w.Value.Priority, w.Value.Options,
+                Signature(w.Value.Enabled, w.Value.Priority, w.Value.Options)))
             .ToList();
     }
 
     /// <summary>What a wish amounts to once it is in the collection, for telling whether it is
     /// already there. Sorted, since a dictionary is not required to hand things back in any
     /// particular order and the same wish has to read the same way twice.</summary>
-    private static string Signature(bool enabled, IReadOnlyDictionary<string, IReadOnlyList<string>> options)
+    private static string Signature(bool enabled, int priority,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> options)
         => enabled
-            ? "on " + string.Join(",", options
+            ? $"on @{priority} " + string.Join(",", options
                 .OrderBy(o => o.Key, StringComparer.Ordinal)
                 .Select(o => $"{o.Key}:{string.Join("/", o.Value)}"))
             : "off";

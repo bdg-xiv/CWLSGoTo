@@ -637,6 +637,38 @@ internal sealed class MainWindow : Window
                 if (groups.Count == 0)
                     ImGui.TextColored(Dim, "No option groups - nothing here to roll.");
 
+                // Setting a mod's options at all means saying a priority, so it is either carried
+                // across from Penumbra or named here. Named matters for a mod that only wins its
+                // files by outranking another: carrying works until the collection says nothing.
+                var pinned = mod.Priority.HasValue;
+                if (ImGui.Checkbox("Priority##prio", ref pinned))
+                {
+                    mod.Priority = pinned ? 0 : null;
+                    config.Save();
+                    wardrobe.ForgetMods();
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Unticked, the mod keeps the priority you gave it in Penumbra.\n" +
+                                     "Tick it to name one instead - which is what a mod needs when it\n" +
+                                     "only shows by outranking another mod over the same files.");
+
+                if (mod.Priority is { } priority)
+                {
+                    ImGui.SameLine();
+                    ImGui.SetNextItemWidth(90f);
+                    if (ImGui.InputInt("##priovalue", ref priority))
+                    {
+                        mod.Priority = priority;
+                        config.Save();
+                        wardrobe.ForgetMods();
+                    }
+                }
+                else
+                {
+                    ImGui.SameLine();
+                    ImGui.TextColored(Dim, "as set in Penumbra");
+                }
+
                 var together = mod.LinkGroups;
                 if (ImGui.Checkbox("Roll matching groups together##link", ref together))
                 {
