@@ -182,6 +182,20 @@ public class Configuration : IPluginConfiguration
     public int PremiumWeight { get; set; } = 4;
     public int StandardWeight { get; set; } = 1;
 
+    /// <summary>
+    /// How often one particular dye comes up, by stain id. A dye in here answers for itself and
+    /// its tier no longer speaks for it. Absent is the usual case and means "whatever the tier
+    /// says", so this holds only the ones you have had an opinion about.
+    /// </summary>
+    public Dictionary<uint, int> DyeWeights { get; set; } = [];
+
+    /// <summary>
+    /// How often one particular outfit comes up, by design. Everything is one unless it is in
+    /// here: two is twice as likely as a one, zero is never dealt without being deleted. Relative
+    /// to the others in the same pool, since that is what is actually being drawn from.
+    /// </summary>
+    public Dictionary<Guid, int> DesignWeights { get; set; } = [];
+
     /// <summary>Only draw from designs whose Glamourer folder path starts with this.
     /// Empty means every design, which is rarely what anyone wants.</summary>
     public string DesignFolder { get; set; } = string.Empty;

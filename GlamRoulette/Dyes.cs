@@ -31,7 +31,10 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
         Metallic,
     }
 
-    private (byte Id, Tier Tier)[]? palette;
+    private (byte Id, string Name, Tier Tier)[]? palette;
+
+    /// <summary>Every dye, for the window to list and weight one at a time.</summary>
+    public IReadOnlyList<(byte Id, string Name, Tier Tier)> All => Palette();
 
     /// <summary>
     /// Every real dye, sorted into how hard it is to come by. Metallic is the game's own
@@ -39,7 +42,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
     /// Premium is the 668-gil tier - the pastels, darks, Pure White and Jet Black - picked out
     /// by the price of the item that applies them, plus anything with no vendor item at all.
     /// </summary>
-    private (byte Id, Tier Tier)[] Palette()
+    private (byte Id, string Name, Tier Tier)[] Palette()
     {
         if (palette != null)
             return palette;
@@ -68,7 +71,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
                 var tier = s.IsMetallic ? Tier.Metallic
                     : !prices.TryGetValue(name, out var price) || price > PremiumPrice ? Tier.Premium
                     : Tier.Standard;
-                return ((byte)s.RowId, tier);
+                return ((byte)s.RowId, name, tier);
             })
             .ToArray();
 
@@ -83,21 +86,44 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
 
     public int Count(Tier tier) => Palette().Count(p => p.Tier == tier);
 
-    private int WeightOf(Tier tier) => Math.Max(0, tier switch
+    private int TierWeight(Tier tier) => Math.Max(0, tier switch
     {
         Tier.Metallic => config.MetallicWeight,
         Tier.Premium => config.PremiumWeight,
         _ => config.StandardWeight,
     });
 
+    /// <summary>
+    /// How often one dye comes up. A dye named in the config answers for itself and its tier no
+    /// longer speaks for it - which is what "this one twice as often" and "never this one" both
+    /// need, and either would be impossible while a tier was the smallest thing there was.
+    /// </summary>
+    public int WeightOf(byte id)
+        => config.DyeWeights.TryGetValue(id, out var named)
+            ? Math.Max(0, named)
+            : TierWeight(Palette().FirstOrDefault(p => p.Id == id).Tier);
+
+    private int WeightOf((byte Id, string Name, Tier Tier) dye)
+        => config.DyeWeights.TryGetValue(dye.Id, out var named) ? Math.Max(0, named) : TierWeight(dye.Tier);
+
+    /// <summary>Whether this dye has been given a weight of its own.</summary>
+    public bool IsNamed(byte id) => config.DyeWeights.ContainsKey(id);
+
     /// <summary>The share of rolls each tier will take, for showing in the settings.</summary>
     public float Share(Tier tier)
     {
-        var total = Palette().Sum(p => (long)WeightOf(p.Tier));
+        var total = Palette().Sum(p => (long)WeightOf(p));
         if (total == 0)
             return 0f;
 
-        return (float)Palette().Where(p => p.Tier == tier).Sum(p => (long)WeightOf(p.Tier)) / total;
+        return (float)Palette().Where(p => p.Tier == tier).Sum(p => (long)WeightOf(p)) / total;
+    }
+
+    /// <summary>The share of rolls one particular dye will take.</summary>
+    public float ShareOf(byte id)
+    {
+        var total = Palette().Sum(p => (long)WeightOf(p));
+        return total == 0 ? 0f : (float)WeightOf(id) / total;
     }
 
     /// <summary>
@@ -107,7 +133,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
     private byte Pick(uint seed)
     {
         var dyes = Palette();
-        var total = dyes.Sum(p => (long)WeightOf(p.Tier));
+        var total = dyes.Sum(p => (long)WeightOf(p));
 
         // Everything weighted to nothing would be a division by zero, and "no dyes at all" is
         // not what someone means by turning every weight down.
@@ -115,11 +141,11 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
             return dyes[(int)(seed % (uint)dyes.Length)].Id;
 
         var target = (long)(seed % (uint)total);
-        foreach (var (id, tier) in dyes)
+        foreach (var dye in dyes)
         {
-            target -= WeightOf(tier);
+            target -= WeightOf(dye);
             if (target < 0)
-                return id;
+                return dye.Id;
         }
 
         return dyes[^1].Id;

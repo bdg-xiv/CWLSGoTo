@@ -257,7 +257,9 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         if (pool.Count == 0)
             return null;
 
-        var chosen = pool[random.Next(pool.Count)].Id;
+        if (Draw(pool) is not { } chosen)
+            return null;
+
         config.Assignments[key] = chosen;
 
         // Written once at the end of the pass rather than here. Walking into a city deals to
@@ -319,6 +321,47 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// How often one outfit comes up against the others in its pool. One unless you have said
+    /// otherwise, so a pool nobody has weighted draws evenly and this costs nothing.
+    /// </summary>
+    public int WeightOf(Guid design)
+        => config.DesignWeights.TryGetValue(design, out var weight) ? Math.Max(0, weight) : 1;
+
+    /// <summary>Whether this outfit has been given odds of its own.</summary>
+    public bool IsWeighted(Guid design) => config.DesignWeights.ContainsKey(design);
+
+    /// <summary>The share of a pool one outfit will take, for the window to show. Worked out
+    /// against the whole pool rather than a discipline's, which is the one everyone is drawn
+    /// from when the pools are not split and the closest thing to an answer when they are.</summary>
+    public float ShareOf(Guid design)
+    {
+        var total = Pool().Sum(d => (long)WeightOf(d.Id));
+        return total == 0 ? 0f : (float)WeightOf(design) / total;
+    }
+
+    /// <summary>
+    /// Draws one outfit with the odds honoured. Everything weighted to nothing is not "deal
+    /// nobody an outfit" - it is somebody having turned every dial down without meaning that -
+    /// so it falls back to an even draw rather than leaving the pool undressed.
+    /// </summary>
+    private Guid? Draw(List<(Guid Id, string Name, string Path)> pool)
+    {
+        var total = pool.Sum(d => (long)WeightOf(d.Id));
+        if (total <= 0)
+            return pool[random.Next(pool.Count)].Id;
+
+        var target = (long)(random.NextDouble() * total);
+        foreach (var design in pool)
+        {
+            target -= WeightOf(design.Id);
+            if (target < 0)
+                return design.Id;
+        }
+
+        return pool[^1].Id;
     }
 
     /// <summary>Counts a re-roll, so the colours come out different even if the same design
