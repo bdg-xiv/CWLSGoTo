@@ -763,6 +763,63 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     }
 
     /// <summary>
+    /// Why each character in front of you is or is not being dealt with, in the order the pass
+    /// asks. Every one of these questions is a silent skip during a pass - which is right, since
+    /// most of them are asked of hundreds of people a second - and that leaves watching somebody
+    /// stay exactly as they are the only way to find out anything, which tells you nothing at
+    /// all. This is the same questions asked out loud, once, on request.
+    /// </summary>
+    public IReadOnlyList<string> Explain()
+    {
+        var me = Svc.Objects.LocalPlayer;
+        var lines = new List<string>();
+
+        foreach (var obj in Svc.Objects)
+        {
+            if (obj is not ICharacter character)
+                continue;
+
+            var kind = character.ObjectKind;
+            if (kind is not (ObjectKind.Pc or ObjectKind.Retainer or ObjectKind.EventNpc or ObjectKind.BattleNpc))
+                continue;
+
+            var name = character.Name.TextValue;
+            var who = $"{(name.Length > 0 ? name : "(no name)")} [{kind}]";
+            var isMe = me != null && character.GameObjectId == me.GameObjectId;
+
+            string reason;
+            if (kind == ObjectKind.Pc && isMe && !config.IncludeMe)
+                reason = "you, and you are not taking a turn";
+            else if (kind == ObjectKind.Pc && !isMe && config.SkipParty && InParty(character))
+                reason = "in your party, which you are leaving alone";
+            else if (kind == ObjectKind.Retainer && !config.IncludeRetainers)
+                reason = "a retainer, which you are not dealing to";
+            else if (kind is ObjectKind.EventNpc or ObjectKind.BattleNpc && !config.IncludeNpcs)
+                reason = "an NPC, which you are not dealing to";
+            else if (!IsPlayerLike(character))
+                reason = "not built on a playable body";
+            else if (character is IPlayerCharacter p && p.ClassJob.RowId == 0)
+                reason = "no class read yet - the game has not sent it";
+            else if (character is IPlayerCharacter w && w.HomeWorld.ValueNullable is null)
+                reason = "no world read yet - the game has not sent it";
+            else if (name.Length == 0)
+                reason = "no name to remember them by";
+            else if (character.Customize.Length <= (int)CustomizeIndex.Gender)
+                reason = "no customize data read yet - the game has not sent it";
+            else if (config.FemaleOnly && !IsFemale(character) && !races.Feminising(character))
+                reason = "a man, and men are not being turned for this kind";
+            else
+                reason = config.Assignments.TryGetValue(KeyFor(character), out var design)
+                    ? $"DEALT - {(applied.ContainsKey(character.ObjectIndex) ? "wearing" : "not on yet")} {design}"
+                    : "eligible, waiting for an outfit";
+
+            lines.Add($"{who}: {reason}");
+        }
+
+        return lines;
+    }
+
+    /// <summary>
     /// Whether this one gets a turn at all. Players are the default; retainers and NPCs are each
     /// switched on separately, and both only while they are built on a playable body.
     /// </summary>

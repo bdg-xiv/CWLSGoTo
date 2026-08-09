@@ -53,7 +53,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Glam Roulette. 'reroll' for everyone, 'me' for yourself, 'off'/'on' to toggle.",
+            HelpMessage = "Open Glam Roulette. 'reroll' for everyone, 'me' for yourself, 'why' to log who is being skipped and why, 'off'/'on' to toggle.",
         });
     }
 
@@ -131,8 +131,21 @@ public sealed class Plugin : IDalamudPlugin
                 Svc.Chat.Print("[Glam Roulette] Put everyone back.");
                 return;
 
+            case "why":
+                // To the log rather than to chat: a crowded plaza is hundreds of lines, and a
+                // list that long in chat is a list you cannot read.
+                var lines = wardrobe.Explain();
+                Svc.Log.Information($"[GlamRoulette] --- why, for {lines.Count} character(s) ---");
+                foreach (var line in lines)
+                    Svc.Log.Information($"[GlamRoulette] {line}");
+
+                Svc.Chat.Print($"[Glam Roulette] Wrote {lines.Count} line(s) to the log - "
+                               + "one per person in front of you, saying why.");
+                return;
+
             default:
-                Svc.Chat.Print($"[Glam Roulette] Unknown argument '{argument}'. Use reroll, revert, on or off.");
+                Svc.Chat.Print($"[Glam Roulette] Unknown argument '{argument}'. "
+                               + "Use reroll, revert, why, on or off.");
                 return;
         }
     }
