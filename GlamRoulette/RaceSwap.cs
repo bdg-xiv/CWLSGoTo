@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Game.ClientState.Objects.Enums;
@@ -26,16 +26,13 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     /// than sent every pass.</summary>
     private readonly Dictionary<int, DateTime> asked = [];
 
+    /// <summary>Who Glamourer has already turned down, so a refusal is said once.</summary>
+    private readonly HashSet<int> refused = [];
+
     public int Count => asked.Count;
 
     public IEnumerable<int> Indices => asked.Keys;
 
-    /// <summary>
-    /// Returns true only when this is the first time we have asked for this one, because a
-    /// change of race redraws the character and a redraw drops whatever they were wearing. Once
-    /// they are already Elezen the same request costs nothing: Glamourer compares it against
-    /// what is drawn, finds no difference, and skips the redraw.
-    /// </summary>
     /// <summary>
     /// Whether this one is a man we are going to show as a woman. Asked by the wardrobe as well
     /// as here: Glamourer changes the model without rewriting the customize data underneath, so
@@ -51,6 +48,12 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         return character.ObjectKind == ObjectKind.Pc ? config.TurnMalePlayers : config.TurnMaleNpcs;
     }
 
+    /// <summary>
+    /// Returns true only when this is the first time we have asked for this one, because either
+    /// change redraws the character and a redraw drops whatever they were wearing. Once they are
+    /// already what we asked for the same request costs nothing: Glamourer compares it against
+    /// what is drawn, finds no difference, and skips the redraw.
+    /// </summary>
     public bool Handle(ICharacter character)
     {
         if (!glamourer.Available)
@@ -90,9 +93,17 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
 
         if (result is not (GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone))
         {
-            Svc.Log.Debug($"[GlamRoulette] Could not change {Wardrobe.KeyOf(character)}: {result}");
+            // Said once per person rather than swallowed. Somebody Glamourer will not let us
+            // touch simply stays as they were, and watching them and seeing nothing happen
+            // cannot tell you whether nothing was tried or everything was refused.
+            if (refused.Add(index))
+                Svc.Log.Warning($"[GlamRoulette] Glamourer would not change {Wardrobe.KeyOf(character)}: "
+                                + $"{result} - {GlamourerIpc.Explain(result)}");
+
             return false;
         }
+
+        refused.Remove(index);
 
         if (fresh)
             Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(character)} is "
@@ -103,13 +114,19 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     }
 
     /// <summary>Ask again for everyone, for when the clan setting changes.</summary>
-    public void Forget() => asked.Clear();
+    public void Forget()
+    {
+        asked.Clear();
+        refused.Clear();
+    }
 
     /// <summary>Drops the ones who are no longer around.</summary>
     public void Sweep(HashSet<int> present)
     {
         foreach (var index in asked.Keys.Where(i => !present.Contains(i)).ToList())
             asked.Remove(index);
+
+        refused.RemoveWhere(i => !present.Contains(i));
     }
 
     /// <summary>

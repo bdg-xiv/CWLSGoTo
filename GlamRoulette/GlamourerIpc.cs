@@ -29,8 +29,27 @@ internal sealed class GlamourerIpc
         ActorNotFound = 2,
         ActorNotHuman = 3,
         DesignNotFound = 4,
+        ItemInvalid = 5,
+
+        /// <summary>Somebody else is holding this actor's state with a key of their own, and
+        /// nothing we ask for will be honoured until they let go. In practice that is Mare,
+        /// which locks the characters it is syncing so they look the way their owner says.</summary>
+        InvalidKey = 6,
+
+        InvalidState = 7,
+        CouldNotParse = 8,
         Unavailable = -1,
     }
+
+    /// <summary>What a refusal means, for saying out loud rather than swallowing.</summary>
+    public static string Explain(Result result) => result switch
+    {
+        Result.InvalidKey => "their state is locked by another plugin - Mare does this to the "
+                             + "characters it syncs, and nothing of ours will take while it holds them",
+        Result.ActorNotHuman => "they are not being drawn as a human",
+        Result.ActorNotFound => "the game had nobody at that index by the time we asked",
+        _ => "no reason given",
+    };
 
     private readonly ICallGateSubscriber<(int Major, int Minor)> apiVersion;
     private readonly ICallGateSubscriber<Dictionary<Guid, (string DisplayName, string FullPath, uint DisplayColor, bool ShownInQdb)>> designList;

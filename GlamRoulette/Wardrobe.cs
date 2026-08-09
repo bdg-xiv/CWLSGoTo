@@ -43,6 +43,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
     private readonly CollectionState state = new();
 
+    /// <summary>Who Glamourer has already turned down, so it is said once rather than every
+    /// pass for as long as they are in front of us.</summary>
+    private readonly HashSet<string> refused = [];
+
     private DateTime nextPrune = DateTime.MinValue;
     private bool seenDirty;
 
@@ -703,6 +707,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
             if (result is GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone)
             {
+                refused.Remove(key);
                 applied[character.ObjectIndex] = (key, design, shoe, draw);
 
                 // Has to follow every apply, not just the first: applying the design puts the
@@ -716,6 +721,16 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 // Only the outfit: a design you deleted says nothing about anybody's body.
                 Svc.Log.Information($"[GlamRoulette] {key}'s design no longer exists, re-rolling them");
                 Reroll(key, body: false);
+            }
+            else if (refused.Add(key))
+            {
+                // Somebody Glamourer will not let us touch stays exactly as they were - no
+                // outfit, no colours, and no turning them either, since that goes through the
+                // same door. Watching one of them and seeing nothing happen tells you nothing
+                // was tried; this says what was tried and what came back. Once per person, since
+                // it is asked again every pass for as long as they stand there.
+                Svc.Log.Warning($"[GlamRoulette] Glamourer would not dress {key}: {result} - "
+                                + GlamourerIpc.Explain(result));
             }
         }
 
