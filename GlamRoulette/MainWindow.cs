@@ -825,8 +825,14 @@ internal sealed class MainWindow : Window
                     ImGui.SameLine();
                     ImGui.SetNextItemWidth(90f);
                     if (ImGui.InputInt("##priovalue", ref priority))
-                    {
                         mod.Priority = priority;
+
+                    // Held until the box is let go. Priority is part of what a collection is
+                    // holding, so changing it re-settles everybody in front of you - a redraw
+                    // each - and paying that on every click of the stepper, or every keystroke
+                    // of a two-digit number, is a crowd redrawn several times over for one edit.
+                    if (ImGui.IsItemDeactivatedAfterEdit())
+                    {
                         config.Save();
                         wardrobe.ForgetMods();
                     }
