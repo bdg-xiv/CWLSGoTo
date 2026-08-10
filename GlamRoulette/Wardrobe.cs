@@ -1066,6 +1066,43 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return native == null ? 0 : (nint)native->DrawObject;
     }
 
+    /// <summary>
+    /// Builds everybody again, for when one of them has come back wrong. A character rendered
+    /// black is a model that was put together while its materials were still on their way: the
+    /// load failed, the model kept the gap, and nothing ever asks a second time. Building it now
+    /// that they have arrived is the whole of the cure, and it is the one thing you cannot do to
+    /// yourself from in here without logging out.
+    ///
+    /// Nothing else is thrown away. The outfits go back on next pass because a redraw drops the
+    /// glamour with the old model, and the mods are already in the collection, so whoever was
+    /// settled comes back settled without buying a second rebuild.
+    /// </summary>
+    public int RedrawEveryone()
+    {
+        var me = Svc.Objects.LocalPlayer;
+        var count = 0;
+
+        foreach (var obj in Svc.Objects)
+        {
+            if (obj is not ICharacter character)
+                continue;
+
+            if (!Eligible(character, me != null && character.GameObjectId == me.GameObjectId))
+                continue;
+
+            penumbra.Redraw(character.ObjectIndex);
+            count++;
+        }
+
+        applied.Clear();
+        lastApplied.Clear();
+
+        // The bones cost no redraw, so there is no reason to be shy about saying them again over
+        // models that have just been rebuilt.
+        shapes.Reload();
+        return count;
+    }
+
     /// <summary>Puts everyone back as we found them.</summary>
     public void RevertAll()
     {

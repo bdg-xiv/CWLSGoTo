@@ -1455,6 +1455,19 @@ internal sealed class MainWindow : Window
         if (ImGui.Button("Put everyone back"))
             wardrobe.RevertAll();
 
+        ImGui.SameLine();
+        if (ImGui.Button("Redraw everyone"))
+        {
+            var built = wardrobe.RedrawEveryone();
+            ECommons.DalamudServices.Svc.Chat.Print($"[Glam Roulette] Building {built} character(s) again.");
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("For when somebody has come back wrong - a character rendered black is a\n" +
+                             "model that was built while its materials were still arriving, and the\n" +
+                             "only cure is building it again now that they are here.\n" +
+                             "Costs everyone in sight a redraw, which is the point of it.\n" +
+                             "Outfits go back on by themselves afterwards; nothing is re-rolled.");
+
         DrawTryOn();
 
         ImGui.Spacing();
