@@ -263,6 +263,14 @@ public class Configuration : IPluginConfiguration
     /// </summary>
     public bool ForceRedraw { get; set; } = true;
 
+    /// <summary>
+    /// How long to leave everybody alone after arriving in a zone or logging in. The client is
+    /// still streaming models and materials in, and a redraw asked for in the middle of that gets
+    /// a material that is not there yet - which is a character rendered black, with nothing to
+    /// ask again afterwards. Costs nothing but a few seconds of looking like yourself.
+    /// </summary>
+    public int SettleSeconds { get; set; } = 6;
+
     /// <summary>Redraw everyone who needs it in the same pass rather than one a second. Faster
     /// to settle, at the price of taking every redraw in one frame.</summary>
     public bool RedrawAllAtOnce { get; set; }

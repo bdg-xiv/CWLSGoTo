@@ -210,6 +210,29 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return pool = fresh;
     }
 
+    private ushort lastTerritory;
+    private bool arrived;
+    private DateTime quietUntil = DateTime.MinValue;
+
+    /// <summary>
+    /// Whether the world has settled enough to be touched. Logging in and changing zone both put
+    /// the client to work streaming every model and material in the place, and a redraw asked for
+    /// in the middle of that is handed a material that has not arrived - which is a character
+    /// rendered black, and nothing ever asks for it again.
+    /// </summary>
+    private bool Ready()
+    {
+        var territory = (ushort)Svc.ClientState.TerritoryType;
+        if (!arrived || territory != lastTerritory)
+        {
+            arrived = true;
+            lastTerritory = territory;
+            quietUntil = DateTime.UtcNow.AddSeconds(Math.Max(0, config.SettleSeconds));
+        }
+
+        return DateTime.UtcNow >= quietUntil;
+    }
+
     /// <summary>Drops the held design list, for when it is known to have changed.</summary>
     public void ForgetPool() => pool = null;
 
@@ -565,12 +588,25 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         var me = Svc.Objects.LocalPlayer;
         if (me == null)
+        {
+            arrived = false;
+            return;
+        }
+
+        if (!Ready())
             return;
 
         var present = new HashSet<int>();
         var here = new HashSet<string>();
         var redrawn = 0;
         var spent = false;
+
+        // Changing somebody's race, gender or bust rebuilds them exactly as settling their mods
+        // does, so it comes out of the same budget. It used to be the occasional female Hrothgar
+        // and could be left unbounded; it is now most of a street, and taking all of those in one
+        // frame is the freeze - and, on arrival, a crowd of redraws while the client is still
+        // streaming, which is where the black characters came from.
+        var looks = config.RedrawAllAtOnce ? int.MaxValue : Math.Max(1, config.RedrawsPerPass);
 
         foreach (var obj in Svc.Objects)
         {
@@ -607,7 +643,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             // race redraws the character, and a redraw takes the outfit off again. Better to
             // let the next pass dress the Elezen than to dress a Hrothgar who is about to stop
             // being one.
-            if (races.Handle(character))
+            if (races.Handle(character, ref looks))
             {
                 applied.Remove(character.ObjectIndex);
                 lastApplied.Remove(character.ObjectIndex);

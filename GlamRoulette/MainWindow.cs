@@ -807,6 +807,19 @@ internal sealed class MainWindow : Window
                              "nothing of yours is changed and it all comes off again.\n" +
                              "Each change costs that person a redraw, unlike a glamour.");
 
+        var settle = config.SettleSeconds;
+        if (ImGui.SliderInt("Wait after arriving (seconds)", ref settle, 0, 30))
+        {
+            config.SettleSeconds = Math.Max(0, settle);
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Nobody is touched for this long after you log in or change zone.\n" +
+                             "The client is still streaming models and materials in, and a redraw\n" +
+                             "asked for in the middle of that is handed a material that has not\n" +
+                             "arrived yet - which is a character rendered black, with nothing to\n" +
+                             "ask again afterwards. Raise it if you still see one.");
+
         var force = config.ForceRedraw;
         if (ImGui.Checkbox("Redraw people as soon as their mods change", ref force))
         {

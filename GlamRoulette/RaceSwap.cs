@@ -71,7 +71,7 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     /// already what we asked for the same request costs nothing: Glamourer compares it against
     /// what is drawn, finds no difference, and skips the redraw.
     /// </summary>
-    public bool Handle(ICharacter character)
+    public bool Handle(ICharacter character, ref int budget)
     {
         if (!glamourer.Available)
             return false;
@@ -106,6 +106,13 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         var index = character.ObjectIndex;
         var fresh = !asked.ContainsKey(index);
 
+        // A change here rebuilds them exactly as settling their mods does, so it comes out of the
+        // same budget. Left unbounded it was fine while this was the occasional female Hrothgar;
+        // it is most of a street now, and a crowd arriving took every one of those redraws in the
+        // same frame - which on login is a client still streaming, and a character rendered black.
+        if (fresh && budget <= 0)
+            return false;
+
         if (!fresh)
         {
             if (!config.Reapply)
@@ -135,6 +142,9 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         }
 
         refused.Remove(index);
+
+        if (fresh)
+            budget--;
 
         if (fresh)
             Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(character)} is {Became(race, turning)} now");
