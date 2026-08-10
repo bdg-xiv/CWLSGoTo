@@ -1299,6 +1299,25 @@ internal sealed class MainWindow : Window
                              "rules as everyone. A retainer with a class draws from that\n" +
                              "discipline's pool; one without draws from the whole thing.");
 
+        if (config.IncludeRetainers)
+        {
+            ImGui.Indent();
+            var fresh = config.FreshRetainers;
+            if (ImGui.Checkbox("A new one every time they are called up", ref fresh))
+            {
+                config.FreshRetainers = fresh;
+                config.Save();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Retainers only. Everybody else keeps what they were given so they stay\n" +
+                                 "recognisable, which is the whole reason an outfit is remembered - but a\n" +
+                                 "retainer is only in the world while you are at the bell, so there is\n" +
+                                 "nobody to recognise her from and no reason not to deal again.\n" +
+                                 "Her body is left alone; a different shape each time is a different\n" +
+                                 "retainer. One you have chosen to keep is left alone entirely.");
+            ImGui.Unindent();
+        }
+
         var npcs = config.IncludeNpcs;
         if (ImGui.Checkbox("Deal to NPCs", ref npcs))
         {

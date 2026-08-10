@@ -60,6 +60,14 @@ public class Configuration : IPluginConfiguration
     public bool IncludeRetainers { get; set; } = true;
 
     /// <summary>
+    /// Give a retainer a new outfit every time she is called up, rather than the one she was
+    /// given before. Only retainers: everybody else is meant to stay recognisable, which is the
+    /// whole reason an assignment is remembered at all - but a retainer is only ever in the world
+    /// for as long as you are at the bell, so there is nobody to recognise her from.
+    /// </summary>
+    public bool FreshRetainers { get; set; } = true;
+
+    /// <summary>
     /// Deal to NPCs as well. Only ever the ones built on a playable body - a design is a list of
     /// gear for a human skeleton, and there is nothing sensible to put it on otherwise - and most
     /// of them have no class, so they draw from the whole pool rather than from a discipline's.

@@ -43,6 +43,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
     private readonly CollectionState state = new();
 
+    /// <summary>
+    /// The retainers who were standing there last pass. A retainer is only in the world while she
+    /// is called up, so one who was not here a moment ago has just been summoned - which is the
+    /// only moment worth telling apart, and there is nothing else to tell it by.
+    /// </summary>
+    private readonly HashSet<string> retainersHere = [];
+
+    private readonly HashSet<string> retainersNow = [];
+
     /// <summary>Who Glamourer has already turned down, so it is said once rather than every
     /// pass for as long as they are in front of us.</summary>
     private readonly HashSet<string> refused = [];
@@ -599,6 +608,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         var present = new HashSet<int>();
         var here = new HashSet<string>();
+        retainersNow.Clear();
         var redrawn = 0;
         var spent = false;
 
@@ -667,6 +677,21 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             var person = KeyOf(character);
             config.LastSeen[person] = DateTime.UtcNow;
             seenDirty = true;
+
+            // A retainer being called up is a fresh sight rather than somebody you have been
+            // walking past, so she gets a new outfit each time instead of the one she was given
+            // a week ago. Only retainers: everybody else is meant to stay recognisable, which is
+            // the whole reason an assignment is remembered at all.
+            //
+            // The body is left alone. That follows the person rather than the outfit, and a
+            // retainer who is a different shape every time she is summoned is a different
+            // retainer. Anything kept is left alone too, the same as any other re-roll.
+            if (character.ObjectKind == ObjectKind.Retainer)
+            {
+                retainersNow.Add(person);
+                if (config.FreshRetainers && !retainersHere.Contains(person))
+                    Reroll(person, body: false);
+            }
 
             // Their body, which follows the player rather than the outfit: what job somebody is
             // on has no business changing their shape. Nothing here costs a redraw - Customize+
@@ -795,6 +820,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             dealtDirty = false;
             config.Save();
         }
+
+        // Who was standing at the bell this time, so the next pass can tell a retainer newly
+        // called up from one who has been there all along.
+        retainersHere.Clear();
+        retainersHere.UnionWith(retainersNow);
 
         // Forget people who have left, so they get re-applied on sight rather than being
         // assumed to still be wearing it.
