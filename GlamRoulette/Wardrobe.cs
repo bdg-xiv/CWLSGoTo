@@ -65,6 +65,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// cost no redraw at all, which is the count that says the creation callback is earning
     /// its keep.</summary>
     public int Baked { get; private set; }
+
+    /// <summary>
+    /// The creation callback saw somebody who is not yet wearing what they are assigned, so the
+    /// next pass is wanted now rather than at its leisure. The mods are baked into the build,
+    /// but the outfit is Glamourer's to put on, and at a spawn Glamourer applies the state it
+    /// still holds from last time - the gap until the scheduled tick is most of a second, which
+    /// is long enough to watch a retainer stand there in last summon's outfit.
+    /// </summary>
+    public bool WantsPrompt { get; private set; }
     public int Remembered => config.Assignments.Count;
     public int Kept => config.Pinned.Count;
 
@@ -605,6 +614,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
     public void Update()
     {
+        // Consumed whether or not this pass gets anywhere - a prompt is a request for the next
+        // tick, not a standing order.
+        WantsPrompt = false;
+
         if (!config.Enabled || !glamourer.Available)
             return;
 
@@ -1129,6 +1142,13 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
             if (DesignFor(key, group) is not { } design)
                 return;
+
+            // Somebody just built who is not wearing what they are assigned - a re-rolled
+            // retainer, anyone whose outfit changed while they were away, a whole crowd
+            // arriving on a teleport - wants the next pass promptly rather than up to a
+            // second from now.
+            if (!applied.TryGetValue(character.ObjectIndex, out var current) || current.Design != design)
+                WantsPrompt = true;
 
             var shoe = shoes.For(key, design, config.Rolls.GetValueOrDefault(key));
             var missing = Missing(collection, key, design, shoe, config.AllowDrift && !isMe);

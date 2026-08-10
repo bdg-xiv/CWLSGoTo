@@ -14,6 +14,7 @@ public sealed class Plugin : IDalamudPlugin
 {
     private const string CommandName = "/glamroulette";
     private const string UpdateThrottleName = "GlamRouletteUpdate";
+    private const string PromptThrottleName = "GlamRoulettePrompt";
 
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
@@ -166,7 +167,11 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
-            if (!EzThrottler.Throttle(UpdateThrottleName, 1000))
+            // A prompt pass runs sooner than the scheduled one when a creation just left
+            // somebody undressed, but never faster than a few a second - a zone-in creates a
+            // hundred people in one burst, and "now" must not come to mean "every frame".
+            if (!EzThrottler.Throttle(UpdateThrottleName, 1000)
+                && !(wardrobe.WantsPrompt && EzThrottler.Throttle(PromptThrottleName, 150)))
                 return;
 
             wardrobe.Update();
