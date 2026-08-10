@@ -210,26 +210,30 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return pool = fresh;
     }
 
-    private ushort lastTerritory;
-    private bool arrived;
+    private bool wasLoggedIn;
     private DateTime quietUntil = DateTime.MinValue;
 
     /// <summary>
-    /// Whether the world has settled enough to be touched. Logging in and changing zone both put
-    /// the client to work streaming every model and material in the place, and a redraw asked for
-    /// in the middle of that is handed a material that has not arrived - which is a character
-    /// rendered black, and nothing ever asks for it again.
+    /// Whether the world has settled enough to be touched. Logging in puts the client to work
+    /// streaming a whole zone in from nothing, and a redraw asked for in the middle of that is
+    /// handed a material that has not arrived - which is a character rendered black, and nothing
+    /// ever asks for it again.
+    ///
+    /// Logging in only, not changing zone. A teleport streams a zone too, but it is not starting
+    /// from nothing and it happens constantly - a hunt train is one every couple of minutes - so
+    /// waiting each time would mean a crowd of strangers left undressed for most of the evening
+    /// to fix something that happens once.
+    ///
+    /// Asked of the login state rather than of whether you have a body, because you briefly have
+    /// no body during a teleport as well, and the two would be indistinguishable.
     /// </summary>
     private bool Ready()
     {
-        var territory = (ushort)Svc.ClientState.TerritoryType;
-        if (!arrived || territory != lastTerritory)
-        {
-            arrived = true;
-            lastTerritory = territory;
+        var loggedIn = Svc.ClientState.IsLoggedIn;
+        if (loggedIn && !wasLoggedIn)
             quietUntil = DateTime.UtcNow.AddSeconds(Math.Max(0, config.SettleSeconds));
-        }
 
+        wasLoggedIn = loggedIn;
         return DateTime.UtcNow >= quietUntil;
     }
 
@@ -588,10 +592,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         var me = Svc.Objects.LocalPlayer;
         if (me == null)
-        {
-            arrived = false;
             return;
-        }
 
         if (!Ready())
             return;

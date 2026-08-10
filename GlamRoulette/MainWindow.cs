@@ -808,7 +808,7 @@ internal sealed class MainWindow : Window
                              "Each change costs that person a redraw, unlike a glamour.");
 
         var settle = config.SettleSeconds;
-        if (ImGui.SliderInt("Wait after arriving (seconds)", ref settle, 0, 30))
+        if (ImGui.SliderInt("Wait after logging in (seconds)", ref settle, 0, 30))
         {
             config.SettleSeconds = Math.Max(0, settle);
             config.Save();
@@ -818,7 +818,7 @@ internal sealed class MainWindow : Window
                              "The client is still streaming models and materials in, and a redraw\n" +
                              "asked for in the middle of that is handed a material that has not\n" +
                              "arrived yet - which is a character rendered black, with nothing to\n" +
-                             "ask again afterwards. Raise it if you still see one.");
+                             "black, with nothing to ask again. Raise it if you still see one.");
 
         var force = config.ForceRedraw;
         if (ImGui.Checkbox("Redraw people as soon as their mods change", ref force))
