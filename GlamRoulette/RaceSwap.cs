@@ -22,6 +22,11 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     private const byte Male = 0;
     private const byte Female = 1;
 
+    /// <summary>The top of the game's bust slider. Glamourer validates whatever it is handed
+    /// against the wearer's own set, so a race whose slider stops short is pulled back to its
+    /// own top rather than refused.</summary>
+    private const byte FullBust = 100;
+
     /// <summary>Object indices we have asked about, and when, so a re-ask is spaced out rather
     /// than sent every pass.</summary>
     private readonly Dictionary<int, DateTime> asked = [];
@@ -66,7 +71,11 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         // Hrothgar woman first and being moved again on the pass after.
         var elezen = config.SwapHrothgarFemales && IsHrothgar(character) && (turning || IsFemale(character));
 
-        if (!turning && !elezen)
+        // Only for the women, including one we are about to make. On a man it is a slider his
+        // body does not use, and asking for it would buy a redraw for nothing.
+        var bust = config.MaxBust && (turning || IsFemale(character));
+
+        if (!turning && !elezen && !bust)
         {
             asked.Remove(character.ObjectIndex);
             return false;
@@ -84,10 +93,13 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
                 return false;
         }
 
+        // Everything they need in one call, so somebody who is a man and a Hrothgar and due a
+        // bust is one redraw rather than three.
         var result = glamourer.SetLook(index,
             elezen ? Elezen : null,
             elezen ? config.HrothgarFemaleClan : null,
-            turning ? Female : null);
+            turning ? Female : null,
+            bust ? FullBust : null);
 
         asked[index] = DateTime.UtcNow;
 
@@ -108,7 +120,8 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         if (fresh)
             Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(character)} is "
                                 + (elezen && turning ? "an Elezen woman now"
-                                    : elezen ? "an Elezen now" : "a woman now"));
+                                    : elezen ? "an Elezen now"
+                                    : turning ? "a woman now" : "at a full bust now"));
 
         return fresh;
     }

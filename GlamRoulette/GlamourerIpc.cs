@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Dalamud.Plugin.Ipc;
 using ECommons.DalamudServices;
@@ -173,9 +173,9 @@ internal sealed class GlamourerIpc
     /// else's, which is exactly the trap here. Whatever carries over sensibly - colouring,
     /// build - carries over, and the rest lands on something valid.
     /// </summary>
-    public Result SetLook(int objectIndex, byte? race, byte? clan, byte? gender)
+    public Result SetLook(int objectIndex, byte? race, byte? clan, byte? gender, byte? bust)
     {
-        if (race == null && clan == null && gender == null)
+        if (race == null && clan == null && gender == null && bust == null)
             return Result.NothingDone;
 
         try
@@ -200,6 +200,12 @@ internal sealed class GlamourerIpc
             if (clan != null && !Set(customize, "Clan", clan.Value))
                 return Result.ActorNotHuman;
             if (gender != null && !Set(customize, "Gender", gender.Value))
+                return Result.ActorNotHuman;
+
+            // Out of range for a race that has a shorter slider is not a failure worth having:
+            // Glamourer validates every customization it is handed and pulls it back to
+            // something the wearer's set actually offers.
+            if (bust != null && !Set(customize, "BustSize", bust.Value))
                 return Result.ActorNotHuman;
 
             return Call(() => applyState.InvokeFunc(state, objectIndex, 0, (ulong)ApplyFlag.Customization));

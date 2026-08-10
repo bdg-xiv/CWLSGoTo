@@ -121,6 +121,14 @@ public class Configuration : IPluginConfiguration
 
     public bool TurnMaleNpcs { get; set; }
 
+    /// <summary>
+    /// Put everybody's bust slider at the top before anything else touches them. That is the
+    /// game's own customization rather than a bone scale, so it changes the mesh the body is
+    /// built from - and Customize+ then scales whatever it finds, which makes this the floor the
+    /// roll is measured from rather than a competitor to it.
+    /// </summary>
+    public bool MaxBust { get; set; }
+
     /// <summary>Which Elezen clan they become. Penumbra.GameData.Enums.SubRace: 3 is Wildwood,
     /// 4 is Duskwight.</summary>
     public byte HrothgarFemaleClan { get; set; } = 3;

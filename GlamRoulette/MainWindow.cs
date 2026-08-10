@@ -85,6 +85,29 @@ internal sealed class MainWindow : Window
     /// </summary>
     private void DrawShapes()
     {
+        // Above the Customize+ half deliberately: this is the mesh everybody is built from, and
+        // the bone scaling that follows is measured from whatever it finds.
+        var bust = config.MaxBust;
+        if (ImGui.Checkbox("Everyone at a full bust", ref bust))
+        {
+            config.MaxBust = bust;
+            config.Save();
+            // Off has to put them back - a customization already applied is not undone by
+            // ceasing to ask for it - and on wants asking for everybody afresh.
+            if (bust)
+                wardrobe.ForgetRaces();
+            else
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Puts the game's own bust slider at the top for every woman, on your screen\n" +
+                             "only, before anything else touches them. That is a different thing from the\n" +
+                             "body shape below: this changes the mesh the body is built from, and the\n" +
+                             "bones are then scaled on top of whatever they find - so the two stack, and\n" +
+                             "this is the floor the roll is measured from rather than a rival to it.\n" +
+                             "Costs one redraw per person, unlike the bones, which cost none.\n" +
+                             "Applies to men who are being turned into women, and to nobody else.");
+
         var on = config.RandomizeShapes;
         if (ImGui.Checkbox("Randomise body shape", ref on))
         {
