@@ -1105,6 +1105,22 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     public IReadOnlyDictionary<string, (string[] Options, PenumbraIpc.GroupType Type)> GroupsOf(string modDirectory)
         => mods.GroupsOf(modDirectory);
 
+    /// <summary>
+    /// The outfits in the pool that are built on a mod, so one of them can be put on to see what
+    /// the mod is being rolled to. A mod is not an outfit and cannot be worn on its own - the
+    /// nearest thing to trying one on is wearing something that uses it.
+    /// </summary>
+    public IReadOnlyList<(Guid Id, string Name, string Path)> WearersOf(string modDirectory)
+        => Pool().Where(d => mods.Wears(d.Id, modDirectory)).ToList();
+
+    /// <summary>One of them at random, so pressing again shows another rather than the same one
+    /// every time.</summary>
+    public (Guid Id, string Name, string Path)? AnyWearerOf(string modDirectory)
+    {
+        var wearing = WearersOf(modDirectory);
+        return wearing.Count == 0 ? null : wearing[random.Next(wearing.Count)];
+    }
+
     /// <summary>The mod an option says it needs alongside it, for the window to name.</summary>
     public (string Directory, string Name)? CompanionOf(string option) => mods.CompanionOf(option);
 

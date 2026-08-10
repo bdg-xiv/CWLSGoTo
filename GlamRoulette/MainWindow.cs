@@ -852,6 +852,23 @@ internal sealed class MainWindow : Window
             var open = ImGui.TreeNode($"{mod.Name}##node");
             ImGui.SameLine();
             ImGui.TextColored(rolled == 0 ? Bad : Dim, $"{rolled} group{(rolled == 1 ? "" : "s")} rolled");
+            // A mod is not an outfit and cannot be put on by itself, so the nearest thing to
+            // trying one on is being dealt something built on it. A different one each press
+            // where several would do, since seeing the same outfit again tells you no more.
+            ImGui.SameLine();
+            var wearers = wardrobe.WearersOf(mod.Directory).Count;
+            ImGui.BeginDisabled(wearers == 0);
+            if (ImGui.SmallButton("Wear") && wardrobe.AnyWearerOf(mod.Directory) is { } outfit)
+                WearNow(outfit.Id, outfit.Path);
+            ImGui.EndDisabled();
+
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip(wearers == 0
+                    ? "No outfit in your pool is built on this mod, so there is nothing\n"
+                      + "to put on that would show it."
+                    : $"Deals you one of the {wearers} outfit(s) built on this mod, rolled as\n"
+                      + "anybody would get it. A different one each press.");
+
             ImGui.SameLine();
             if (ImGui.SmallButton("Remove"))
             {

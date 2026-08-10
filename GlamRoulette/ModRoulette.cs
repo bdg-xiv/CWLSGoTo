@@ -131,6 +131,11 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     /// wearing rather than every mod being pushed at everybody.</summary>
     private Dictionary<ulong, List<string>>? owners;
 
+    /// <summary>Whether an outfit is built on a particular mod, for the window to offer one to
+    /// try it on with. Asked of the design's own shoes, since a rolled pair is a per-person
+    /// thing and this is a question about the outfit rather than about anybody wearing it.</summary>
+    public bool Wears(Guid design, string modDirectory) => WornBy(design, null).Contains(modDirectory);
+
     private HashSet<string> WornBy(Guid design, uint? shoe)
     {
         owners ??= BuildOwners();
