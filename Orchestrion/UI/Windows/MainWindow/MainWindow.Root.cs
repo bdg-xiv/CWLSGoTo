@@ -37,6 +37,7 @@ public partial class MainWindow : Window, IDisposable
 	
 	private string _searchText = string.Empty;
 	private TabType _currentTab = TabType.AllSongs;
+	private Vector2? _pendingSize;
 
 	public MainWindow(OrchestrionPlugin orch) : base(BaseName, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
 	{
@@ -140,6 +141,11 @@ public partial class MainWindow : Window, IDisposable
 	public override void PreDraw()
 	{
 		BgmTooltip.ClearLock();
+		if (_pendingSize is { } pending)
+		{
+			ImGui.SetNextWindowSize(pending, ImGuiCond.Always);
+			_pendingSize = null;
+		}
 		ImGui.PushStyleColor(ImGuiCol.ResizeGrip, 0);
 		ImGui.PushStyleColor(ImGuiCol.ResizeGripActive, 0);
 		ImGui.PushStyleColor(ImGuiCol.ResizeGripHovered, 0);
@@ -152,6 +158,12 @@ public partial class MainWindow : Window, IDisposable
 
 	public override void Draw()
 	{
+		if (Configuration.Instance.MainWindowCompact)
+		{
+			DrawCompact();
+			return;
+		}
+
 		ImGui.AlignTextToFramePadding();
 		ImGui.Text(Loc.Localize("SearchColon", "Search:"));
 		ImGui.SameLine();
@@ -163,8 +175,20 @@ public partial class MainWindow : Window, IDisposable
 		}
 
 		ImGui.SameLine();
-		ImGui.SetCursorPosX(ImGui.GetWindowSize().X - (35 * ImGuiHelpers.GlobalScale));
+		ImGui.SetCursorPosX(ImGui.GetWindowSize().X - (65 * ImGuiHelpers.GlobalScale));
 		ImGui.SetCursorPosY(ImGui.GetCursorPosY() + (1 * ImGuiHelpers.GlobalScale));
+
+		if (ImGuiComponents.IconButton("##orchcompact", FontAwesomeIcon.Compress))
+		{
+			Configuration.Instance.MainWindowFullSize = ImGui.GetWindowSize();
+			Configuration.Instance.MainWindowCompact = true;
+			Configuration.Instance.Save();
+		}
+		if (ImGui.IsItemHovered())
+			ImGui.SetTooltip(Loc.Localize("CompactModeOn", "Shrink the window down to just the player"));
+
+		ImGui.SameLine();
+		ImGui.SetCursorPosX(ImGui.GetWindowSize().X - (35 * ImGuiHelpers.GlobalScale));
 
 		if (ImGuiComponents.IconButton("##orchsettings", FontAwesomeIcon.Cog))
 			_orch.OpenSettingsWindow();
@@ -183,6 +207,36 @@ public partial class MainWindow : Window, IDisposable
 		}
 		
 		NewPlaylistModal.Instance.Draw();
+	}
+
+	/// <summary>The whole window reduced to the player and nothing else - no search, no tabs,
+	/// no lists. An expand button in the top-left corner puts the full window back the way
+	/// it was, and the window height follows the player so nothing but it ever shows.</summary>
+	private void DrawCompact()
+	{
+		var top = ImGui.GetCursorPosY();
+		Player.Draw(withSeparator: false);
+		var bottom = ImGui.GetCursorPosY();
+
+		ImGui.SetCursorPos(new Vector2(ImGui.GetStyle().WindowPadding.X, top));
+		if (ImGuiComponents.IconButton("##orchexpand", FontAwesomeIcon.Expand))
+		{
+			Configuration.Instance.MainWindowCompact = false;
+			Configuration.Instance.Save();
+			var full = Configuration.Instance.MainWindowFullSize;
+			_pendingSize = full.X > 100 && full.Y > 100 ? full : ImGuiHelpers.ScaledVector2(490, 520);
+			return;
+		}
+		if (ImGui.IsItemHovered())
+			ImGui.SetTooltip(Loc.Localize("CompactModeOff", "Back to the full window"));
+
+		bottom = Math.Max(bottom, ImGui.GetCursorPosY());
+
+		// The height hugs the player while the width stays the user's to drag.
+		var wanted = bottom - ImGui.GetStyle().ItemSpacing.Y + ImGui.GetStyle().WindowPadding.Y;
+		var size = ImGui.GetWindowSize();
+		if (Math.Abs(size.Y - wanted) > 0.5f)
+			ImGui.SetWindowSize(new Vector2(size.X, wanted));
 	}
 
 	private void DrawTab(string name, string id, Action render, TabType type)

@@ -12,7 +12,7 @@ namespace Orchestrion.UI.Components;
 
 public static class Player
 {
-	public static void Draw()
+	public static void Draw(bool withSeparator = true)
 	{
 		var elapsed = TimeSpan.Zero;
 		var total = TimeSpan.Zero;
@@ -212,7 +212,7 @@ public static class Player
 		ImGui.SetCursorPosX(avail - totalTimeSize.X);
 		ImGui.Text(totalTimeStr);
 
-		if (!Configuration.Instance.ShowMiniPlayer)
+		if (withSeparator && !Configuration.Instance.ShowMiniPlayer)
 		{
 			ImGui.Dummy(new Vector2(5, 5));
 			ImGui.Separator();

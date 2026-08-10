@@ -19,6 +19,12 @@ public class Configuration : IPluginConfiguration
     public bool HandleSpecialModes { get; set; } = true;
     public bool ShowFilePaths { get; set; } = true;
     public bool PlaylistPaneOpen { get; set; } = true;
+
+    // Compact mode: the main window reduced to nothing but the player, with the
+    // full size remembered so the expand button can put things back as they were.
+    public bool MainWindowCompact { get; set; } = false;
+    public System.Numerics.Vector2 MainWindowFullSize { get; set; } = System.Numerics.Vector2.Zero;
+
     public bool ShowMiniPlayer { get; set; } = false;
     public bool MiniPlayerLock { get; set; } = false;
     public float MiniPlayerOpacity { get; set; } = 1.0f;
