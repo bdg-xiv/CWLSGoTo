@@ -421,6 +421,27 @@ internal sealed class MainWindow : Window
         ImGui.TreePop();
     }
 
+    /// <summary>
+    /// Puts a pair of shoes on yourself until you stop, or takes them off again. Needs you to be
+    /// taking a turn for the same reason an outfit does - the pass is what puts them on, and it
+    /// passes you over otherwise.
+    /// </summary>
+    private void TryShoes(uint? item)
+    {
+        if (item != null && !config.IncludeMe)
+        {
+            config.IncludeMe = true;
+            config.Save();
+            ECommons.DalamudServices.Svc.Chat.Print(
+                "[Glam Roulette] Taking a turn yourself, since you asked to try a pair on.");
+        }
+
+        wardrobe.TryShoes(item);
+        ECommons.DalamudServices.Svc.Chat.Print(item is { } worn
+            ? $"[Glam Roulette] Trying {shoes.NameOf(worn)} on you."
+            : "[Glam Roulette] Back to the pair you were dealt.");
+    }
+
     /// <summary>Puts one on yourself, taking a turn if you were not.</summary>
     private void WearNow(Guid design, string name)
     {
@@ -620,16 +641,55 @@ internal sealed class MainWindow : Window
             ? "No shoes in the pool yet - nothing will change."
             : $"{config.ShoePool.Count} pair(s) in the pool, on {config.RollShoesFor.Count} design(s).");
 
+        ImGui.TextColored(Dim, "Two is twice as often as a one, zero is never dealt.");
+
         foreach (var item in config.ShoePool.ToList())
         {
-            if (ImGui.SmallButton($"x##shoe{item}"))
+            ImGui.PushID((int)item);
+
+            if (ImGui.SmallButton("x"))
             {
                 config.ShoePool.Remove(item);
+                config.ShoeWeights.Remove(item);
                 config.Save();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Takes this pair out of the pool.");
+
+            // Straight onto your own feet, whatever your outfit was dealt and whether or not it
+            // is one whose shoes are dealt at all - deciding how often you want a pair means
+            // seeing it, and most of the outfits worth seeing it on are not on the list yet.
+            ImGui.SameLine();
+            var worn = shoes.TryingOn == item;
+            if (ImGui.SmallButton(worn ? "Stop" : "Wear"))
+            {
+                TryShoes(worn ? null : item);
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(worn
+                    ? "Puts your dealt pair back."
+                    : "Puts this pair on you until you stop, over whatever you are wearing.");
+
+            ImGui.SameLine();
+            var weight = shoes.WeightOf(item);
+            ImGui.SetNextItemWidth(90f);
+            if (ImGui.InputInt("##shoeweight", ref weight))
+                config.ShoeWeights[item] = Math.Max(0, weight);
+
+            // Held until the box is let go: the pool is part of what everybody was dealt, so a
+            // change re-deals it, and paying that per keystroke is a crowd changing shoes twice
+            // over for one edit.
+            if (ImGui.IsItemDeactivatedAfterEdit())
+            {
+                config.Save();
+                wardrobe.ForgetPool();
             }
 
             ImGui.SameLine();
+            ImGui.TextColored(Dim, $"{shoes.ShareOf(item):P1}");
+            ImGui.SameLine();
             ImGui.TextUnformatted(shoes.NameOf(item));
+            ImGui.PopID();
         }
 
         ImGui.SetNextItemWidth(180f);

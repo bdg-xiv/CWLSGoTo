@@ -49,12 +49,56 @@ internal sealed class Shoes(Configuration config)
     /// </summary>
     public uint? For(string playerKey, Guid design, int roll)
     {
+        // A pair being tried on beats everything, including the design not being one whose shoes
+        // are dealt at all - the whole point of trying a pair is to see it on an outfit before
+        // deciding, and half of those outfits will not be in the list yet.
+        if (trying is { } worn && worn.Key == playerKey)
+            return worn.Item;
+
         if (!config.RollShoes || config.ShoePool.Count == 0 || !config.RollShoesFor.Contains(design))
             return null;
 
         var pool = config.ShoePool;
-        return pool[(int)(Seed(playerKey, design, roll) % (uint)pool.Count)];
+        var total = pool.Sum(p => (long)WeightOf(p));
+
+        // Every pair weighted to nothing is somebody having turned each dial down one at a time
+        // rather than asking for bare feet, so it falls back to an even draw.
+        if (total <= 0)
+            return pool[(int)(Seed(playerKey, design, roll) % (uint)pool.Count)];
+
+        var target = (long)(Seed(playerKey, design, roll) % (uint)total);
+        foreach (var item in pool)
+        {
+            target -= WeightOf(item);
+            if (target < 0)
+                return item;
+        }
+
+        return pool[^1];
     }
+
+    /// <summary>How often one pair comes up against the others. One unless you have said
+    /// otherwise, so a pool nobody has weighted draws evenly.</summary>
+    public int WeightOf(uint item)
+        => config.ShoeWeights.TryGetValue(item, out var weight) ? Math.Max(0, weight) : 1;
+
+    /// <summary>The share of the pool one pair will take, for the window to show.</summary>
+    public float ShareOf(uint item)
+    {
+        var total = config.ShoePool.Sum(p => (long)WeightOf(p));
+        return total == 0 ? 0f : (float)WeightOf(item) / total;
+    }
+
+    /// <summary>The pair being tried on, and by whom. Held in memory rather than in the config:
+    /// trying a pair on is a moment, not a setting.</summary>
+    private (string Key, uint Item)? trying;
+
+    public uint? TryingOn => trying?.Item;
+
+    /// <summary>Puts one pair on somebody until it is taken off again, whatever the roll says
+    /// and whatever the design says about having its shoes dealt.</summary>
+    public void TryOn(string playerKey, uint? item)
+        => trying = item is { } worn ? (playerKey, worn) : null;
 
     private static uint Seed(string playerKey, Guid design, int roll)
     {

@@ -160,6 +160,10 @@ public class Configuration : IPluginConfiguration
     /// </summary>
     public HashSet<Guid> RollShoesFor { get; set; } = [];
 
+    /// <summary>How often one pair comes up against the others in the pool, by item id. Absent
+    /// is one, so a pool nobody has weighted draws evenly.</summary>
+    public Dictionary<uint, int> ShoeWeights { get; set; } = [];
+
     /// <summary>Roll the option dropdowns on the mods named below, per player.</summary>
     public bool RandomizeModOptions { get; set; }
 

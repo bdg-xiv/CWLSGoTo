@@ -214,6 +214,21 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     public void ForgetPool() => pool = null;
 
     /// <summary>
+    /// Puts a pair of shoes on yourself until they are taken off again, or takes them off. The
+    /// pass notices on its own - what somebody has on their feet is part of what they were
+    /// dealt, so a changed pair reads as a changed outfit and is put on within the second, mods
+    /// and all.
+    /// </summary>
+    public void TryShoes(uint? item)
+    {
+        var me = Svc.Objects.LocalPlayer;
+        if (me == null)
+            return;
+
+        shoes.TryOn(KeyFor(me), item);
+    }
+
+    /// <summary>
     /// The designs a particular discipline may be given: its own subfolder, plus anything
     /// sitting loose in the design folder if those are being shared out. An empty result
     /// falls back to the whole pool rather than leaving the wearer undressed - a missing
