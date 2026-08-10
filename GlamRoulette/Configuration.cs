@@ -264,6 +264,13 @@ public class Configuration : IPluginConfiguration
     public int RedrawsPerPass { get; set; } = 1;
 
     /// <summary>
+    /// Write a person's options while the game is building their model, so the build bakes them
+    /// in on the first try and a spawn, a zone-in or a gear change costs no redraw at all. The
+    /// forced redraws that remain are for options changing on somebody already standing there.
+    /// </summary>
+    public bool SettleOnCreate { get; set; } = true;
+
+    /// <summary>
     /// Redraw someone as soon as their mod settings change, so the change shows at once.
     /// Turning this off leaves the settings in place to be picked up whenever the game next
     /// redraws them anyway - a zone change, a gearset, coming back into view. Slower to appear,

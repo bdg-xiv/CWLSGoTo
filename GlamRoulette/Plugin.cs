@@ -41,6 +41,7 @@ public sealed class Plugin : IDalamudPlugin
         config.Tidy();
         wardrobe.StampUnknownAsSeen();
         penumbra.OnRestart(OnPenumbraRestart);
+        penumbra.OnCreating(OnCreatingCharacter);
         contextMenu = new PlayerContextMenu(config, wardrobe);
         window = new MainWindow(config, wardrobe, glamourer, dyes, penumbra, cplus, shoes);
         windows.AddWindow(window);
@@ -57,6 +58,12 @@ public sealed class Plugin : IDalamudPlugin
         });
     }
 
+    /// <summary>Somebody's model is about to be built, and the wardrobe gets one chance to have
+    /// their options baked into it. Only the address and the collection matter here - the other
+    /// three are pointers offered for editing the build itself, which is not our business.</summary>
+    private void OnCreatingCharacter(nint address, Guid collection, nint modelId, nint customize, nint equipData)
+        => wardrobe.OnCreating(address, collection);
+
     /// <summary>Penumbra has restarted, so every mod and every temporary setting it was holding
     /// has been through a fresh start and none of what we remember about it still stands.</summary>
     private void OnPenumbraRestart()
@@ -70,6 +77,7 @@ public sealed class Plugin : IDalamudPlugin
         Svc.Commands.RemoveHandler(CommandName);
         Svc.Framework.Update -= OnFrameworkUpdate;
         penumbra.StopWatching(OnPenumbraRestart);
+        penumbra.StopCreating(OnCreatingCharacter);
 
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleWindow;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleWindow;

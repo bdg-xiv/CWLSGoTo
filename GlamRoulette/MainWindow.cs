@@ -820,6 +820,19 @@ internal sealed class MainWindow : Window
                              "arrived yet - which is a character rendered black, with nothing to\n" +
                              "black, with nothing to ask again. Raise it if you still see one.");
 
+        var onCreate = config.SettleOnCreate;
+        if (ImGui.Checkbox("Settle people as the game builds them", ref onCreate))
+        {
+            config.SettleOnCreate = onCreate;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Writes a person's options at the moment their model is being built, so a\n" +
+                             "spawn, a zone-in or a gear change comes out right on the first try and\n" +
+                             "costs no redraw at all. Forced redraws are then only spent on somebody\n" +
+                             "whose options change while they stand there - a re-roll, a new setting.\n" +
+                             "Login stops being a queue: everyone arrives correct.");
+
         var force = config.ForceRedraw;
         if (ImGui.Checkbox("Redraw people as soon as their mods change", ref force))
         {
@@ -1095,7 +1108,8 @@ internal sealed class MainWindow : Window
         var pool = wardrobe.Pool();
         ImGui.TextColored(pool.Count == 0 ? Bad : Dim,
             $"{pool.Count} design{(pool.Count == 1 ? "" : "s")} in the pool, " +
-            $"{wardrobe.Dressed} dressed right now, {wardrobe.Remembered} remembered" +
+            $"{wardrobe.Dressed} dressed right now, {wardrobe.Baked} baked while built, " +
+            $"{wardrobe.Remembered} remembered" +
             (wardrobe.Kept > 0 ? $" ({wardrobe.Kept} kept)." : "."));
 
         if (pool.Count == 0)

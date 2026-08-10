@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Plugin.Ipc;
@@ -42,6 +42,12 @@ internal sealed class PenumbraIpc
 
     private readonly ICallGateSubscriber<object?> initialized;
 
+    private readonly ICallGateSubscriber<nint, Guid, nint, nint, nint, object?> creatingCharacter;
+
+    private readonly ICallGateSubscriber<Guid, string, string,
+        (bool Inherit, bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings),
+        string, int, int> setForCollection;
+
     public PenumbraIpc()
     {
         // Every label but the mod list carries its api version, and asking on the bare name
@@ -64,6 +70,11 @@ internal sealed class PenumbraIpc
             .GetIpcSubscriber<Guid, string, string, bool, (int, (bool, int, Dictionary<string, List<string>>, bool)?)>(
                 "Penumbra.GetCurrentModSettings.V5");
         initialized = Svc.PluginInterface.GetIpcSubscriber<object?>("Penumbra.Initialized");
+        creatingCharacter = Svc.PluginInterface
+            .GetIpcSubscriber<nint, Guid, nint, nint, nint, object?>("Penumbra.CreatingCharacterBase.V5");
+        setForCollection = Svc.PluginInterface
+            .GetIpcSubscriber<Guid, string, string, (bool, bool, int, IReadOnlyDictionary<string, IReadOnlyList<string>>), string, int, int>(
+                "Penumbra.SetTemporaryModSettings.V5");
     }
 
     /// <summary>
@@ -82,6 +93,58 @@ internal sealed class PenumbraIpc
         catch (Exception ex)
         {
             Svc.Log.Warning($"[GlamRoulette] Could not stop watching Penumbra: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// A character's model is about to be built - it does not exist yet, and this is the frame
+    /// on which its contents are decided. Penumbra applies a settings change to its cache
+    /// synchronously on this thread, so anything written during the callback is read by the
+    /// build that follows: the one moment a settle costs no redraw at all.
+    /// </summary>
+    public void OnCreating(Action<nint, Guid, nint, nint, nint> handler) => creatingCharacter.Subscribe(handler);
+
+    public void StopCreating(Action<nint, Guid, nint, nint, nint> handler)
+    {
+        try
+        {
+            creatingCharacter.Unsubscribe(handler);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not stop watching creations: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The same write addressed to the collection itself, for the one caller that already knows
+    /// it: the creation callback is handed the resolved collection, and asking Penumbra to look
+    /// it up again from an object that is only half-built would be the riskier road.
+    /// </summary>
+    public bool Apply(Guid collection, string modDirectory, bool enabled, int priority,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> settings)
+    {
+        try
+        {
+            var result = setForCollection.InvokeFunc(collection, modDirectory, string.Empty,
+                (false, enabled, priority, settings), "Glam Roulette", 0);
+
+            if (result == 0)
+            {
+                refused.Remove(modDirectory);
+                return true;
+            }
+
+            if (refused.Add(modDirectory))
+                Svc.Log.Warning($"[GlamRoulette] Penumbra would not set {modDirectory}: {result}. " +
+                                $"Asked for priority {priority}, {Describe(enabled, settings)}");
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not set options on {modDirectory}: {ex.Message}");
+            return false;
         }
     }
 

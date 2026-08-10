@@ -60,6 +60,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     private bool seenDirty;
 
     public int Dressed => applied.Count;
+
+    /// <summary>How many people were settled while the game was building them - settles that
+    /// cost no redraw at all, which is the count that says the creation callback is earning
+    /// its keep.</summary>
+    public int Baked { get; private set; }
     public int Remembered => config.Assignments.Count;
     public int Kept => config.Pinned.Count;
 
@@ -332,7 +337,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// have been seen on, not only the one they are standing in. Kept outfits are left alone;
     /// they are meant to be immovable, and unpinning is right there in the same menu.
     /// </summary>
-    public bool Reroll(string key, bool body = true)
+    public bool Reroll(string key, bool body = true, bool save = true)
     {
         var player = PlayerOf(key);
         var stale = config.Assignments.Keys
@@ -349,7 +354,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
         if (stale.Count == 0)
         {
-            config.Save();
+            if (save)
+                config.Save();
+            else
+                dealtDirty = true;
+
             return false;
         }
 
@@ -363,7 +372,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             settled.Remove(k);
         }
 
-        config.Save();
+        if (save)
+            config.Save();
+        else
+            dealtDirty = true;
 
         // Drop the applied record too, or nothing would re-apply until they reload.
         foreach (var index in applied
@@ -981,21 +993,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         // Which collection they are really being drawn with. Asked for only when something has
         // actually rebuilt them, since it is a round trip and the answer rarely changes.
         var collection = penumbra.CollectionOf(character.ObjectIndex);
-        var wishes = Wishes(collection, key, design, shoe, config.Rolls.GetValueOrDefault(key));
-
-        // Only what the collection is not already holding. A zone change throws away every model
-        // in it but not the collection's settings, so whoever's options were loaded before the
-        // teleport comes back correct on the other side without being touched - which is most of
-        // a hunt train, most of the time.
-        //
-        // While drifting, a mod we already have switched on to something counts as answered
-        // whoever it was answered for. Only the ones that have to be off are still insisted on:
-        // a mod switched off to stop it fighting another is not interchangeable with the same
-        // mod switched on, and letting that one drift is two outfits over the same item.
-        var missing = wishes
-            .Where(w => !state.Holds(collection, w.Mod, w.Signature)
-                        && !(drifting && w.Enabled && state.Carries(collection, w.Mod)))
-            .ToList();
+        var missing = Missing(collection, key, design, shoe, drifting);
 
         if (missing.Count == 0)
         {
@@ -1042,6 +1040,115 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             spent = true;
 
         return false;
+    }
+
+    /// <summary>
+    /// What a collection is not yet holding of one wearer's wishes. A zone change throws away
+    /// every model in it but not the collection's settings, so whoever's options were loaded
+    /// before the teleport comes back correct on the other side without being touched - which
+    /// is most of a hunt train, most of the time.
+    ///
+    /// While drifting, a mod we already have switched on to something counts as answered
+    /// whoever it was answered for. Only the ones that have to be off are still insisted on:
+    /// a mod switched off to stop it fighting another is not interchangeable with the same
+    /// mod switched on, and letting that one drift is two outfits over the same item.
+    /// </summary>
+    private List<(string Mod, bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Options, string Signature)>
+        Missing(Guid collection, string key, Guid design, uint? shoe, bool drifting)
+        => Wishes(collection, key, design, shoe, config.Rolls.GetValueOrDefault(key))
+            .Where(w => !state.Holds(collection, w.Mod, w.Signature)
+                        && !(drifting && w.Enabled && state.Carries(collection, w.Mod)))
+            .ToList();
+
+    /// <summary>
+    /// Penumbra is about to build a model - a spawn, a zone-in, a gear change, anybody being
+    /// redrawn. The wearer's options are written into the collection here, on the same frame:
+    /// Penumbra applies a settings change to its cache synchronously on this thread, and the
+    /// build that follows reads that cache, so the model bakes the right options on the first
+    /// try. Every rebuild the game was doing anyway becomes a settle that costs no redraw, and
+    /// the forced redraws that remain are for options changing on somebody already standing
+    /// there.
+    ///
+    /// Deliberately not behind the login wait: this adds no redraw, and login is where it pays
+    /// most - everybody arrives correct instead of queueing for a redraw each.
+    ///
+    /// The pass stays the janitor. It latches these settles on its own - the collection already
+    /// holds the wishes, so its settle finds nothing missing and marks the model quietly - and
+    /// it still covers anybody this missed: the plugin loading late, a build that happened
+    /// while Penumbra had no collection to name.
+    /// </summary>
+    public void OnCreating(nint address, Guid collection)
+    {
+        try
+        {
+            if (!config.Enabled || !config.SettleOnCreate || collection == Guid.Empty)
+                return;
+
+            var me = Svc.Objects.LocalPlayer;
+            if (me == null)
+                return;
+
+            if (Svc.Objects.CreateObjectReference(address) is not ICharacter character)
+                return;
+
+            var isMe = character.GameObjectId == me.GameObjectId;
+            if (!Eligible(character, isMe))
+                return;
+
+            // The same patience the pass shows: a player whose class or world has not arrived
+            // yet would be remembered under a half-built key and dealt twice.
+            if (character is IPlayerCharacter loading
+                && (loading.ClassJob.RowId == 0 || loading.HomeWorld.ValueNullable is null))
+                return;
+
+            if (character.Name.TextValue.Length == 0)
+                return;
+
+            if (config.FemaleOnly && !IsFemale(character) && !races.Feminising(character))
+                return;
+
+            var person = KeyOf(character);
+
+            // A retainer being called up gets her fresh deal here rather than a pass later, so
+            // the new outfit is decided in time for its mods to be baked into the very build
+            // that brings her into the world - a summon that costs no redraw at all. She goes
+            // into the seen set at once, or the pass would deal her a second new outfit a
+            // moment after this one. The save is deferred to the pass; a disk write has no
+            // place in the middle of a model build.
+            if (character.ObjectKind == ObjectKind.Retainer && config.FreshRetainers
+                && !retainersHere.Contains(person))
+            {
+                retainersHere.Add(person);
+                Reroll(person, body: false, save: false);
+            }
+
+            var group = JobPools.GroupOf(character);
+            var key = person;
+            if (config.MatchJobCategory && group != JobPools.Group.Unknown)
+                key += "#" + group;
+
+            if (DesignFor(key, group) is not { } design)
+                return;
+
+            var shoe = shoes.For(key, design, config.Rolls.GetValueOrDefault(key));
+            var missing = Missing(collection, key, design, shoe, config.AllowDrift && !isMe);
+            if (missing.Count == 0)
+                return;
+
+            foreach (var (mod, enabled, priority, options, signature) in missing)
+                if (penumbra.Apply(collection, mod, enabled, priority, options))
+                    state.Wrote(collection, mod, signature, enabled);
+
+            Baked++;
+            Svc.Log.Debug($"[GlamRoulette] {key} settled while being built: "
+                          + string.Join(", ", missing.Select(m => m.Mod)));
+        }
+        catch (Exception ex)
+        {
+            // Whatever went wrong, it must not reach Penumbra's hook - this is the game's own
+            // model build we are standing in the middle of.
+            Svc.Log.Error(ex, "[GlamRoulette] Failed while settling a character being built");
+        }
     }
 
     /// <summary>
