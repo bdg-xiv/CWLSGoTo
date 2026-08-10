@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using ECommons.DalamudServices;
@@ -44,7 +44,17 @@ internal sealed class Shapes(Configuration config, CustomizePlusIpc cplus)
     /// <summary>Who has been given what, so nothing is sent twice. A temporary profile is filed
     /// against the character rather than against an object, so it stays put through a zone change
     /// and there is nothing to put back afterwards.</summary>
-    private readonly Dictionary<string, (string Signature, Guid Id, DateTime Seen)> given = [];
+    private readonly Dictionary<string, (string Signature, Guid Id, DateTime Seen, DateTime Applied)> given = [];
+
+    /// <summary>
+    /// How long a shape is taken on trust before it is simply sent again. Nothing here can see
+    /// whether Customize+ still holds it - a temporary profile is replaced by whoever writes one
+    /// next, and there is no telling from outside that ours has gone - so believing one apply
+    /// forever meant somebody could end up their own size until something forced a re-send, and
+    /// the only thing that did was moving a slider. Sending it again costs one call and no
+    /// redraw, which is cheap enough to do on a clock rather than on a hunch.
+    /// </summary>
+    private static readonly TimeSpan Restate = TimeSpan.FromMinutes(2);
 
     /// <summary>Who Customize+ has already turned down, so it is said once rather than every
     /// pass for as long as they stand there.</summary>
@@ -130,7 +140,8 @@ internal sealed class Shapes(Configuration config, CustomizePlusIpc cplus)
 
         // The usual case by far: they already have it, and it stays on through a zone change
         // without being sent again.
-        if (given.TryGetValue(playerKey, out var already) && already.Signature == signature)
+        if (given.TryGetValue(playerKey, out var already) && already.Signature == signature
+            && DateTime.UtcNow - already.Applied < Restate)
         {
             given[playerKey] = already with { Seen = DateTime.UtcNow };
             return;
@@ -154,7 +165,7 @@ internal sealed class Shapes(Configuration config, CustomizePlusIpc cplus)
         }
 
         refused.Remove(playerKey);
-        given[playerKey] = (signature, assigned, DateTime.UtcNow);
+        given[playerKey] = (signature, assigned, DateTime.UtcNow, DateTime.UtcNow);
         Svc.Log.Debug($"[GlamRoulette] {playerKey} is {size:F2}x");
     }
 
@@ -275,7 +286,7 @@ internal sealed class Shapes(Configuration config, CustomizePlusIpc cplus)
         // Customize+ having gone away has taken them with it, so there is nothing to ask it for
         // and no point complaining about each one in turn.
         if (wasAvailable)
-            foreach (var (_, id, _) in given.Values)
+            foreach (var (_, id, _, _) in given.Values)
                 cplus.Release(id);
 
         given.Clear();

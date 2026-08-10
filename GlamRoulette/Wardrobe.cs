@@ -611,6 +611,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             {
                 applied.Remove(character.ObjectIndex);
                 lastApplied.Remove(character.ObjectIndex);
+
+                // That change rebuilds them, and a shape is worth re-stating over a model that
+                // was thrown away and made again rather than trusted across it.
+                shapes.Forget(KeyOf(character));
                 continue;
             }
 
@@ -958,6 +962,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         penumbra.Redraw(character.ObjectIndex);
         applied.Remove(character.ObjectIndex);
         lastApplied.Remove(character.ObjectIndex);
+
+        // Same for the shape. Nothing here can see whether Customize+ still holds it across a
+        // rebuild, and saying it again costs one call and no redraw - far less than the odds of
+        // somebody standing there at their own size until a slider is nudged.
+        shapes.Forget(PlayerOf(key));
 
         // The model we are replacing, so the rebuild can be told from it.
         settled[key] = (draw, true, DateTime.UtcNow);
