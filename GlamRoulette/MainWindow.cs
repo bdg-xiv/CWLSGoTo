@@ -1232,6 +1232,40 @@ internal sealed class MainWindow : Window
             ImGui.Unindent();
         }
 
+        var lala = config.SwapLalafell;
+        if (ImGui.Checkbox("Lalafell turn up as Miqo'te", ref lala))
+        {
+            config.SwapLalafell = lala;
+            config.Save();
+            if (!lala)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("The same as the Hrothgar swap and for the same reason: the designs are\n" +
+                             "cut for a tall body, and one on a Lalafell is a mesh that does not fit its\n" +
+                             "wearer rather than an outfit. Changes their clan on your screen only.\n" +
+                             "This redraws them once, and again if something puts them back.");
+
+        if (config.SwapLalafell)
+        {
+            ImGui.Indent();
+            var keeper = config.LalafellClan == 8;
+            if (ImGui.RadioButton("Seeker of the Sun", !keeper))
+            {
+                config.LalafellClan = 7;
+                config.Save();
+                wardrobe.ForgetRaces();
+            }
+            ImGui.SameLine();
+            if (ImGui.RadioButton("Keeper of the Moon", keeper))
+            {
+                config.LalafellClan = 8;
+                config.Save();
+                wardrobe.ForgetRaces();
+            }
+            ImGui.Unindent();
+        }
+
         var skipParty = config.SkipParty;
         if (ImGui.Checkbox("Leave party members alone", ref skipParty))
         {

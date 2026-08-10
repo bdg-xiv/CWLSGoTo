@@ -111,6 +111,15 @@ public class Configuration : IPluginConfiguration
     /// <summary>Show female Hrothgar as Elezen instead.</summary>
     public bool SwapHrothgarFemales { get; set; } = true;
 
+    /// <summary>Show Lalafell as Miqo'te instead. The same idea as the Hrothgar swap and for the
+    /// same reason: the designs are cut for a tall body, and a Lalafell in one is a mesh that
+    /// does not fit the wearer rather than an outfit.</summary>
+    public bool SwapLalafell { get; set; } = true;
+
+    /// <summary>Which Miqo'te clan they become. Penumbra.GameData.Enums.SubRace: 7 is Seeker of
+    /// the Sun, 8 is Keeper of the Moon.</summary>
+    public byte LalafellClan { get; set; } = 7;
+
     /// <summary>
     /// Show men as women. Separate for players and NPCs because they are separate decisions: a
     /// city is mostly men who are scenery, and the people around you are not. Whoever is turned

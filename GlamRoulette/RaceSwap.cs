@@ -8,16 +8,20 @@ using ECommons.DalamudServices;
 namespace GlamRoulette;
 
 /// <summary>
-/// Makes female Hrothgar turn up as Elezen instead. Glamourer can change anyone's clan and does
-/// all the awkward parts - the face and hair numbers do not mean the same thing from one race to
-/// the next - but it only matches one named character at a time, so there is no way to say
-/// "every one of them" without something watching who is in front of you. That is this.
+/// Brings people to what the designs expect before they are dressed: female Hrothgar turn up as
+/// Elezen, Lalafell as Miqo'te, men as women, and everybody at a full bust. Glamourer can do any
+/// of that and handles all the awkward parts - the face and hair numbers do not mean the same
+/// thing from one race to the next - but it only matches one named character at a time, so there
+/// is no way to say "every one of them" without something watching who is in front of you. That
+/// is this.
 /// </summary>
 internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
 {
     /// <summary>Penumbra.GameData.Enums.Race, which is what Glamourer's state speaks.</summary>
-    public const byte Hrothgar = 7;
     public const byte Elezen = 2;
+    public const byte Lalafell = 3;
+    public const byte Miqote = 4;
+    public const byte Hrothgar = 7;
 
     private const byte Male = 0;
     private const byte Female = 1;
@@ -74,16 +78,26 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
 
         var turning = Feminising(character);
 
-        // The Hrothgar swap is about women, and one we are about to make is one of them - so a
+        // The race swaps are about women, and one we are about to make is one of them - so a
         // male Hrothgar becomes an Elezen woman in a single change rather than becoming a
         // Hrothgar woman first and being moved again on the pass after.
-        var elezen = config.SwapHrothgarFemales && IsHrothgar(character) && (turning || IsFemale(character));
+        //
+        // Nobody is two races, so at most one of these can apply.
+        var woman = turning || IsFemale(character);
+        var (race, clan) = (byte?)null switch
+        {
+            _ when config.SwapHrothgarFemales && woman && Is(character, Hrothgar)
+                => ((byte?)Elezen, (byte?)config.HrothgarFemaleClan),
+            _ when config.SwapLalafell && woman && Is(character, Lalafell)
+                => ((byte?)Miqote, (byte?)config.LalafellClan),
+            _ => (null, null),
+        };
 
         // Only for the women, including one we are about to make. On a man it is a slider his
         // body does not use, and asking for it would buy a redraw for nothing.
-        var bust = config.MaxBust && (turning || IsFemale(character));
+        var bust = config.MaxBust && woman;
 
-        if (!turning && !elezen && !bust)
+        if (!turning && race == null && !bust)
         {
             asked.Remove(character.ObjectIndex);
             return false;
@@ -103,10 +117,7 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
 
         // Everything they need in one call, so somebody who is a man and a Hrothgar and due a
         // bust is one redraw rather than three.
-        var result = glamourer.SetLook(index,
-            elezen ? Elezen : null,
-            elezen ? config.HrothgarFemaleClan : null,
-            turning ? Female : null,
+        var result = glamourer.SetLook(index, race, clan, turning ? Female : null,
             bust ? FullBust : null);
 
         asked[index] = DateTime.UtcNow;
@@ -126,10 +137,7 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         refused.Remove(index);
 
         if (fresh)
-            Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(character)} is "
-                                + (elezen && turning ? "an Elezen woman now"
-                                    : elezen ? "an Elezen now"
-                                    : turning ? "a woman now" : "at a full bust now"));
+            Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(character)} is {Became(race, turning)} now");
 
         return fresh;
     }
@@ -150,16 +158,24 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         refused.RemoveWhere(i => !present.Contains(i));
     }
 
+    /// <summary>What they became, for saying so once.</summary>
+    private static string Became(byte? race, bool turning) => race switch
+    {
+        Elezen => turning ? "an Elezen woman" : "an Elezen",
+        Miqote => turning ? "a Miqo'te woman" : "a Miqo'te",
+        _ => turning ? "a woman" : "at a full bust",
+    };
+
     /// <summary>
     /// The race in the customize data is what they really are, not what is being drawn -
     /// Glamourer changes the model without rewriting this - so someone already swapped still
     /// reads as a Hrothgar here. That is what makes them findable again after a redraw.
     /// </summary>
-    private static bool IsHrothgar(ICharacter character)
+    private static bool Is(ICharacter character, byte race)
     {
         var customize = character.Customize;
         return customize.Length > (int)CustomizeIndex.Race
-               && customize[(int)CustomizeIndex.Race] == Hrothgar;
+               && customize[(int)CustomizeIndex.Race] == race;
     }
 
     private static bool IsFemale(ICharacter character)
