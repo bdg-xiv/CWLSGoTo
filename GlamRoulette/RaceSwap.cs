@@ -22,10 +22,18 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     private const byte Male = 0;
     private const byte Female = 1;
 
-    /// <summary>The top of the game's bust slider. Glamourer validates whatever it is handed
-    /// against the wearer's own set, so a race whose slider stops short is pulled back to its
-    /// own top rather than refused.</summary>
-    private const byte FullBust = 100;
+    /// <summary>
+    /// The top of the game's bust slider. The slider holds a hundred values, so the top of it is
+    /// ninety-nine and not a hundred - which is the same for every female tribe, checked against
+    /// the game's own character-creation data rather than assumed.
+    ///
+    /// The difference is not one notch. Glamourer validates what it is handed against the
+    /// wearer's set, and an invalid value is not clamped to the nearest valid one - it is reset
+    /// to the first entry, which on a slider is zero. So a hundred did not mean "as large as it
+    /// goes", it meant "as small as it goes", and everybody it was applied to came out flatter
+    /// than they started.
+    /// </summary>
+    private const byte FullBust = 99;
 
     /// <summary>Object indices we have asked about, and when, so a re-ask is spaced out rather
     /// than sent every pass.</summary>
