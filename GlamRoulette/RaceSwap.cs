@@ -83,7 +83,7 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     /// already what we asked for the same request costs nothing: Glamourer compares it against
     /// what is drawn, finds no difference, and skips the redraw.
     /// </summary>
-    public bool Handle(ICharacter character, ref int budget)
+    public bool Handle(ICharacter character, ref int budget, bool allowBust = true)
     {
         if (!glamourer.Available)
             return false;
@@ -106,8 +106,9 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         };
 
         // Only for the women, including one we are about to make. On a man it is a slider his
-        // body does not use, and asking for it would buy a redraw for nothing.
-        var bust = config.MaxBust && woman;
+        // body does not use, and asking for it would buy a redraw for nothing. An outfit that
+        // sizes its own chest turns it off too.
+        var bust = config.MaxBust && woman && allowBust;
 
         if (!turning && race == null && !bust)
         {

@@ -246,6 +246,17 @@ internal sealed class Shapes(Configuration config, CustomizePlusIpc cplus)
     /// <summary>Forgets one person's shape, so the next pass gives them a fresh one.</summary>
     public void Forget(string playerKey) => given.Remove(playerKey);
 
+    /// <summary>Takes one person's back off - a wearer whose outfit sizes its own chest keeps
+    /// whatever body Customize+ gives them on its own, not our rolled one.</summary>
+    public void Release(string playerKey)
+    {
+        if (!given.Remove(playerKey, out var held))
+            return;
+
+        if (wasAvailable)
+            cplus.Release(held.Id);
+    }
+
     /// <summary>
     /// Lets go of the profiles of people who have long since walked away. Customize+ files them
     /// against the character and keeps them until it is told otherwise, which is exactly what

@@ -433,6 +433,22 @@ internal sealed class MainWindow : Window
                 // really in, and a number that is true is worth more than one that is tidy.
                 ImGui.SameLine();
                 ImGui.TextColored(Dim, total > 0 ? $"{wardrobe.WeightOf(id) / (float)total:P1}" : "never");
+
+                ImGui.SameLine();
+                var bare = config.LeaveChestDesigns.Contains(id);
+                if (ImGui.Checkbox("##barechest", ref bare))
+                {
+                    if (bare)
+                        config.LeaveChestDesigns.Add(id);
+                    else
+                        config.LeaveChestDesigns.Remove(id);
+                    config.Save();
+                    wardrobe.ForgetChestFlags();
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("This outfit sizes its own chest: whoever wears it gets no max bust\n" +
+                                     "and no rolled shape, so the mesh is the only thing doing the sizing.");
+
                 ImGui.SameLine();
                 ImGui.TextUnformatted(name);
                 ImGui.PopID();
@@ -930,6 +946,21 @@ internal sealed class MainWindow : Window
             {
                 if (groups.Count == 0)
                     ImGui.TextColored(Dim, "No option groups - nothing here to roll.");
+
+                var bareMod = config.LeaveChestMods.Contains(mod.Directory);
+                if (ImGui.Checkbox("Chest as modelled##barechest", ref bareMod))
+                {
+                    if (bareMod)
+                        config.LeaveChestMods.Add(mod.Directory);
+                    else
+                        config.LeaveChestMods.Remove(mod.Directory);
+                    config.Save();
+                    wardrobe.ForgetChestFlags();
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("This mod sizes its own chest: every design wearing it gets no max\n" +
+                                     "bust and no rolled shape, so the mesh is the only thing doing the\n" +
+                                     "sizing.");
 
                 // Setting a mod's options at all means saying a priority, so it is either carried
                 // across from Penumbra or named here. Named matters for a mod that only wins its

@@ -700,21 +700,6 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (character.Name.TextValue.Length == 0)
                 continue;
 
-            // Ahead of dressing them, and worth a pass of its own when it first lands: changing
-            // race redraws the character, and a redraw takes the outfit off again. Better to
-            // let the next pass dress the Elezen than to dress a Hrothgar who is about to stop
-            // being one.
-            if (races.Handle(character, ref looks))
-            {
-                applied.Remove(character.ObjectIndex);
-                lastApplied.Remove(character.ObjectIndex);
-
-                // That change rebuilds them, and a shape is worth re-stating over a model that
-                // was thrown away and made again rather than trusted across it.
-                shapes.Forget(KeyOf(character));
-                continue;
-            }
-
             // Someone being shown as a woman counts as one here. Glamourer changes the model
             // without rewriting the customize data underneath, so they still read as a man in
             // what we can see - and passing them over would mean turning them and then dressing
@@ -743,12 +728,6 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                     Reroll(person, body: false);
             }
 
-            // Their body, which follows the player rather than the outfit: what job somebody is
-            // on has no business changing their shape. Nothing here costs a redraw - Customize+
-            // works on the bones every frame - so it is done before anything that might not
-            // happen this pass.
-            shapes.Apply(character.ObjectIndex, person, config.Rolls.GetValueOrDefault(person));
-
             // The discipline is part of the key when pools are split, so switching from a
             // warrior to a weaver gets an outfit from the right pool instead of keeping the
             // one they were given as a warrior. Anyone with no class at all - which is most
@@ -758,11 +737,41 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (config.MatchJobCategory && group != JobPools.Group.Unknown)
                 key += "#" + group;
 
-            // Only your own outfits go stale. Everyone else's are meant to stick.
+            // Only your own outfits go stale. Everyone else's are meant to stick. Resolved
+            // before anything touches the body, because the outfit decides below whether the
+            // chest is left alone.
             if (DesignFor(key, group, isMe ? ExpireMine(key) : null) is not { } design)
                 continue;
 
             here.Add(key);
+
+            // An outfit that sizes its own chest gets the body out of its way: no bust push
+            // and no rolled shape, so the mesh is the only thing doing the sizing.
+            var bareChest = LeavesChest(design);
+
+            // Ahead of dressing them, and worth a pass of its own when it first lands: changing
+            // race redraws the character, and a redraw takes the outfit off again. Better to
+            // let the next pass dress the Elezen than to dress a Hrothgar who is about to stop
+            // being one.
+            if (races.Handle(character, ref looks, !bareChest))
+            {
+                applied.Remove(character.ObjectIndex);
+                lastApplied.Remove(character.ObjectIndex);
+
+                // That change rebuilds them, and a shape is worth re-stating over a model that
+                // was thrown away and made again rather than trusted across it.
+                shapes.Forget(person);
+                continue;
+            }
+
+            // Their body, which follows the player rather than the outfit: what job somebody is
+            // on has no business changing their shape. Nothing here costs a redraw - Customize+
+            // works on the bones every frame - so it is done before anything that might not
+            // happen this pass.
+            if (bareChest)
+                shapes.Release(person);
+            else
+                shapes.Apply(character.ObjectIndex, person, config.Rolls.GetValueOrDefault(person));
 
             // Worked out here rather than at the moment they are put on, because what an
             // outfit is wearing decides which mods get rolled for it and which of a clashing
@@ -1371,6 +1380,21 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     }
 
     /// <summary>Hands the shapes out again, for when the profile changes.</summary>
+    /// <summary>Whether a design's chest is the outfit's own business - flagged itself, or
+    /// wearing a flagged mod. Cached because the mod matching is word arithmetic and this is
+    /// asked per person per pass.</summary>
+    private readonly Dictionary<Guid, bool> chestFlags = [];
+
+    private bool LeavesChest(Guid design)
+    {
+        if (!chestFlags.TryGetValue(design, out var leave))
+            chestFlags[design] = leave = config.LeaveChestDesigns.Contains(design)
+                || config.LeaveChestMods.Any(m => mods.Wears(design, m));
+        return leave;
+    }
+
+    public void ForgetChestFlags() => chestFlags.Clear();
+
     public void ForgetShapes() => shapes.Reload();
 
     /// <summary>Takes the shapes back off, for when the whole thing is switched off.</summary>

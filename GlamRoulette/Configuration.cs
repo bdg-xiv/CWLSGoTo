@@ -159,6 +159,12 @@ public class Configuration : IPluginConfiguration
 
     /// <summary>Give everybody the bones of one Customize+ profile, with the chest rolled per
     /// person.</summary>
+    /// <summary>Outfits whose chest is the mesh's own business: whoever wears one gets no
+    /// max bust and no rolled shape. The second set flags whole mods, which catches every
+    /// design wearing them.</summary>
+    public HashSet<Guid> LeaveChestDesigns { get; set; } = new();
+    public HashSet<string> LeaveChestMods { get; set; } = new();
+
     public bool RandomizeShapes { get; set; }
 
     /// <summary>Which profile of yours the bones come from.</summary>
