@@ -1,4 +1,5 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.Chat;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Fates;
 using Dalamud.Game.Command;
@@ -96,11 +97,13 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Shows the Occult Crescent FATE list; click a FATE to shard-hop toward it. "
                 + "\"/fatehopper return\" presses Return and accepts its confirmation, "
-                + "\"/fatehopper buffs\" runs the Freelancer buff errand - both macro-friendly.",
+                + "\"/fatehopper buffs\" runs the Freelancer buff errand, "
+                + "\"/fatehopper treasuresight\" takes a coffer reading - all macro-friendly.",
         });
 
         Svc.ClientState.TerritoryChanged += OnTerritoryChanged;
         Svc.Framework.Update += OnFrameworkUpdate;
+        Svc.Chat.ChatMessage += OnChatMessage;
         PluginInterface.UiBuilder.Draw += Draw;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleWindow;
         PluginInterface.UiBuilder.OpenMainUi += ToggleWindow;
@@ -113,6 +116,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= ToggleWindow;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleWindow;
         PluginInterface.UiBuilder.Draw -= Draw;
+        Svc.Chat.ChatMessage -= OnChatMessage;
         Svc.Framework.Update -= OnFrameworkUpdate;
         Svc.ClientState.TerritoryChanged -= OnTerritoryChanged;
         Svc.Commands.RemoveHandler(CommandName);
@@ -136,6 +140,10 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "buffs":
                 StartBuffs();
+                break;
+            case "treasuresight":
+            case "sight":
+                StartTreasuresight();
                 break;
             default:
                 windowOpen = !windowOpen;
@@ -277,17 +285,19 @@ public sealed class Plugin : IDalamudPlugin
         ImGui.End();
     }
 
-    // ---- Freelancer buff run ----------------------------------------------------
+    // ---- Freelancer errands ------------------------------------------------------
     //
-    // Freelancer's Inquiring Mind applies every phantom buff in one press, so the whole
-    // errand is: remember the current phantom job, swap to Freelancer, press it, swap
-    // back. Each step is a server round-trip, so this runs as a little state machine on
-    // the framework tick rather than a blocking loop.
+    // Freelancer's Inquiring Mind applies every phantom buff in one press, and Occult
+    // Treasuresight is Freelancer's too - so both errands are the same trip: remember
+    // the current phantom job, swap to Freelancer, press the button, swap back. Each
+    // step is a server round-trip, so this runs as a little state machine on the
+    // framework tick rather than a blocking loop.
 
     private enum BuffStep { Idle, Dismounting, SwappingIn, UsingAction, WaitingBuffs, SwappingBack }
 
     private const byte FreelancerJobId = 0;
     private const uint InquiringMindActionId = 46606;
+    private const uint TreasuresightActionId = 41651;
     private const uint DismountGeneralActionId = 23;
 
     /// <summary>The statuses Inquiring Mind grants (Enduring Fortitude, Fleetfooted,
@@ -295,11 +305,23 @@ public sealed class Plugin : IDalamudPlugin
     /// worked before the job is swapped away again.</summary>
     private static readonly uint[] PhantomBuffStatusIds = [4233, 4239, 4244, 4799];
 
+    /// <summary>Treasuresight grants no status; its proof is the reading in chat. Both
+    /// of its lines carry this - "You sense the presence of 2 silver coffers and 25
+    /// bronze coffers in the area!" as well as "no treasure coffers in the area".</summary>
+    private const string SightFragment = "coffers in the area";
+
     private BuffStep buffStep = BuffStep.Idle;
+    private uint errandActionId = InquiringMindActionId;
+    private bool sightSeen;
     private byte buffReturnJob;
     private long buffDeadline;
 
-    private unsafe void StartBuffs()
+    private void StartBuffs() => StartErrand(InquiringMindActionId, "buffs");
+
+    /// <summary>The reading lands in chat, where Occult Coffers picks it up on its own.</summary>
+    private void StartTreasuresight() => StartErrand(TreasuresightActionId, "Treasuresight");
+
+    private unsafe void StartErrand(uint actionId, string doing)
     {
         if (buffStep != BuffStep.Idle)
             return;
@@ -313,14 +335,24 @@ public sealed class Plugin : IDalamudPlugin
 
         if (Svc.Condition[ConditionFlag.InCombat])
         {
-            Svc.Chat.Print("[FateHopper] Not in combat - the buff swap needs a calm moment.");
+            Svc.Chat.Print("[FateHopper] Not in combat - the job swap needs a calm moment.");
             return;
         }
 
+        errandActionId = actionId;
+        sightSeen = false;
         buffReturnJob = state->CurrentSupportJob;
         buffStep = Svc.Condition[ConditionFlag.Mounted] ? BuffStep.Dismounting : BuffStep.SwappingIn;
         buffDeadline = Environment.TickCount64 + 8000;
-        Svc.Chat.Print("[FateHopper] Swapping to Freelancer for buffs...");
+        Svc.Chat.Print($"[FateHopper] Swapping to Freelancer for {doing}...");
+    }
+
+    /// <summary>Only listens for the Treasuresight reading, and only while one is awaited.</summary>
+    private void OnChatMessage(IHandleableChatMessage message)
+    {
+        if (buffStep == BuffStep.WaitingBuffs && errandActionId == TreasuresightActionId
+            && message.Message.TextValue.Contains(SightFragment, StringComparison.OrdinalIgnoreCase))
+            sightSeen = true;
     }
 
     private void FailBuffs(string reason)
@@ -429,7 +461,7 @@ public sealed class Plugin : IDalamudPlugin
                     buffStep = BuffStep.Idle;
                     break;
                 default:
-                    FailBuffs("The buff run timed out.");
+                    FailBuffs("The Freelancer errand timed out.");
                     break;
             }
             return;
@@ -461,9 +493,9 @@ public sealed class Plugin : IDalamudPlugin
 
             case BuffStep.UsingAction:
                 // The action needs a beat after the job change before the game accepts it.
-                if (actionManager->GetActionStatus(ActionType.Action, InquiringMindActionId) == 0
+                if (actionManager->GetActionStatus(ActionType.Action, errandActionId) == 0
                     && EzThrottle("action")
-                    && actionManager->UseAction(ActionType.Action, InquiringMindActionId))
+                    && actionManager->UseAction(ActionType.Action, errandActionId))
                 {
                     buffStep = BuffStep.WaitingBuffs;
                     buffDeadline = now + 5000;
@@ -471,16 +503,17 @@ public sealed class Plugin : IDalamudPlugin
                 break;
 
             case BuffStep.WaitingBuffs:
-                if (HasAnyPhantomBuff())
+                if (errandActionId == InquiringMindActionId ? HasAnyPhantomBuff() : sightSeen)
                 {
+                    var what = errandActionId == InquiringMindActionId ? "Buffs up" : "Reading taken";
                     if (buffReturnJob == FreelancerJobId)
                     {
-                        Svc.Chat.Print("[FateHopper] Buffs up.");
+                        Svc.Chat.Print($"[FateHopper] {what}.");
                         buffStep = BuffStep.Idle;
                     }
                     else
                     {
-                        Svc.Chat.Print("[FateHopper] Buffs up - swapping back.");
+                        Svc.Chat.Print($"[FateHopper] {what} - swapping back.");
                         buffStep = BuffStep.SwappingBack;
                         buffDeadline = now + 8000;
                     }
@@ -529,13 +562,25 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.SameLine();
         }
 
-        ImGui.BeginDisabled(buffStep != BuffStep.Idle);
-        if (ImGui.SmallButton(buffStep == BuffStep.Idle ? "Buffs" : "Buffs..."))
+        var busy = buffStep != BuffStep.Idle;
+
+        ImGui.BeginDisabled(busy);
+        if (ImGui.SmallButton(busy && errandActionId == InquiringMindActionId ? "Buffs..." : "Buffs"))
             StartBuffs();
         ImGui.EndDisabled();
         if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
             ImGui.SetTooltip("Swaps to Freelancer, uses Inquiring Mind (every phantom buff in one press),\n"
                 + "and swaps back to the phantom job you were on.\n"
+                + "Phantom jobs can only be changed near the knowledge crystal.");
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(busy);
+        if (ImGui.SmallButton(busy && errandActionId == TreasuresightActionId ? "Treasuresight..." : "Treasuresight"))
+            StartTreasuresight();
+        ImGui.EndDisabled();
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Swaps to Freelancer, casts Occult Treasuresight - the coffer reading\n"
+                + "Occult Coffers listens for - and swaps back to the phantom job you were on.\n"
                 + "Phantom jobs can only be changed near the knowledge crystal.");
 
         ImGui.SameLine();
