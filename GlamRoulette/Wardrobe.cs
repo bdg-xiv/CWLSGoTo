@@ -87,6 +87,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// spawning people would otherwise never let anybody be dealt at all.</summary>
     private DateTime waitingSince = DateTime.MinValue;
 
+    /// <summary>Who already hit the quiet gate, and when. Working out what somebody is
+    /// missing is the expensive half of a pass, and the answer cannot change while writes
+    /// are on hold - so a person on this list is not asked again until the hold can
+    /// plausibly be over.</summary>
+    private readonly Dictionary<string, DateTime> waitingPeople = new();
+
     private static readonly TimeSpan BuildQuiet = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan QuietPatience = TimeSpan.FromSeconds(3);
 
@@ -1018,6 +1024,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     private bool Settle(ICharacter character, string key, Guid design, uint? shoe, nint draw,
         bool drifting, ref bool spent, ref int redrawn)
     {
+        if (waitingPeople.TryGetValue(key, out var waited) && DateTime.UtcNow - waited < BuildQuiet)
+        {
+            WantsPrompt = true;
+            return false;
+        }
+
         // Which collection they are really being drawn with. Asked for only when something has
         // actually rebuilt them, since it is a round trip and the answer rarely changes.
         var collection = penumbra.CollectionOf(character.ObjectIndex);
@@ -1026,6 +1038,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         if (missing.Count == 0)
         {
             settled[key] = (draw, false, DateTime.UtcNow);
+            waitingPeople.Remove(key);
             return true;
         }
 
@@ -1043,11 +1056,13 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 waitingSince = DateTime.UtcNow;
             if (DateTime.UtcNow - waitingSince < QuietPatience)
             {
+                waitingPeople[key] = DateTime.UtcNow;
                 WantsPrompt = true;
                 return false;
             }
         }
         waitingSince = DateTime.MinValue;
+        waitingPeople.Remove(key);
 
         foreach (var (mod, enabled, priority, options, signature) in missing)
             if (penumbra.Apply(character.ObjectIndex, mod, enabled, priority, options))
