@@ -165,9 +165,12 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
 
         refused.Remove(index);
 
-        // Success means something actually changed - either the first time, or their look had
-        // been put back by whoever else is holding it. Count the rounds and stop fighting.
-        if (result == GlamourerIpc.Result.Success)
+        // Only a change on somebody who never left counts as a fight. A fresh index is a
+        // departure and return - crowded zones evict and re-add people constantly, Glamourer
+        // drops its held state for the departed, and putting the look back on return is the
+        // job rather than a struggle. Reverting IN PLACE, with nobody having rebuilt them in
+        // between, is the only sign that something else on this client is holding their look.
+        if (result == GlamourerIpc.Result.Success && !fresh)
         {
             var bouts = fights.TryGetValue(person, out var list) ? list : fights[person] = [];
             bouts.RemoveAll(t => DateTime.UtcNow - t > FightWindow);
@@ -175,9 +178,9 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
             if (bouts.Count >= 3)
             {
                 ceasefires[person] = DateTime.UtcNow + Ceasefire;
-                Svc.Log.Warning($"[GlamRoulette] {person}'s look has been put back {bouts.Count} "
-                                + "times in ten minutes - somebody else is holding it (Mare, "
-                                + "usually), so it is theirs for the next half hour.");
+                Svc.Log.Warning($"[GlamRoulette] {person}'s look keeps reverting in place - "
+                                + "something else on this client is holding it, so it is theirs "
+                                + "for the next half hour.");
             }
         }
 
