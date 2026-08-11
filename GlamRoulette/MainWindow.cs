@@ -827,11 +827,11 @@ internal sealed class MainWindow : Window
             config.Save();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Writes a person's options at the moment their model is being built, so a\n" +
-                             "spawn, a zone-in or a gear change comes out right on the first try and\n" +
-                             "costs no redraw at all. Forced redraws are then only spent on somebody\n" +
-                             "whose options change while they stand there - a re-roll, a new setting.\n" +
-                             "Login stops being a queue: everyone arrives correct.");
+            ImGui.SetTooltip("Lets a rebuild keep what the collection already holds, so a spawn or a\n" +
+                             "zone-in of somebody already dealt costs no redraw at all, and a retainer\n" +
+                             "called up at a quiet bell arrives in her new outfit on the first try.\n" +
+                             "Fresh deals wait for model building to go quiet before they are written -\n" +
+                             "a write landing on a half-built crowd is what paints people black.");
 
         var force = config.ForceRedraw;
         if (ImGui.Checkbox("Redraw people as soon as their mods change", ref force))

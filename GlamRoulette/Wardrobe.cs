@@ -77,6 +77,21 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     public int Remembered => config.Assignments.Count;
     public int Kept => config.Pinned.Count;
 
+    /// <summary>When the game last started building somebody's model. Writing to the shared
+    /// collection while a build is streaming its files lands the change on a half-read table,
+    /// and the loads that miss are painted black and stay black until the game restarts - so
+    /// writes wait for this clock to go quiet.</summary>
+    private DateTime lastBuild = DateTime.MinValue;
+
+    /// <summary>How long the pass has been held back by builds. A plaza that never stops
+    /// spawning people would otherwise never let anybody be dealt at all.</summary>
+    private DateTime waitingSince = DateTime.MinValue;
+
+    private static readonly TimeSpan BuildQuiet = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan QuietPatience = TimeSpan.FromSeconds(3);
+
+    private bool BuildsQuiet => DateTime.UtcNow - lastBuild >= BuildQuiet;
+
     /// <summary>The assignment key for a player as they are right now, role included.</summary>
     public string KeyFor(ICharacter character)
     {
@@ -1019,6 +1034,21 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         if (spent)
             return false;
 
+        // Somebody's model is mid-build right now, so the table stays untouched until the burst
+        // goes quiet - within reason. The prompt keeps the pass hot so the deal lands the moment
+        // it is safe rather than up to a second later.
+        if (!BuildsQuiet)
+        {
+            if (waitingSince == DateTime.MinValue)
+                waitingSince = DateTime.UtcNow;
+            if (DateTime.UtcNow - waitingSince < QuietPatience)
+            {
+                WantsPrompt = true;
+                return false;
+            }
+        }
+        waitingSince = DateTime.MinValue;
+
         foreach (var (mod, enabled, priority, options, signature) in missing)
             if (penumbra.Apply(character.ObjectIndex, mod, enabled, priority, options))
                 state.Wrote(collection, mod, signature, enabled);
@@ -1092,6 +1122,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// </summary>
     public void OnCreating(nint address, Guid collection)
     {
+        // Every build stamps the clock, eligible or not - a male stranger's model streams
+        // files off the same table as anyone else's.
+        var priorBuild = lastBuild;
+        lastBuild = DateTime.UtcNow;
+
         try
         {
             if (!config.Enabled || !config.SettleOnCreate || collection == Guid.Empty)
@@ -1128,11 +1163,13 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             // into the seen set at once, or the pass would deal her a second new outfit a
             // moment after this one. The save is deferred to the pass; a disk write has no
             // place in the middle of a model build.
+            var freshRetainer = false;
             if (character.ObjectKind == ObjectKind.Retainer && config.FreshRetainers
                 && !retainersHere.Contains(person))
             {
                 retainersHere.Add(person);
                 Reroll(person, body: false, save: false);
+                freshRetainer = true;
             }
 
             var group = JobPools.GroupOf(character);
@@ -1154,6 +1191,19 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             var missing = Missing(collection, key, design, shoe, config.AllowDrift && !isMe);
             if (missing.Count == 0)
                 return;
+
+            // A write here re-shapes the shared collection for everybody whose model is still
+            // streaming in this same burst - a teleport builds a whole plaza at once, and one
+            // person's settings landing mid-build on the rest turns their unfinished loads into
+            // textures the game gives up on and paints black until it is restarted. Only a
+            // retainer being called up at a quiet bell is worth writing for during a build;
+            // everyone else is flagged for the prompt pass, which waits for the quiet itself
+            // and then rebuilds them whole.
+            if (!freshRetainer || DateTime.UtcNow - priorBuild < BuildQuiet)
+            {
+                WantsPrompt = true;
+                return;
+            }
 
             foreach (var (mod, enabled, priority, options, signature) in missing)
                 if (penumbra.Apply(collection, mod, enabled, priority, options))
