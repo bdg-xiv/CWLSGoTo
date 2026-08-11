@@ -525,6 +525,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         foreach (var stamp in config.MyOutfitSince.Keys.Where(k => PlayerOf(k) == key).ToList())
             config.MyOutfitSince[stamp] = DateTime.UtcNow;
 
+        // A pair pinned with the Wear button would quietly survive this, and the chat line
+        // promises shoes among what is re-dealt - so trying-on ends here.
+        shoes.TryOn(key, null);
+
         var dealt = Reroll(key);
 
         // And the body. That one follows the player rather than the outfit - what job somebody
