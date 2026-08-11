@@ -513,11 +513,13 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// Throws away your own outfits so the next pass deals you new ones. Same as right-clicking
     /// yourself, without needing to find your own name to right-click.
     /// </summary>
-    public bool RerollMe()
+    /// <summary>Re-rolls yourself. Returns the name of the outfit that came up, or null when
+    /// there was nothing to re-roll.</summary>
+    public string? RerollMe()
     {
         var me = Svc.Objects.LocalPlayer;
         if (me == null)
-            return false;
+            return null;
 
         // The clock too, or an outfit dealt now would be judged on when the last one arrived
         // and could go stale within the minute.
@@ -543,7 +545,16 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             dealt = true;
         }
 
-        return dealt;
+        if (!dealt)
+            return null;
+
+        // Drawn now rather than left to the pass, so the chat line can say what came up -
+        // DesignFor assigns as it draws, and the pass then simply agrees with it.
+        if (DesignFor(KeyFor(me), JobPools.GroupOf(me)) is not { } picked)
+            return "nothing - the design pool is empty";
+
+        var name = Pool().FirstOrDefault(d => d.Id == picked).Name;
+        return string.IsNullOrEmpty(name) ? "an outfit" : name;
     }
 
     /// <summary>The outfit you have on right now, if the roulette gave you one.</summary>

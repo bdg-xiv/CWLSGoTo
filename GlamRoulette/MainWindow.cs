@@ -1511,8 +1511,8 @@ internal sealed class MainWindow : Window
         {
             ImGui.SameLine();
             if (ImGui.Button("Re-roll me"))
-                ECommons.DalamudServices.Svc.Chat.Print(wardrobe.RerollMe()
-                    ? "[Glam Roulette] Dealing yourself another one."
+                ECommons.DalamudServices.Svc.Chat.Print(wardrobe.RerollMe() is { } outfit
+                    ? $"[Glam Roulette] Dealing yourself another one. The draw: {outfit}."
                     : "[Glam Roulette] Nothing of yours to re-roll - it may be one you chose to keep.");
         }
         ImGui.SameLine();

@@ -120,9 +120,9 @@ public sealed class Plugin : IDalamudPlugin
 
             case "me":
             case "rerollme":
-                Svc.Chat.Print(wardrobe.RerollMe()
+                Svc.Chat.Print(wardrobe.RerollMe() is { } outfit
                     ? "[Glam Roulette] Dealing yourself another one - outfit, colours, shoes, "
-                      + "mod options and body."
+                      + $"mod options and body. The draw: {outfit}."
                     : "[Glam Roulette] Nothing of yours to re-roll - it may be one you chose to keep.");
                 return;
 
