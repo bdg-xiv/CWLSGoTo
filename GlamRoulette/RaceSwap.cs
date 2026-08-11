@@ -46,6 +46,18 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     /// <summary>Who Glamourer has already turned down, so a refusal is said once.</summary>
     private readonly HashSet<int> refused = [];
 
+    /// <summary>When each person's look last had to be put back, newest last. A change that
+    /// keeps needing to be made again is a fight with whoever is really holding their
+    /// appearance - Mare, usually - and every round of it is a redraw that keeps the street
+    /// loud. Three rounds inside the window and they are left alone for a good while.</summary>
+    private readonly Dictionary<string, List<DateTime>> fights = [];
+
+    /// <summary>Who has been left alone, and until when.</summary>
+    private readonly Dictionary<string, DateTime> ceasefires = [];
+
+    private static readonly TimeSpan FightWindow = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan Ceasefire = TimeSpan.FromMinutes(30);
+
     public int Count => asked.Count;
 
     public IEnumerable<int> Indices => asked.Keys;
@@ -106,6 +118,15 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         var index = character.ObjectIndex;
         var fresh = !asked.ContainsKey(index);
 
+        var person = Wardrobe.KeyOf(character);
+        if (ceasefires.TryGetValue(person, out var until))
+        {
+            if (DateTime.UtcNow < until)
+                return false;
+            ceasefires.Remove(person);
+            fights.Remove(person);
+        }
+
         // A change here rebuilds them exactly as settling their mods does, so it comes out of the
         // same budget. Left unbounded it was fine while this was the occasional female Hrothgar;
         // it is most of a street now, and a crowd arriving took every one of those redraws in the
@@ -143,11 +164,27 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
 
         refused.Remove(index);
 
+        // Success means something actually changed - either the first time, or their look had
+        // been put back by whoever else is holding it. Count the rounds and stop fighting.
+        if (result == GlamourerIpc.Result.Success)
+        {
+            var bouts = fights.TryGetValue(person, out var list) ? list : fights[person] = [];
+            bouts.RemoveAll(t => DateTime.UtcNow - t > FightWindow);
+            bouts.Add(DateTime.UtcNow);
+            if (bouts.Count >= 3)
+            {
+                ceasefires[person] = DateTime.UtcNow + Ceasefire;
+                Svc.Log.Warning($"[GlamRoulette] {person}'s look has been put back {bouts.Count} "
+                                + "times in ten minutes - somebody else is holding it (Mare, "
+                                + "usually), so it is theirs for the next half hour.");
+            }
+        }
+
         if (fresh)
             budget--;
 
         if (fresh)
-            Svc.Log.Information($"[GlamRoulette] {Wardrobe.KeyOf(character)} is {Became(race, turning)} now");
+            Svc.Log.Information($"[GlamRoulette] {person} is {Became(race, turning)} now");
 
         return fresh;
     }
