@@ -98,6 +98,73 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
     private bool BuildsQuiet => DateTime.UtcNow - lastBuild >= BuildQuiet;
 
+    /// <summary>Model builds seen recently, by object index - who exactly was streaming
+    /// when a write went through, which is who the write can have landed on.</summary>
+    private readonly Dictionary<int, DateTime> recentBuilds = [];
+
+    /// <summary>Dealt people whose model was mid-build when a write landed - the ones who
+    /// can have come out black - due the same cure as the fix button, individually.</summary>
+    private readonly Dictionary<int, DateTime> atRisk = [];
+
+    /// <summary>Who was already put right lately, so a busy street cannot become a loop of
+    /// reverts.</summary>
+    private readonly Dictionary<int, DateTime> healed = [];
+
+    private static readonly TimeSpan RiskWindow = TimeSpan.FromMilliseconds(1500);
+    private static readonly TimeSpan HealDelay = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan HealCooldown = TimeSpan.FromMinutes(5);
+
+    /// <summary>Notes everybody whose model was still streaming as a write went through -
+    /// except the person the write was for, whose build reads it correctly by design.</summary>
+    private void MarkVictims(int except)
+    {
+        var now = DateTime.UtcNow;
+        foreach (var (index, at) in recentBuilds)
+            if (index != except && now - at < RiskWindow && applied.ContainsKey(index))
+                atRisk[index] = now;
+    }
+
+    /// <summary>
+    /// The fix button, run automatically and one person at a time: whoever a write may have
+    /// landed on is reverted once things go quiet - their rebuild asks for their own files
+    /// rather than the ones the client gave up on - and the pass deals them afresh. At most
+    /// one per pass, so the cure never becomes its own burst.
+    /// </summary>
+    private void HealVictims()
+    {
+        if (atRisk.Count == 0 || !BuildsQuiet)
+            return;
+
+        var now = DateTime.UtcNow;
+        foreach (var (index, at) in atRisk.ToList())
+        {
+            if (now - at < HealDelay)
+                continue;
+
+            atRisk.Remove(index);
+
+            if (healed.TryGetValue(index, out var last) && now - last < HealCooldown)
+                continue;
+
+            if (Svc.Objects[index] is not ICharacter victim || !applied.ContainsKey(index))
+                continue;
+
+            var key = KeyOf(victim);
+            healed[index] = now;
+            Svc.Log.Information($"[GlamRoulette] {key} was built while settings were landing - "
+                                + "reverting and dealing them afresh");
+
+            Restore(index);
+            applied.Remove(index);
+            lastApplied.Remove(index);
+            foreach (var settledKey in settled.Keys.Where(k => PlayerOf(k) == key).ToList())
+                settled.Remove(settledKey);
+            shapes.Forget(key);
+            WantsPrompt = true;
+            return;
+        }
+    }
+
     /// <summary>The assignment key for a player as they are right now, role included.</summary>
     public string KeyFor(ICharacter character)
     {
@@ -667,6 +734,8 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         if (!Ready())
             return;
 
+        HealVictims();
+
         var present = new HashSet<int>();
         var here = new HashSet<string>();
         retainersNow.Clear();
@@ -1092,6 +1161,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (penumbra.Apply(character.ObjectIndex, mod, enabled, priority, options))
                 state.Wrote(collection, mod, signature, enabled);
 
+        // Whoever was mid-build when that landed is a candidate for coming out black, and
+        // gets put right on its own once things go quiet.
+        MarkVictims(character.ObjectIndex);
+
         // The settings are in place either way. Forcing the redraw is only about showing them now
         // rather than whenever the game next reloads that character on its own.
         if (!config.ForceRedraw)
@@ -1162,9 +1235,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     public void OnCreating(nint address, Guid collection)
     {
         // Every build stamps the clock, eligible or not - a male stranger's model streams
-        // files off the same table as anyone else's.
+        // files off the same table as anyone else's. Who was building matters too: if a
+        // write lands while their files are still streaming, they are the one it lands on.
         var priorBuild = lastBuild;
         lastBuild = DateTime.UtcNow;
+        if (Svc.Objects.CreateObjectReference(address) is { } building)
+            recentBuilds[building.ObjectIndex] = lastBuild;
 
         try
         {
@@ -1248,6 +1324,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 if (penumbra.Apply(collection, mod, enabled, priority, options))
                     state.Wrote(collection, mod, signature, enabled);
 
+            MarkVictims(character.ObjectIndex);
             Baked++;
             Svc.Log.Debug($"[GlamRoulette] {key} settled while being built: "
                           + string.Join(", ", missing.Select(m => m.Mod)));
