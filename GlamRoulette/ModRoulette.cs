@@ -33,6 +33,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         owners = null;
         companions.Clear();
         links.Clear();
+        wornBy.Clear();
     }
 
     /// <summary>
@@ -136,8 +137,16 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
     /// thing and this is a question about the outfit rather than about anybody wearing it.</summary>
     public bool Wears(Guid design, string modDirectory) => WornBy(design, null).Contains(modDirectory);
 
+    /// <summary>What each outfit wears, remembered - the window asks per mod per frame, and
+    /// working it out fresh means walking the design's items every time. Cleared with the
+    /// rest when the picks change.</summary>
+    private readonly Dictionary<(Guid Design, uint? Shoe), HashSet<string>> wornBy = [];
+
     private HashSet<string> WornBy(Guid design, uint? shoe)
     {
+        if (wornBy.TryGetValue((design, shoe), out var cached))
+            return cached;
+
         owners ??= BuildOwners();
 
         var worn = new HashSet<string>();
@@ -145,7 +154,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
             if (owners.TryGetValue(itemId, out var mods))
                 worn.UnionWith(mods);
 
-        return worn;
+        return wornBy[(design, shoe)] = worn;
     }
 
     private Dictionary<ulong, List<string>> BuildOwners()

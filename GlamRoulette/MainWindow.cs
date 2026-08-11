@@ -921,7 +921,7 @@ internal sealed class MainWindow : Window
             // trying one on is being dealt something built on it. A different one each press
             // where several would do, since seeing the same outfit again tells you no more.
             ImGui.SameLine();
-            var wearers = wardrobe.WearersOf(mod.Directory).Count;
+            var wearers = wardrobe.WearerCount(mod.Directory);
             ImGui.BeginDisabled(wearers == 0);
             if (ImGui.SmallButton("Wear") && wardrobe.AnyWearerOf(mod.Directory) is { } outfit)
                 WearNow(outfit.Id, outfit.Path);
@@ -1531,6 +1531,20 @@ internal sealed class MainWindow : Window
                              "only cure is building it again now that they are here.\n" +
                              "Costs everyone in sight a redraw, which is the point of it.\n" +
                              "Outfits go back on by themselves afterwards; nothing is re-rolled.");
+
+        ImGui.SameLine();
+        if (ImGui.Button("Fix black characters"))
+        {
+            var fixing = wardrobe.FixEveryone();
+            ECommons.DalamudServices.Svc.Chat.Print($"[Glam Roulette] Putting {fixing} character(s) back first - "
+                + "fresh deals follow in a few seconds.");
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Reverts everyone - race, gender, outfit, the lot - waits a settle, then\n" +
+                             "deals afresh. Their rebuild asks for their own files rather than the ones\n" +
+                             "the client already gave up on, which is what actually clears a character\n" +
+                             "baked black. A plain redraw asks for the same dead files again.\n" +
+                             "Also /glamroulette fix.");
 
         DrawTryOn();
 

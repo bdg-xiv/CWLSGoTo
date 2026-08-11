@@ -1260,13 +1260,37 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         }
     }
 
+    /// <summary>Wish lists remembered per person and outfit for a short while. Working one out
+    /// is the group linking and the companion matching, and an unsettled crowd asks for its
+    /// own every pass - up to several times a second while deals wait for build-quiet.</summary>
+    private readonly Dictionary<(Guid, string, Guid, uint?, int),
+        (List<(string Mod, bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Options, string Signature)> Wishes, DateTime At)> wished = [];
+
+    private static readonly TimeSpan WishShelf = TimeSpan.FromSeconds(30);
+
+    private List<(string Mod, bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Options, string Signature)>
+        Wishes(Guid collection, string key, Guid design, uint? shoe, int roll)
+    {
+        var cacheKey = (collection, key, design, shoe, roll);
+        if (wished.TryGetValue(cacheKey, out var held) && DateTime.UtcNow - held.At < WishShelf)
+            return held.Wishes;
+
+        // A blunt sweep well past any plausible crowd, so a long session cannot grow it forever.
+        if (wished.Count > 1024)
+            wished.Clear();
+
+        var wishes = BuildWishes(collection, key, design, shoe, roll);
+        wished[cacheKey] = (wishes, DateTime.UtcNow);
+        return wishes;
+    }
+
     /// <summary>
     /// Everything one outfit needs of the mods it is built on, the clash handling and the rolled
     /// options merged into one list so a person costs one redraw rather than two. Off wins: a mod
     /// switched off to stop it fighting is not one whose options are worth rolling.
     /// </summary>
     private List<(string Mod, bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Options, string Signature)>
-        Wishes(Guid collection, string key, Guid design, uint? shoe, int roll)
+        BuildWishes(Guid collection, string key, Guid design, uint? shoe, int roll)
     {
         var none = new Dictionary<string, IReadOnlyList<string>>();
         var wishes = new Dictionary<string, (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Options)>();
@@ -1346,6 +1370,21 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         // The bones cost no redraw, so there is no reason to be shy about saying them again over
         // models that have just been rebuilt.
         shapes.Reload();
+        return count;
+    }
+
+    /// <summary>
+    /// The cure the conversion toggle stumbled on: revert everybody - race, gender, outfit,
+    /// the lot - so their rebuild asks for their own files instead of the ones the client has
+    /// already given up on, then hold the deals for a settle before starting afresh. A plain
+    /// redraw asks for the same poisoned paths again, which is why it never fixed a black
+    /// character and this does.
+    /// </summary>
+    public int FixEveryone()
+    {
+        var count = applied.Count;
+        RevertAll();
+        quietUntil = DateTime.UtcNow.AddSeconds(Math.Max(3, config.SettleSeconds));
         return count;
     }
 
@@ -1437,9 +1476,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         exclusives.Forget();
 
         // What we thought each collection was holding was worked out from the picks that have
-        // just changed, so it is worth nothing now.
+        // just changed, so it is worth nothing now. Same for every remembered wish list and
+        // what each outfit was thought to wear.
         state.Forget();
         settled.Clear();
+        wished.Clear();
+        chestFlags.Clear();
     }
 
     /// <summary>How many of the listed clashing mods have a rival among the others.</summary>
@@ -1456,6 +1498,21 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// </summary>
     public IReadOnlyList<(Guid Id, string Name, string Path)> WearersOf(string modDirectory)
         => Pool().Where(d => mods.Wears(d.Id, modDirectory)).ToList();
+
+    /// <summary>How many outfits wear a mod, remembered for a second - the window asks this
+    /// per mod per frame, and the walk behind it covers the whole pool.</summary>
+    private readonly Dictionary<string, (int Count, DateTime At)> wearerCounts = [];
+
+    public int WearerCount(string modDirectory)
+    {
+        if (wearerCounts.TryGetValue(modDirectory, out var held)
+            && DateTime.UtcNow - held.At < TimeSpan.FromSeconds(1))
+            return held.Count;
+
+        var count = WearersOf(modDirectory).Count;
+        wearerCounts[modDirectory] = (count, DateTime.UtcNow);
+        return count;
+    }
 
     /// <summary>One of them at random, so pressing again shows another rather than the same one
     /// every time.</summary>
