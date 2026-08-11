@@ -114,6 +114,76 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     private static readonly TimeSpan HealDelay = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan HealCooldown = TimeSpan.FromMinutes(5);
 
+    /// <summary>Card actors already dressed this showing, so each is mirrored once.</summary>
+    private readonly HashSet<int> mirroredCards = [];
+
+    private const int FirstCard = 440;
+    private const int LastCard = 447;
+
+    /// <summary>
+    /// The party cards at a duty's start are separate actors built from the server's own gear
+    /// snapshot. Penumbra gives them the right collections by itself, but Glamourer never
+    /// touches them - so the outfit each member is really shown in here is carried onto their
+    /// card as it appears. Gear and dyes land in place; a race swap or a bust needs a rebuild
+    /// a card never gets, so those stay as the server drew them.
+    /// </summary>
+    private unsafe void MirrorCards()
+    {
+        if (!config.MirrorCards)
+            return;
+
+        var module = FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentModule.Instance();
+        if (module == null)
+            return;
+
+        var agent = (FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentBannerInterface*)
+            module->GetAgentByInternalId(FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId.BannerParty);
+        if (agent == null || !((FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentInterface*)agent)->IsAgentActive())
+            agent = (FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentBannerInterface*)
+                module->GetAgentByInternalId(FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentId.BannerMIP);
+
+        if (agent == null || !((FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentInterface*)agent)->IsAgentActive()
+            || agent->Data == null)
+        {
+            mirroredCards.Clear();
+            return;
+        }
+
+        for (var i = 0; i < FFXIVClientStructs.FFXIV.Client.UI.Agent.AgentBannerInterface.Storage.NumCharacters; i++)
+        {
+            var cardIndex = FirstCard + i;
+            if (mirroredCards.Contains(cardIndex))
+                continue;
+
+            if (Svc.Objects[cardIndex] is not ICharacter)
+                continue;
+
+            ref var member = ref agent->Data->Characters[i];
+            var name = member.Name1.ToString();
+            var world = member.WorldId;
+            if (name.Length == 0)
+            {
+                mirroredCards.Add(cardIndex);
+                continue;
+            }
+
+            // The member's real actor, whose current look - roulette outfit included - is
+            // what this screen shows them in.
+            var real = Svc.Objects.OfType<IPlayerCharacter>()
+                .FirstOrDefault(p => p.ObjectIndex < FirstCard
+                                     && p.Name.TextValue == name
+                                     && p.HomeWorld.RowId == world);
+
+            // Once per showing either way - somebody not around stays as the server drew them.
+            mirroredCards.Add(cardIndex);
+            if (real == null)
+                continue;
+
+            if (glamourer.Mirror(real.ObjectIndex, cardIndex) == GlamourerIpc.Result.Success)
+                Svc.Log.Debug($"[GlamRoulette] Dressed {name}'s duty card");
+        }
+    }
+
     /// <summary>Notes everybody whose model was still streaming as a write went through -
     /// except the person the write was for, whose build reads it correctly by design.</summary>
     private void MarkVictims(int except)
@@ -731,6 +801,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         if (me == null)
             return;
 
+        // Ahead of the quiet gates: the cards are only on screen for a few seconds, and
+        // dressing one is an in-place change on an actor nobody else is streaming.
+        MirrorCards();
+
         if (!Ready())
             return;
 
@@ -1240,7 +1314,14 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         var priorBuild = lastBuild;
         lastBuild = DateTime.UtcNow;
         if (Svc.Objects.CreateObjectReference(address) is { } building)
+        {
             recentBuilds[building.ObjectIndex] = lastBuild;
+
+            // A duty card just started building - the pass is wanted promptly, while the
+            // cards are still on screen to dress.
+            if (building.ObjectIndex is >= FirstCard and <= LastCard)
+                WantsPrompt = true;
+        }
 
         try
         {

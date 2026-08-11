@@ -159,6 +159,10 @@ public class Configuration : IPluginConfiguration
 
     /// <summary>Give everybody the bones of one Customize+ profile, with the chest rolled per
     /// person.</summary>
+    /// <summary>The party cards at a duty's start show the server's gear snapshot unless
+    /// the outfits everybody is wearing on this screen are copied onto them.</summary>
+    public bool MirrorCards { get; set; } = true;
+
     /// <summary>Outfits whose chest is the mesh's own business: whoever wears one gets no
     /// max bust and no rolled shape. The second set flags whole mods, which catches every
     /// design wearing them.</summary>

@@ -163,6 +163,34 @@ internal sealed class GlamourerIpc
             (ulong)(ApplyFlag.Equipment | ApplyFlag.Customization)));
 
     /// <summary>
+    /// Copies one actor's whole look onto another. The duty cards at a duty's start are
+    /// separate actors built from the server's own gear snapshot - Penumbra routes them
+    /// through the right collections on its own, but Glamourer never touches them, so the
+    /// outfit somebody is really shown in has to be carried across by hand. Equipment lands
+    /// on a standing actor in place; customization needs a rebuild cards never get, so a
+    /// race swap or a bust stays as the server drew it.
+    /// </summary>
+    public Result Mirror(int fromIndex, int toIndex)
+    {
+        try
+        {
+            var (result, state) = getState.InvokeFunc(fromIndex, 0);
+            if ((Result)result != Result.Success)
+                return (Result)result;
+            if (state == null)
+                return Result.ActorNotFound;
+
+            return Call(() => applyState.InvokeFunc(state, toIndex, 0,
+                (ulong)(ApplyFlag.Equipment | ApplyFlag.Customization)));
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Warning($"[GlamRoulette] Could not mirror object {fromIndex} onto {toIndex}: {ex.Message}");
+            return Result.Unavailable;
+        }
+    }
+
+    /// <summary>
     /// Moves someone to another clan or gender, and nothing else. Their state is read back and
     /// handed straight to Glamourer with every customization switched off bar the ones named, so
     /// the only thing being asked for is what was asked for.

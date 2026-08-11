@@ -849,6 +849,19 @@ internal sealed class MainWindow : Window
                              "Fresh deals wait for model building to go quiet before they are written -\n" +
                              "a write landing on a half-built crowd is what paints people black.");
 
+        var cards = config.MirrorCards;
+        if (ImGui.Checkbox("Dress the duty cards", ref cards))
+        {
+            config.MirrorCards = cards;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("The party cards when a duty starts are drawn from the server's gear\n" +
+                             "snapshot and Glamourer leaves them alone - so the outfit everyone is\n" +
+                             "wearing on your screen is copied onto their card as it appears.\n" +
+                             "Gear and dyes carry over; race swaps and busts cannot, those need a\n" +
+                             "rebuild the cards never get.");
+
         var force = config.ForceRedraw;
         if (ImGui.Checkbox("Redraw people as soon as their mods change", ref force))
         {
