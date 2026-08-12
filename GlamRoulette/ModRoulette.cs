@@ -287,7 +287,13 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
             .Where(g => Rollable(g.Value.Type) && !mod.SkipGroups.Contains(g.Key) && g.Value.Options.Length > 1)
             .ToDictionary(g => g.Key, g => Pool(mod, g.Key, g.Value.Options));
 
-        var names = groups.Keys.Where(n => groups[n].Length > 1).ToList();
+        // Compared and clustered on flattened names, so an author's inconsistent spelling
+        // does not split what is plainly one question. A group whose options flatten into
+        // each other cannot be disambiguated that way and stays out of the clustering.
+        var names = groups.Keys
+            .Where(n => groups[n].Length > 1
+                        && groups[n].Select(Canon).Distinct().Count() == groups[n].Length)
+            .ToList();
         var parent = names.ToDictionary(n => n, n => n);
 
         string Find(string name) => parent[name] == name ? name : parent[name] = Find(parent[name]);
@@ -295,8 +301,8 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
         for (var i = 0; i < names.Count; i++)
         for (var j = i + 1; j < names.Count; j++)
         {
-            var a = new HashSet<string>(groups[names[i]]);
-            var b = new HashSet<string>(groups[names[j]]);
+            var a = new HashSet<string>(groups[names[i]].Select(Canon));
+            var b = new HashSet<string>(groups[names[j]].Select(Canon));
             if (a.IsSubsetOf(b) || b.IsSubsetOf(a))
                 parent[Find(names[i])] = Find(names[j]);
         }
@@ -310,7 +316,7 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
             // In the order of the first group's own list, so the same cluster reads the same way
             // twice and a seed means the same thing tomorrow.
             var shared = groups[members[0]]
-                .Where(o => members.All(m => groups[m].Contains(o)))
+                .Where(o => members.All(m => groups[m].Any(option => Canon(option) == Canon(o))))
                 .ToList();
 
             // Nothing all of them offer is nothing to answer with, so they are not a cluster
@@ -333,6 +339,48 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
                 return i;
 
         return -1;
+    }
+
+    /// <summary>An option's name with the spelling differences flattened - case, spaces,
+    /// punctuation and a plural s - because the same texture is "Fishnet 0%" in one group,
+    /// "Fishnet 0" in the next and "Laces" in a third, and matching on the letter of it
+    /// left groups out of clusters they plainly belong to.</summary>
+    private static string Canon(string option)
+    {
+        Span<char> kept = stackalloc char[option.Length];
+        var n = 0;
+        foreach (var c in option)
+            if (char.IsLetterOrDigit(c))
+                kept[n++] = char.ToLowerInvariant(c);
+
+        if (n > 1 && kept[n - 1] == 's')
+            n--;
+
+        return new string(kept[..n]);
+    }
+
+    /// <summary>Where an option sits in a list by flattened name, or -1 - so "Fishnet 0"
+    /// finds the coin that "Fishnet 0%" flipped.</summary>
+    private static int IndexOfCanon(IReadOnlyList<string>? list, string option)
+    {
+        var canon = Canon(option);
+        for (var i = 0; i < (list?.Count ?? 0); i++)
+            if (Canon(list![i]) == canon)
+                return i;
+
+        return -1;
+    }
+
+    /// <summary>One group's own spelling of a shared answer - the cluster's list carries the
+    /// first group's names, and this group may spell the same thing its own way.</summary>
+    private static string OwnSpelling(string[] options, string shared)
+    {
+        var canon = Canon(shared);
+        foreach (var option in options)
+            if (option == shared || Canon(option) == canon)
+                return option;
+
+        return shared;
     }
 
     /// <summary>What a group may draw from: the options left ticked, or all of them, since
@@ -393,7 +441,11 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
                 // can be held to the handful worth seeing. Unticking every one of them would
                 // leave nothing to draw from, which is not a state worth honouring.
                 var pool = link.Shared ?? Pool(mod, group, options);
-                picks[group] = [pool[(int)(seed % (uint)pool.Count)]];
+                var chosen = pool[(int)(seed % (uint)pool.Count)];
+
+                // The shared list speaks the first group's spelling; this group may spell the
+                // same answer its own way, and Penumbra only takes the letter of it.
+                picks[group] = [link.Key != null ? OwnSpelling(options, chosen) : chosen];
                 continue;
             }
 
@@ -413,8 +465,9 @@ internal sealed class ModRoulette(Configuration config, PenumbraIpc penumbra, Dy
                 var rolled = allowed == null || allowed.Contains(option);
 
                 // A linked option takes its coin from where it sits in the shared list rather
-                // than in this group's, so the same one comes up the same way in all of them.
-                var at = IndexIn(link.Shared, option);
+                // than in this group's, so the same one comes up the same way in all of them -
+                // matched by flattened name, since the spellings drift between groups.
+                var at = IndexOfCanon(link.Shared, option);
                 var bit = at >= 0 ? seed >> at & 1 : own >> i & 1;
 
                 if (rolled ? bit == 1 : mineOn.Contains(option))
