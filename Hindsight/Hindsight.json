@@ -1,0 +1,13 @@
+{
+  "Author": "bdg",
+  "Name": "Hindsight",
+  "Punchline": "Cooldown timers while you watch a duty replay.",
+  "Description": "The Duty Recorder hides hotbars and never simulates recast timers - you can watch a replay, but not your cooldown usage. Hindsight rebuilds it: as the replay plays actions back, each use is matched to its recast group in the game sheets and drawn as a countdown with charge counts - per player, so you can review anyone in the party, not just yourself. When something is back up, a green ready line counts how long it has sat unused, which is the number that matters for drift review. Timers run on the replay's own clock: pausing, playback speed, and chapter skips all stay honest, and jumping backwards starts the ledger over, refilling as the replay re-runs. It only knows what it has seen, so start from the beginning to seed everyone's timers. Works on any replay your client can play, including files other people recorded and sent you. The window opens by itself during playback; /hindsight toggles it.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "duty recorder",
+    "replay",
+    "cooldowns",
+    "review"
+  ]
+}

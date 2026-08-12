@@ -67,6 +67,7 @@ jobs:
           @{ Project = "HuntSpots"; InternalName = "HuntSpots" },
           @{ Project = "PositionalBridge"; InternalName = "PositionalBridge" },
           @{ Project = "DesignFromMod"; InternalName = "DesignFromMod" },
+          @{ Project = "Hindsight"; InternalName = "Hindsight" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 
