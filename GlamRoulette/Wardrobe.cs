@@ -83,15 +83,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// writes wait for this clock to go quiet.</summary>
     private DateTime lastBuild = DateTime.MinValue;
 
-    /// <summary>How long the pass has been held back by builds. A plaza that never stops
-    /// spawning people would otherwise never let anybody be dealt at all.</summary>
-    private DateTime waitingSince = DateTime.MinValue;
-
-    /// <summary>Who already hit the quiet gate, and when. Working out what somebody is
-    /// missing is the expensive half of a pass, and the answer cannot change while writes
-    /// are on hold - so a person on this list is not asked again until the hold can
-    /// plausibly be over.</summary>
-    private readonly Dictionary<string, DateTime> waitingPeople = new();
+    /// <summary>Who is held at the quiet gate: when their wait began, and when they last
+    /// asked. The patience is per person - one shared clock meant every write that got
+    /// through reset the wait for everybody else, and in a crowd that never goes quiet,
+    /// a hunt train say, whoever was not first was starved for as long as it lasted.
+    /// The last-asked half keeps blocked passes cheap.</summary>
+    private readonly Dictionary<string, (DateTime Since, DateTime Tried)> waitingPeople = new();
 
     private static readonly TimeSpan BuildQuiet = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan QuietPatience = TimeSpan.FromSeconds(3);
@@ -1333,7 +1330,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     private bool Settle(ICharacter character, string key, Guid design, uint? shoe, nint draw,
         bool drifting, ref bool spent, ref int redrawn)
     {
-        if (waitingPeople.TryGetValue(key, out var waited) && DateTime.UtcNow - waited < BuildQuiet)
+        if (waitingPeople.TryGetValue(key, out var waited) && DateTime.UtcNow - waited.Tried < BuildQuiet)
         {
             WantsPrompt = true;
             return false;
@@ -1361,16 +1358,15 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         // it is safe rather than up to a second later.
         if (!BuildsQuiet)
         {
-            if (waitingSince == DateTime.MinValue)
-                waitingSince = DateTime.UtcNow;
-            if (DateTime.UtcNow - waitingSince < QuietPatience)
+            var now = DateTime.UtcNow;
+            var since = waitingPeople.TryGetValue(key, out var held) ? held.Since : now;
+            waitingPeople[key] = (since, now);
+            if (now - since < QuietPatience)
             {
-                waitingPeople[key] = DateTime.UtcNow;
                 WantsPrompt = true;
                 return false;
             }
         }
-        waitingSince = DateTime.MinValue;
         waitingPeople.Remove(key);
 
         foreach (var (mod, enabled, priority, options, signature) in missing)
