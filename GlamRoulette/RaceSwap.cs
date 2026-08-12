@@ -212,6 +212,16 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
     /// the ceasefire into abandoning them.</summary>
     public void Forget(int index) => asked.Remove(index);
 
+    /// <summary>Wipes somebody's fight record and any ceasefire on them - for when a change
+    /// of ours is the reason their look moved, which is not a fight at all. Re-rolling an
+    /// outfit re-applies a design, and Glamourer clears our customize marks as it does, so
+    /// without this a person re-rolled three times was declared fought-over.</summary>
+    public void Pardon(string person)
+    {
+        fights.Remove(person);
+        ceasefires.Remove(person);
+    }
+
     /// <summary>Drops the ones who are no longer around.</summary>
     public void Sweep(HashSet<int> present)
     {

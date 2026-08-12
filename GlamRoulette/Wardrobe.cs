@@ -1133,6 +1133,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             if (result is GlamourerIpc.Result.Success or GlamourerIpc.Result.NothingDone)
             {
                 refused.Remove(key);
+
+                // Applying a design moves their look by our own hand, and the bust re-assert
+                // that follows must not read as a fight - three re-rolls in a row was enough
+                // to put somebody on ceasefire for it.
+                races.Pardon(person);
+
                 applied[character.ObjectIndex] = (key, design, shoe, draw);
 
                 // Has to follow every apply, not just the first: applying the design puts the
