@@ -111,9 +111,6 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     private static readonly TimeSpan HealDelay = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan HealCooldown = TimeSpan.FromMinutes(5);
 
-    /// <summary>How long a requested rebuild may fail to arrive before it is asked for
-    /// again - redraw requests can be swallowed by whatever the game was doing.</summary>
-    private static readonly TimeSpan RebuildPatience = TimeSpan.FromSeconds(10);
 
     /// <summary>Card actors already dressed this showing, so each is mirrored once.</summary>
     private readonly HashSet<int> mirroredCards = [];
@@ -1089,20 +1086,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 {
                     // Still the model we asked to have replaced, so the rebuild has not landed
                     // yet. Waiting costs a pass; taking this one costs a redraw a pass later.
+                    // No retry here: the draw pointer is not a reliable witness for your own
+                    // model, and asking again on its word redrew people who were already fine.
                     if (draw != mark.Draw)
-                    {
                         settled[key] = (draw, false, DateTime.UtcNow);
-                    }
-                    else if (DateTime.UtcNow - mark.Touched > RebuildPatience)
-                    {
-                        // A redraw request can be swallowed whole - combat, a drawn weapon,
-                        // whatever the game was in the middle of - and this latch used to wait
-                        // for the rebuild forever, wearing the old bake over settings that were
-                        // already in. Five minutes of "why is it still the same" says: ask again.
-                        Svc.Log.Information($"[GlamRoulette] {key}'s rebuild never came - asking again");
-                        penumbra.Redraw(character.ObjectIndex);
-                        settled[key] = (draw, true, DateTime.UtcNow);
-                    }
                 }
                 else if (mark.Draw != draw)
                 {
@@ -1753,6 +1740,13 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         if (released)
             foreach (var index in touched)
                 penumbra.Redraw(index);
+
+        // The temporary settings just came out of the collections, so nothing the ledger says
+        // they hold is true any more. Without this, a later re-deal of an unchanged roll read
+        // as already-written and skipped - and the mods sat at base settings, redraw after
+        // redraw, until the roll itself changed.
+        state.Forget();
+        settled.Clear();
 
         exclusives.Forget();
         races.Forget();
