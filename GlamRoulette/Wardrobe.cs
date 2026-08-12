@@ -1245,12 +1245,48 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             else
                 reason = config.Assignments.TryGetValue(KeyFor(character), out var design)
                     ? $"DEALT - {(applied.ContainsKey(character.ObjectIndex) ? "wearing" : "not on yet")} {design}"
+                      + SettleState(character, KeyFor(character), design, isMe)
                     : "eligible, waiting for an outfit";
 
             lines.Add($"{who}: {reason}");
         }
 
         return lines;
+    }
+
+    /// <summary>The settle machinery's view of one person, for the why command - the latch,
+    /// the quiet gate, and for yourself the exact mods still missing, since watching a look
+    /// stay wrong says nothing about which gate is eating the write.</summary>
+    private string SettleState(ICharacter character, string key, Guid design, bool isMe)
+    {
+        var parts = new List<string>();
+        var draw = ModelOf(character);
+
+        if (settled.TryGetValue(key, out var mark))
+            parts.Add(mark.Pending
+                ? $"waiting on a rebuild for {(DateTime.UtcNow - mark.Touched).TotalSeconds:0}s"
+                : mark.Draw == draw
+                    ? "latched settled against this model"
+                    : "model changed since settling")
+;
+        else
+            parts.Add("no settle latch");
+
+        if (waitingPeople.TryGetValue(key, out var wait))
+            parts.Add($"held at the quiet gate for {(DateTime.UtcNow - wait.Since).TotalSeconds:0.0}s, "
+                      + $"last try {(DateTime.UtcNow - wait.Tried).TotalSeconds:0.0}s ago");
+
+        if (isMe)
+        {
+            var collection = penumbra.CollectionOf(character.ObjectIndex);
+            var roll = config.Rolls.GetValueOrDefault(key);
+            var missing = Missing(collection, key, design, shoes.For(key, design, roll), false);
+            parts.Add(missing.Count == 0
+                ? "nothing missing from the collection"
+                : $"missing {missing.Count}: {string.Join(", ", missing.Select(m => m.Mod))}");
+        }
+
+        return $" [{string.Join("; ", parts)}]";
     }
 
     /// <summary>
