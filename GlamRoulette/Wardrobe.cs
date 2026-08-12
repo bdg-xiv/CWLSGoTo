@@ -111,6 +111,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     private static readonly TimeSpan HealDelay = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan HealCooldown = TimeSpan.FromMinutes(5);
 
+    /// <summary>How long a requested rebuild may fail to arrive before it is asked for
+    /// again - redraw requests can be swallowed by whatever the game was doing.</summary>
+    private static readonly TimeSpan RebuildPatience = TimeSpan.FromSeconds(10);
+
     /// <summary>Card actors already dressed this showing, so each is mirrored once.</summary>
     private readonly HashSet<int> mirroredCards = [];
 
@@ -1086,7 +1090,19 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                     // Still the model we asked to have replaced, so the rebuild has not landed
                     // yet. Waiting costs a pass; taking this one costs a redraw a pass later.
                     if (draw != mark.Draw)
+                    {
                         settled[key] = (draw, false, DateTime.UtcNow);
+                    }
+                    else if (DateTime.UtcNow - mark.Touched > RebuildPatience)
+                    {
+                        // A redraw request can be swallowed whole - combat, a drawn weapon,
+                        // whatever the game was in the middle of - and this latch used to wait
+                        // for the rebuild forever, wearing the old bake over settings that were
+                        // already in. Five minutes of "why is it still the same" says: ask again.
+                        Svc.Log.Information($"[GlamRoulette] {key}'s rebuild never came - asking again");
+                        penumbra.Redraw(character.ObjectIndex);
+                        settled[key] = (draw, true, DateTime.UtcNow);
+                    }
                 }
                 else if (mark.Draw != draw)
                 {
