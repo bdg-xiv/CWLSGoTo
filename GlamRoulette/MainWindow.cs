@@ -857,76 +857,6 @@ internal sealed class MainWindow : Window
                              "nothing of yours is changed and it all comes off again.\n" +
                              "Each change costs that person a redraw, unlike a glamour.");
 
-        var settle = config.SettleSeconds;
-        if (ImGui.SliderInt("Wait after logging in (seconds)", ref settle, 0, 30))
-        {
-            config.SettleSeconds = Math.Max(0, settle);
-            config.Save();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Nobody is touched for this long after you log in or change zone.\n" +
-                             "The client is still streaming models and materials in, and a redraw\n" +
-                             "asked for in the middle of that is handed a material that has not\n" +
-                             "arrived yet - which is a character rendered black, with nothing to\n" +
-                             "black, with nothing to ask again. Raise it if you still see one.");
-
-        var onCreate = config.SettleOnCreate;
-        if (ImGui.Checkbox("Settle people as the game builds them", ref onCreate))
-        {
-            config.SettleOnCreate = onCreate;
-            config.Save();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Lets a rebuild keep what the collection already holds, so a spawn or a\n" +
-                             "zone-in of somebody already dealt costs no redraw at all, and a retainer\n" +
-                             "called up at a quiet bell arrives in her new outfit on the first try.\n" +
-                             "Fresh deals wait for model building to go quiet before they are written -\n" +
-                             "a write landing on a half-built crowd is what paints people black.");
-
-        var cards = config.MirrorCards;
-        if (ImGui.Checkbox("Dress the duty cards", ref cards))
-        {
-            config.MirrorCards = cards;
-            config.Save();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("The party cards when a duty starts are drawn from the server's gear\n" +
-                             "snapshot and Glamourer leaves them alone - so the outfit everyone is\n" +
-                             "wearing on your screen is copied onto their card as it appears.\n" +
-                             "Gear and dyes carry over; race swaps and busts cannot, those need a\n" +
-                             "rebuild the cards never get.");
-
-        var force = config.ForceRedraw;
-        if (ImGui.Checkbox("Redraw people as soon as their mods change", ref force))
-        {
-            config.ForceRedraw = force;
-            config.Save();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("A mod settings change only shows on a redraw, and a redraw is a character\n" +
-                             "being unloaded and put back. That is what makes them pop, and it can\n" +
-                             "disturb things on your own screen while it happens.\n" +
-                             "Untick it and the settings are still set, but wait to be shown until the\n" +
-                             "game reloads that person anyway - a zone change, a gearset, walking back\n" +
-                             "into view. Nothing is ever made to flicker on your account.");
-
-        if (config.ForceRedraw)
-        {
-            ImGui.Indent();
-            var atOnce = config.RedrawAllAtOnce;
-            if (ImGui.Checkbox("All at once rather than one a second", ref atOnce))
-            {
-                config.RedrawAllAtOnce = atOnce;
-                config.Save();
-            }
-            if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("A crowd arriving together settles in one go instead of trickling in,\n" +
-                                 "at the price of taking every redraw in the same frame - which is a\n" +
-                                 "freeze as long as there are people to get through.\n" +
-                                 "One a second is slower to look right but never stutters.");
-            ImGui.Unindent();
-        }
-
         var drift = config.AllowDrift;
         if (ImGui.Checkbox("Let other people's options drift", ref drift))
         {
@@ -1166,35 +1096,10 @@ internal sealed class MainWindow : Window
         ImGui.Unindent();
     }
 
-    public override void Draw()
+    /// <summary>The pool, its folders and its odds - everything about which outfit
+    /// somebody draws - with the try-on dropdown alongside.</summary>
+    private void DrawOutfits()
     {
-        if (!glamourer.Available)
-        {
-            ImGui.TextColored(Bad, "Glamourer is not responding - nothing can be applied.");
-            return;
-        }
-
-        var enabled = config.Enabled;
-        if (ImGui.Checkbox("Enabled", ref enabled))
-        {
-            config.Enabled = enabled;
-            config.Save();
-            if (!enabled)
-                wardrobe.RevertAll();
-        }
-
-        var pool = wardrobe.Pool();
-        ImGui.TextColored(pool.Count == 0 ? Bad : Dim,
-            $"{pool.Count} design{(pool.Count == 1 ? "" : "s")} in the pool, " +
-            $"{wardrobe.Dressed} dressed right now, {wardrobe.Baked} baked while built, " +
-            $"{wardrobe.Remembered} remembered" +
-            (wardrobe.Kept > 0 ? $" ({wardrobe.Kept} kept)." : "."));
-
-        if (pool.Count == 0)
-            ImGui.TextColored(Bad, "Nothing to draw from - check the folder filter below.");
-
-        ImGui.Separator();
-
         var folder = config.DesignFolder;
         if (ImGui.InputText("Design folder", ref folder, 200))
         {
@@ -1262,6 +1167,12 @@ internal sealed class MainWindow : Window
             ImGui.Unindent();
         }
 
+        DrawTryOn();
+    }
+
+    /// <summary>Who takes part at all, and for how long they are remembered.</summary>
+    private void DrawAudience()
+    {
         var femaleOnly = config.FemaleOnly;
         if (ImGui.Checkbox("Female characters only", ref femaleOnly))
         {
@@ -1269,106 +1180,6 @@ internal sealed class MainWindow : Window
             config.Save();
             if (!femaleOnly)
                 wardrobe.RevertAll();
-        }
-
-        var turnPlayers = config.TurnMalePlayers;
-        if (ImGui.Checkbox("Men turn up as women", ref turnPlayers))
-        {
-            config.TurnMalePlayers = turnPlayers;
-            config.Save();
-            // Switching it on needs nothing - the next pass finds them. Switching it off has to
-            // put them back, since nothing else undoes a change that is already applied.
-            if (!turnPlayers)
-                wardrobe.RevertAll();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Changes their gender on your screen only, so the designs have somebody\n" +
-                             "to go on. Glamourer picks a face and hair the other gender actually has\n" +
-                             "- the numbers do not carry across - so colouring and build follow them\n" +
-                             "over and the face will not match. This redraws them once.\n" +
-                             "They count as women for \"female characters only\" from then on.");
-
-        var turnNpcs = config.TurnMaleNpcs;
-        if (ImGui.Checkbox("Men among the NPCs too", ref turnNpcs))
-        {
-            config.TurnMaleNpcs = turnNpcs;
-            config.Save();
-            if (!turnNpcs)
-                wardrobe.RevertAll();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("The same for NPCs, which is a separate decision: a city is mostly men,\n" +
-                             "and every one of them turned is a redraw and an outfit.\n" +
-                             "Only has an effect while NPCs are being dealt to at all.");
-
-        var hroth = config.SwapHrothgarFemales;
-        if (ImGui.Checkbox("Female Hrothgar turn up as Elezen", ref hroth))
-        {
-            config.SwapHrothgarFemales = hroth;
-            config.Save();
-            // Switching it on needs nothing - the next pass finds them. Switching it off has to
-            // put them back, since nothing else is going to undo a race that is already applied.
-            if (!hroth)
-                wardrobe.RevertAll();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Changes their clan on your screen only. Glamourer picks a face and hair\n" +
-                             "that the new clan actually has - the numbers do not carry across races -\n" +
-                             "so colouring and build follow them over but the face will not match.\n" +
-                             "This redraws them once, and again if something puts them back.");
-
-        if (config.SwapHrothgarFemales)
-        {
-            ImGui.Indent();
-            var duskwight = config.HrothgarFemaleClan == 4;
-            if (ImGui.RadioButton("Wildwood", !duskwight))
-            {
-                config.HrothgarFemaleClan = 3;
-                config.Save();
-                wardrobe.ForgetRaces();
-            }
-            ImGui.SameLine();
-            if (ImGui.RadioButton("Duskwight", duskwight))
-            {
-                config.HrothgarFemaleClan = 4;
-                config.Save();
-                wardrobe.ForgetRaces();
-            }
-            ImGui.Unindent();
-        }
-
-        var lala = config.SwapLalafell;
-        if (ImGui.Checkbox("Lalafell turn up as Miqo'te", ref lala))
-        {
-            config.SwapLalafell = lala;
-            config.Save();
-            if (!lala)
-                wardrobe.RevertAll();
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("The same as the Hrothgar swap and for the same reason: the designs are\n" +
-                             "cut for a tall body, and one on a Lalafell is a mesh that does not fit its\n" +
-                             "wearer rather than an outfit. Changes their clan on your screen only.\n" +
-                             "This redraws them once, and again if something puts them back.");
-
-        if (config.SwapLalafell)
-        {
-            ImGui.Indent();
-            var keeper = config.LalafellClan == 8;
-            if (ImGui.RadioButton("Seeker of the Sun", !keeper))
-            {
-                config.LalafellClan = 7;
-                config.Save();
-                wardrobe.ForgetRaces();
-            }
-            ImGui.SameLine();
-            if (ImGui.RadioButton("Keeper of the Moon", keeper))
-            {
-                config.LalafellClan = 8;
-                config.Save();
-                wardrobe.ForgetRaces();
-            }
-            ImGui.Unindent();
         }
 
         var skipParty = config.SkipParty;
@@ -1471,6 +1282,128 @@ internal sealed class MainWindow : Window
                              "rather than getting it back. Anyone with no automation is reverted\n" +
                              "the ordinary way regardless.");
 
+        var remember = config.RememberMinutes;
+        if (ImGui.SliderInt("Forget after (minutes)", ref remember, 0, 240))
+        {
+            config.RememberMinutes = Math.Max(0, remember);
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("A player who has not been seen for this long loses their outfit and\n" +
+                             "gets a new one next time. Zero keeps everyone forever, which is what\n" +
+                             "this used to do - and why there were hundreds of them.\n" +
+                             "Right-click someone and choose \"Remember this outfit\" to keep the one\n" +
+                             "they are wearing. That is per outfit, so their other roles still age out.");
+
+    }
+
+    /// <summary>The conversions - who is shown as somebody else entirely.</summary>
+    private void DrawTurning()
+    {
+        var turnPlayers = config.TurnMalePlayers;
+        if (ImGui.Checkbox("Men turn up as women", ref turnPlayers))
+        {
+            config.TurnMalePlayers = turnPlayers;
+            config.Save();
+            // Switching it on needs nothing - the next pass finds them. Switching it off has to
+            // put them back, since nothing else undoes a change that is already applied.
+            if (!turnPlayers)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Changes their gender on your screen only, so the designs have somebody\n" +
+                             "to go on. Glamourer picks a face and hair the other gender actually has\n" +
+                             "- the numbers do not carry across - so colouring and build follow them\n" +
+                             "over and the face will not match. This redraws them once.\n" +
+                             "They count as women for \"female characters only\" from then on.");
+
+        var turnNpcs = config.TurnMaleNpcs;
+        if (ImGui.Checkbox("Men among the NPCs too", ref turnNpcs))
+        {
+            config.TurnMaleNpcs = turnNpcs;
+            config.Save();
+            if (!turnNpcs)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("The same for NPCs, which is a separate decision: a city is mostly men,\n" +
+                             "and every one of them turned is a redraw and an outfit.\n" +
+                             "Only has an effect while NPCs are being dealt to at all.");
+
+        var hroth = config.SwapHrothgarFemales;
+        if (ImGui.Checkbox("Female Hrothgar turn up as Elezen", ref hroth))
+        {
+            config.SwapHrothgarFemales = hroth;
+            config.Save();
+            // Switching it on needs nothing - the next pass finds them. Switching it off has to
+            // put them back, since nothing else is going to undo a race that is already applied.
+            if (!hroth)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Changes their clan on your screen only. Glamourer picks a face and hair\n" +
+                             "that the new clan actually has - the numbers do not carry across races -\n" +
+                             "so colouring and build follow them over but the face will not match.\n" +
+                             "This redraws them once, and again if something puts them back.");
+
+        if (config.SwapHrothgarFemales)
+        {
+            ImGui.Indent();
+            var duskwight = config.HrothgarFemaleClan == 4;
+            if (ImGui.RadioButton("Wildwood", !duskwight))
+            {
+                config.HrothgarFemaleClan = 3;
+                config.Save();
+                wardrobe.ForgetRaces();
+            }
+            ImGui.SameLine();
+            if (ImGui.RadioButton("Duskwight", duskwight))
+            {
+                config.HrothgarFemaleClan = 4;
+                config.Save();
+                wardrobe.ForgetRaces();
+            }
+            ImGui.Unindent();
+        }
+
+        var lala = config.SwapLalafell;
+        if (ImGui.Checkbox("Lalafell turn up as Miqo'te", ref lala))
+        {
+            config.SwapLalafell = lala;
+            config.Save();
+            if (!lala)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("The same as the Hrothgar swap and for the same reason: the designs are\n" +
+                             "cut for a tall body, and one on a Lalafell is a mesh that does not fit its\n" +
+                             "wearer rather than an outfit. Changes their clan on your screen only.\n" +
+                             "This redraws them once, and again if something puts them back.");
+
+        if (config.SwapLalafell)
+        {
+            ImGui.Indent();
+            var keeper = config.LalafellClan == 8;
+            if (ImGui.RadioButton("Seeker of the Sun", !keeper))
+            {
+                config.LalafellClan = 7;
+                config.Save();
+                wardrobe.ForgetRaces();
+            }
+            ImGui.SameLine();
+            if (ImGui.RadioButton("Keeper of the Moon", keeper))
+            {
+                config.LalafellClan = 8;
+                config.Save();
+                wardrobe.ForgetRaces();
+            }
+            ImGui.Unindent();
+        }
+
+    }
+
+    private void DrawDyesSection()
+    {
         var dyes = config.RandomizeDyes;
         if (ImGui.Checkbox("Randomise dyes", ref dyes))
         {
@@ -1513,23 +1446,81 @@ internal sealed class MainWindow : Window
                                  "colour by chance. Off ties them together so that always happens.");
         }
 
-        DrawShapes();
-        DrawShoes();
-        DrawModOptions();
-        DrawExclusives();
+    }
 
-        var remember = config.RememberMinutes;
-        if (ImGui.SliderInt("Forget after (minutes)", ref remember, 0, 240))
+    /// <summary>When redraws happen and how black characters are avoided - none of it
+    /// changes what anybody is dealt.</summary>
+    private void DrawRedrawing()
+    {
+        var settle = config.SettleSeconds;
+        if (ImGui.SliderInt("Wait after logging in (seconds)", ref settle, 0, 30))
         {
-            config.RememberMinutes = Math.Max(0, remember);
+            config.SettleSeconds = Math.Max(0, settle);
             config.Save();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("A player who has not been seen for this long loses their outfit and\n" +
-                             "gets a new one next time. Zero keeps everyone forever, which is what\n" +
-                             "this used to do - and why there were hundreds of them.\n" +
-                             "Right-click someone and choose \"Remember this outfit\" to keep the one\n" +
-                             "they are wearing. That is per outfit, so their other roles still age out.");
+            ImGui.SetTooltip("Nobody is touched for this long after you log in or change zone.\n" +
+                             "The client is still streaming models and materials in, and a redraw\n" +
+                             "asked for in the middle of that is handed a material that has not\n" +
+                             "arrived yet - which is a character rendered black, with nothing to\n" +
+                             "black, with nothing to ask again. Raise it if you still see one.");
+
+        var onCreate = config.SettleOnCreate;
+        if (ImGui.Checkbox("Settle people as the game builds them", ref onCreate))
+        {
+            config.SettleOnCreate = onCreate;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Lets a rebuild keep what the collection already holds, so a spawn or a\n" +
+                             "zone-in of somebody already dealt costs no redraw at all, and a retainer\n" +
+                             "called up at a quiet bell arrives in her new outfit on the first try.\n" +
+                             "Fresh deals wait for model building to go quiet before they are written -\n" +
+                             "a write landing on a half-built crowd is what paints people black.");
+
+        var cards = config.MirrorCards;
+        if (ImGui.Checkbox("Dress the duty cards", ref cards))
+        {
+            config.MirrorCards = cards;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("The party cards when a duty starts are drawn from the server's gear\n" +
+                             "snapshot and Glamourer leaves them alone - so the outfit everyone is\n" +
+                             "wearing on your screen is copied onto their card as it appears.\n" +
+                             "Gear and dyes carry over; race swaps and busts cannot, those need a\n" +
+                             "rebuild the cards never get.");
+
+        var force = config.ForceRedraw;
+        if (ImGui.Checkbox("Redraw people as soon as their mods change", ref force))
+        {
+            config.ForceRedraw = force;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("A mod settings change only shows on a redraw, and a redraw is a character\n" +
+                             "being unloaded and put back. That is what makes them pop, and it can\n" +
+                             "disturb things on your own screen while it happens.\n" +
+                             "Untick it and the settings are still set, but wait to be shown until the\n" +
+                             "game reloads that person anyway - a zone change, a gearset, walking back\n" +
+                             "into view. Nothing is ever made to flicker on your account.");
+
+        if (config.ForceRedraw)
+        {
+            ImGui.Indent();
+            var atOnce = config.RedrawAllAtOnce;
+            if (ImGui.Checkbox("All at once rather than one a second", ref atOnce))
+            {
+                config.RedrawAllAtOnce = atOnce;
+                config.Save();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("A crowd arriving together settles in one go instead of trickling in,\n" +
+                                 "at the price of taking every redraw in the same frame - which is a\n" +
+                                 "freeze as long as there are people to get through.\n" +
+                                 "One a second is slower to look right but never stutters.");
+            ImGui.Unindent();
+        }
 
         var reapply = config.Reapply;
         if (ImGui.Checkbox("Re-apply periodically", ref reapply))
@@ -1550,6 +1541,57 @@ internal sealed class MainWindow : Window
                 config.Save();
             }
         }
+
+    }
+
+    public override void Draw()
+    {
+        if (!glamourer.Available)
+        {
+            ImGui.TextColored(Bad, "Glamourer is not responding - nothing can be applied.");
+            return;
+        }
+
+        var enabled = config.Enabled;
+        if (ImGui.Checkbox("Enabled", ref enabled))
+        {
+            config.Enabled = enabled;
+            config.Save();
+            if (!enabled)
+                wardrobe.RevertAll();
+        }
+
+        var pool = wardrobe.Pool();
+        ImGui.TextColored(pool.Count == 0 ? Bad : Dim,
+            $"{pool.Count} design{(pool.Count == 1 ? "" : "s")} in the pool, " +
+            $"{wardrobe.Dressed} dressed right now, {wardrobe.Baked} baked while built, " +
+            $"{wardrobe.Remembered} remembered" +
+            (wardrobe.Kept > 0 ? $" ({wardrobe.Kept} kept)." : "."));
+
+        if (pool.Count == 0)
+            ImGui.TextColored(Bad, "Nothing to draw from - check the folder filter below.");
+
+        ImGui.Separator();
+
+        if (ImGui.CollapsingHeader("Outfits"))
+            DrawOutfits();
+        if (ImGui.CollapsingHeader("Who is dealt to"))
+            DrawAudience();
+        if (ImGui.CollapsingHeader("Turning people"))
+            DrawTurning();
+        if (ImGui.CollapsingHeader("Dyes"))
+            DrawDyesSection();
+        if (ImGui.CollapsingHeader("Bodies"))
+            DrawShapes();
+        if (ImGui.CollapsingHeader("Shoes"))
+            DrawShoes();
+        if (ImGui.CollapsingHeader("Mod options"))
+        {
+            DrawModOptions();
+            DrawExclusives();
+        }
+        if (ImGui.CollapsingHeader("Redraws and timing"))
+            DrawRedrawing();
 
         ImGui.Separator();
 
@@ -1599,8 +1641,6 @@ internal sealed class MainWindow : Window
                              "the client already gave up on, which is what actually clears a character\n" +
                              "baked black. A plain redraw asks for the same dead files again.\n" +
                              "Also /glamroulette fix.");
-
-        DrawTryOn();
 
         ImGui.Spacing();
         ImGui.TextColored(Dim, "Right-click a player's name for \"Re-roll outfit\" to re-roll just them.");
