@@ -803,8 +803,13 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                                  && !mine.SequenceEqual(kv.Value))
                     .Select(kv => $"{kv.Key}: {(kv.Value.Count == 0 ? "nothing" : string.Join(" + ", kv.Value))}")
                     .ToList();
+                // Two different waits look the same on the body: somebody else's roll being
+                // worn, or - when nothing has been written for this mod at all yet - the
+                // mod's own Penumbra settings, which unticked options come from.
                 meanwhile = instead.Count > 0
-                    ? $" (showing meanwhile: {string.Join("; ", instead)})"
+                    ? state.Carries(collection, wish.Mod)
+                        ? $" (another wearer's roll shows meanwhile: {string.Join("; ", instead)})"
+                        : $" (not written yet - your Penumbra settings show meanwhile: {string.Join("; ", instead)})"
                     : " (not shown yet)";
             }
 
