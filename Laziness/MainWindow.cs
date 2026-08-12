@@ -84,6 +84,12 @@ public class MainWindow : Window
                 + "colours, shoes, the options on the mods it is built from, and your body.\n"
                 + "Only does anything if you have it taking a turn on yourself.",
                 () => Chat.ExecuteCommand("/glamroulette me"));
+
+            ImGui.SameLine();
+            Chore("Re-roll everyone", "Deals everybody in Glam Roulette's memory a new outfit -\n"
+                + "and new bodies where those are being rolled. Anyone you marked as\n"
+                + "kept stays exactly as they are.",
+                () => Chat.ExecuteCommand("/glamroulette reroll"));
         }
 
         if (!plugin.Running)
