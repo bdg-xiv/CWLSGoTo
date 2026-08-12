@@ -1246,6 +1246,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 return false;
         }
 
+        // Somebody the roulette is not running for at all.
+        if (races.SkippedHrothgar(character))
+            return false;
+
         return IsPlayerLike(character);
     }
 

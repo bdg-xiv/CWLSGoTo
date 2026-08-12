@@ -241,6 +241,12 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
                && customize[(int)CustomizeIndex.Race] == race;
     }
 
+    /// <summary>Whether this is a female Hrothgar being left entirely alone. Read off the
+    /// customize data, which a conversion never rewrites - so one turned before the setting
+    /// went on still counts and gets put back by the wardrobe.</summary>
+    public bool SkippedHrothgar(ICharacter character)
+        => config.SkipHrothgarFemales && IsFemale(character) && Is(character, Hrothgar);
+
     private static bool IsFemale(ICharacter character)
     {
         var customize = character.Customize;

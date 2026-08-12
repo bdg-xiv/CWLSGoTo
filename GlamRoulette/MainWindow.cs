@@ -1182,6 +1182,19 @@ internal sealed class MainWindow : Window
                 wardrobe.RevertAll();
         }
 
+        var skipHroth = config.SkipHrothgarFemales;
+        if (ImGui.Checkbox("Skip female Hrothgar entirely", ref skipHroth))
+        {
+            config.SkipHrothgarFemales = skipHroth;
+            config.Save();
+            if (skipHroth)
+                wardrobe.RevertAll();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Female Hrothgar are left exactly as they are: no outfit, no dyes, no\n" +
+                             "bust, no conversion - as if the roulette were not running for them.\n" +
+                             "Ticking it puts any already-dealt ones straight back.");
+
         var skipParty = config.SkipParty;
         if (ImGui.Checkbox("Leave party members alone", ref skipParty))
         {

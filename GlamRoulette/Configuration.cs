@@ -167,6 +167,10 @@ public class Configuration : IPluginConfiguration
     /// on a right-clicked name - while the outfits and everything else still apply.</summary>
     public HashSet<string> KeepRace { get; set; } = new();
 
+    /// <summary>Female Hrothgar are not touched at all: no outfit, no dyes, no bust, no
+    /// conversion - as if the roulette were not running for them.</summary>
+    public bool SkipHrothgarFemales { get; set; }
+
     /// <summary>Outfits whose chest is the mesh's own business: whoever wears one gets no
     /// max bust and no rolled shape. The second set flags whole mods, which catches every
     /// design wearing them.</summary>
