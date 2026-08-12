@@ -225,6 +225,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                                 + "reverting and dealing them afresh");
 
             Restore(index);
+            races.Forget(index);
             applied.Remove(index);
             lastApplied.Remove(index);
             foreach (var settledKey in settled.Keys.Where(k => PlayerOf(k) == key).ToList())
@@ -1592,6 +1593,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 continue;
 
             Restore(index);
+            races.Forget(index);
             applied.Remove(index);
             lastApplied.Remove(index);
         }

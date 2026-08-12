@@ -200,6 +200,11 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         refused.Clear();
     }
 
+    /// <summary>A pardon for one person we reverted ourselves: their next application is a
+    /// fresh start rather than a round of a fight, so putting somebody right never talks
+    /// the ceasefire into abandoning them.</summary>
+    public void Forget(int index) => asked.Remove(index);
+
     /// <summary>Drops the ones who are no longer around.</summary>
     public void Sweep(HashSet<int> present)
     {
