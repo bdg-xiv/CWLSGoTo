@@ -40,6 +40,9 @@ internal sealed class PenumbraIpc
     private readonly ICallGateSubscriber<Guid, string, string, bool,
         (int Result, (bool Enabled, int Priority, Dictionary<string, List<string>> Settings, bool Inherited)? Data)> currentSettings;
 
+    private readonly ICallGateSubscriber<Guid, string, string, bool, bool, int,
+        (int Result, (bool Enabled, int Priority, Dictionary<string, List<string>> Settings, bool Inherited, bool Temporary)? Data)> settingsWithTemp;
+
     private readonly ICallGateSubscriber<object?> initialized;
 
     private readonly ICallGateSubscriber<nint, Guid, nint, nint, nint, object?> creatingCharacter;
@@ -69,6 +72,9 @@ internal sealed class PenumbraIpc
         currentSettings = Svc.PluginInterface
             .GetIpcSubscriber<Guid, string, string, bool, (int, (bool, int, Dictionary<string, List<string>>, bool)?)>(
                 "Penumbra.GetCurrentModSettings.V5");
+        settingsWithTemp = Svc.PluginInterface
+            .GetIpcSubscriber<Guid, string, string, bool, bool, int, (int, (bool, int, Dictionary<string, List<string>>, bool, bool)?)>(
+                "Penumbra.GetCurrentModSettingsWithTemp");
         initialized = Svc.PluginInterface.GetIpcSubscriber<object?>("Penumbra.Initialized");
         creatingCharacter = Svc.PluginInterface
             .GetIpcSubscriber<nint, Guid, nint, nint, nint, object?>("Penumbra.CreatingCharacterBase.V5");
@@ -183,6 +189,26 @@ internal sealed class PenumbraIpc
     /// mod's own defaults, so a group we say nothing about does not stay as you left it, it
     /// reverts. Handing back what the collection says is how "leave this one alone" is done.
     /// </summary>
+    /// <summary>The settings really answering for a mod right now, temporary ones included,
+    /// and whether what answers is temporary. The plain current-settings call quietly leaves
+    /// temporary settings out, which had the read-out showing base settings over a roll.</summary>
+    public (IReadOnlyDictionary<string, List<string>> Settings, bool Temporary)? Effective(
+        Guid collection, string modDirectory)
+    {
+        try
+        {
+            var (result, data) = settingsWithTemp.InvokeFunc(collection, modDirectory, string.Empty, false, false, 0);
+            if (result == 0 && data is { } held)
+                return (held.Settings, held.Temporary);
+        }
+        catch (Exception ex)
+        {
+            Svc.Log.Debug($"[GlamRoulette] Could not read effective settings for {modDirectory}: {ex.Message}");
+        }
+
+        return null;
+    }
+
     public (int Priority, IReadOnlyDictionary<string, List<string>> Settings) CurrentSettings(
         Guid collection, string modDirectory)
     {

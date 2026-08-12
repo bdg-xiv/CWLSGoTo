@@ -788,10 +788,14 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
             // What the collection is really holding, asked fresh - the roll being worn on
             // your screen meanwhile, group by group where it differs from yours.
+            // What is really answering for the mod right now, temporary settings included -
+            // the plain current-settings call leaves those out and had this block showing
+            // base settings over a live roll, which read as a roll gone missing.
             var meanwhile = "";
             if (!held)
             {
-                var (_, holding) = penumbra.CurrentSettings(collection, wish.Mod);
+                var effective = penumbra.Effective(collection, wish.Mod);
+                var holding = effective?.Settings ?? new Dictionary<string, List<string>>();
                 var instead = holding
                     .Where(kv => !pick.SkipGroups.Contains(kv.Key)
                                  && groups.TryGetValue(kv.Key, out var g)
@@ -800,14 +804,12 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                                  && !mine.SequenceEqual(kv.Value))
                     .Select(kv => $"{kv.Key}: {(kv.Value.Count == 0 ? "nothing" : string.Join(" + ", kv.Value))}")
                     .ToList();
-                // Two different waits look the same on the body: somebody else's roll being
-                // worn, or - when nothing has been written for this mod at all yet - the
-                // mod's own Penumbra settings, which unticked options come from.
-                meanwhile = instead.Count > 0
-                    ? state.Carries(collection, wish.Mod)
-                        ? $" (another wearer's roll shows meanwhile: {string.Join("; ", instead)})"
-                        : $" (not written yet - your Penumbra settings show meanwhile: {string.Join("; ", instead)})"
-                    : " (not shown yet)";
+
+                meanwhile = instead.Count == 0
+                    ? " (already on - the ledger lost track and will quietly re-assert)"
+                    : effective is { Temporary: true }
+                        ? $" (a temporary roll shows instead: {string.Join("; ", instead)})"
+                        : $" (not written - your Penumbra settings still answer: {string.Join("; ", instead)})";
             }
 
             if (rolled.Count > 0)
