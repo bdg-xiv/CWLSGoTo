@@ -789,9 +789,28 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 .Select(kv => $"{kv.Key}: {(kv.Value.Count == 0 ? "nothing" : string.Join(" + ", kv.Value))}")
                 .ToList();
 
+            // What the collection is really holding, asked fresh - the roll being worn on
+            // your screen meanwhile, group by group where it differs from yours.
+            var meanwhile = "";
+            if (!held)
+            {
+                var (_, holding) = penumbra.CurrentSettings(collection, wish.Mod);
+                var instead = holding
+                    .Where(kv => !pick.SkipGroups.Contains(kv.Key)
+                                 && groups.TryGetValue(kv.Key, out var g)
+                                 && ModRoulette.Rollable(g.Type)
+                                 && wish.Options.TryGetValue(kv.Key, out var mine)
+                                 && !mine.SequenceEqual(kv.Value))
+                    .Select(kv => $"{kv.Key}: {(kv.Value.Count == 0 ? "nothing" : string.Join(" + ", kv.Value))}")
+                    .ToList();
+                meanwhile = instead.Count > 0
+                    ? $" (showing meanwhile: {string.Join("; ", instead)})"
+                    : " (not shown yet)";
+            }
+
             if (rolled.Count > 0)
                 lines.Add($"{(pick.Name.Length > 0 ? pick.Name : wish.Mod)} - {string.Join("; ", rolled)}"
-                          + (held ? "" : " (not shown yet)"));
+                          + meanwhile);
         }
 
         if (pending > 0)
