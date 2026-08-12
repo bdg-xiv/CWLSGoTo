@@ -764,6 +764,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         // Only the groups actually rolled - the carried-over ones are your Penumbra settings
         // and would drown the answer in things that never change.
         var collection = penumbra.CollectionOf(me.ObjectIndex);
+        var pending = 0;
         foreach (var wish in Wishes(collection, key, design, shoe, roll))
         {
             if (!wish.Enabled)
@@ -772,6 +773,13 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             var pick = config.RandomizedMods.FirstOrDefault(m => m.Directory == wish.Mod);
             if (pick == null)
                 continue;
+
+            // Options belong to the collection rather than to you, so another wearer of the
+            // same mod can have written over yours since your model was built - your roll is
+            // still the answer, but it is not the one being shown until the pass wins it back.
+            var held = state.Holds(collection, wish.Mod, wish.Signature);
+            if (!held)
+                pending++;
 
             var groups = GroupsOf(wish.Mod);
             var rolled = wish.Options
@@ -782,8 +790,13 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
                 .ToList();
 
             if (rolled.Count > 0)
-                lines.Add($"{(pick.Name.Length > 0 ? pick.Name : wish.Mod)} - {string.Join("; ", rolled)}");
+                lines.Add($"{(pick.Name.Length > 0 ? pick.Name : wish.Mod)} - {string.Join("; ", rolled)}"
+                          + (held ? "" : " (not shown yet)"));
         }
+
+        if (pending > 0)
+            lines.Add($"{pending} mod(s) are still waiting for a calm moment to be written and shown - "
+                      + "somebody else wearing the same mod may be on your screen in their roll meanwhile.");
 
         return lines;
     }
