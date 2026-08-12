@@ -45,6 +45,37 @@ internal sealed class MainWindow : Window
 
     /// <summary>One tier's weight, with the share of rolls it actually works out to - the
     /// number that matters is not the weight but what it does once tier sizes are in play.</summary>
+    /// <summary>Which set of odds the lists below are editing - everyone's, or your own once
+    /// those have been split off. Session-only; the window opens on everyone's.</summary>
+    private bool oddsForMe;
+
+    private void DrawOddsAudience()
+    {
+        var separate = config.SeparateMyOdds;
+        if (ImGui.Checkbox("My rolls have odds of their own##separateodds", ref separate))
+        {
+            config.SeparateMyOdds = separate;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Off, everyone draws against the same numbers. On, your own rolls -\n" +
+                             "outfits, dyes and dye tiers - read a second set of dials, and the\n" +
+                             "buttons here choose which set you are editing.");
+
+        if (!config.SeparateMyOdds)
+        {
+            oddsForMe = false;
+            return;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.RadioButton("everyone##oddswho", !oddsForMe))
+            oddsForMe = false;
+        ImGui.SameLine();
+        if (ImGui.RadioButton("me##oddswho", oddsForMe))
+            oddsForMe = true;
+    }
+
     private void DrawWeight(string label, Dyes.Tier tier, Func<int> get, Action<int> set)
     {
         var value = get();
@@ -53,11 +84,12 @@ internal sealed class MainWindow : Window
         {
             set(Math.Max(0, value));
             config.Save();
-            wardrobe.RerollEverybody();
+            if (!oddsForMe)
+                wardrobe.RerollEverybody();
         }
 
         ImGui.SameLine();
-        ImGui.TextColored(Dim, $"{dyes.Share(tier):P0} of rolls, {dyes.Count(tier)} dyes");
+        ImGui.TextColored(Dim, $"{dyes.Share(tier, oddsForMe):P0} of rolls, {dyes.Count(tier)} dyes");
     }
 
     /// <summary>A discipline's subfolder, with a live count so a typo is obvious.</summary>
@@ -388,6 +420,7 @@ internal sealed class MainWindow : Window
             return;
 
         ImGui.TextColored(Dim, "Two is twice as often as a one, zero is never dealt.");
+        DrawOddsAudience();
 
         var root = config.DesignFolder.Trim().Trim('/');
         var folders = wardrobe.Pool()
@@ -401,7 +434,7 @@ internal sealed class MainWindow : Window
         foreach (var folder in folders)
         {
             var loose = folder.Key.Length == 0;
-            var total = folder.Sum(d => (long)wardrobe.WeightOf(d.Id));
+            var total = folder.Sum(d => (long)wardrobe.WeightOf(d.Id, oddsForMe));
 
             if (!ImGui.TreeNode($"{(loose ? "shared with everyone" : folder.Key)}##f{folder.Key}"))
                 continue;
@@ -420,11 +453,11 @@ internal sealed class MainWindow : Window
                     ImGui.SetTooltip("Deals it to you now, rolled as anybody would get it.");
 
                 ImGui.SameLine();
-                var weight = wardrobe.WeightOf(id);
+                var weight = wardrobe.WeightOf(id, oddsForMe);
                 ImGui.SetNextItemWidth(90f);
                 if (ImGui.InputInt("##weight", ref weight))
                 {
-                    config.DesignWeights[id] = Math.Max(0, weight);
+                    (oddsForMe ? config.MyDesignWeights : config.DesignWeights)[id] = Math.Max(0, weight);
                     config.Save();
                     wardrobe.ForgetPool();
                 }
@@ -432,7 +465,7 @@ internal sealed class MainWindow : Window
                 // Against its own folder rather than the whole pool - that is the draw it is
                 // really in, and a number that is true is worth more than one that is tidy.
                 ImGui.SameLine();
-                ImGui.TextColored(Dim, total > 0 ? $"{wardrobe.WeightOf(id) / (float)total:P1}" : "never");
+                ImGui.TextColored(Dim, total > 0 ? $"{wardrobe.WeightOf(id, oddsForMe) / (float)total:P1}" : "never");
 
                 ImGui.SameLine();
                 var bare = config.LeaveChestDesigns.Contains(id);
@@ -528,7 +561,7 @@ internal sealed class MainWindow : Window
             if (!ImGui.TreeNode($"{tier}##t{tier}"))
                 continue;
 
-            ImGui.TextColored(Dim, $"{inTier.Count} dye(s), {dyes.Share(tier):P0} of rolls between them");
+            ImGui.TextColored(Dim, $"{inTier.Count} dye(s), {dyes.Share(tier, oddsForMe):P0} of rolls between them");
 
             foreach (var (id, name, _) in inTier)
             {
@@ -548,20 +581,21 @@ internal sealed class MainWindow : Window
                 // No re-roll: a colour is worked out from the same sum every pass, so changing
                 // what the sum weighs changes the colour on its own. Throwing away everybody's
                 // outfit because a number was typed into a dye box would be a strange price.
-                var weight = dyes.WeightOf(id);
+                var table = oddsForMe ? config.MyDyeWeights : config.DyeWeights;
+                var weight = dyes.WeightOf(id, oddsForMe);
                 ImGui.SetNextItemWidth(90f);
                 if (ImGui.InputInt("##dyeweight", ref weight))
                 {
-                    config.DyeWeights[id] = Math.Max(0, weight);
+                    table[id] = Math.Max(0, weight);
                     config.Save();
                 }
 
                 ImGui.SameLine();
-                if (dyes.IsNamed(id))
+                if (dyes.IsNamed(id, oddsForMe))
                 {
                     if (ImGui.SmallButton("Tier"))
                     {
-                        config.DyeWeights.Remove(id);
+                        table.Remove(id);
                         config.Save();
                     }
                     if (ImGui.IsItemHovered())
@@ -570,7 +604,7 @@ internal sealed class MainWindow : Window
                     ImGui.SameLine();
                 }
 
-                ImGui.TextColored(Dim, $"{dyes.ShareOf(id):P2}");
+                ImGui.TextColored(Dim, $"{dyes.ShareOf(id, oddsForMe):P2}");
                 ImGui.SameLine();
                 ImGui.TextUnformatted(name);
                 ImGui.PopID();
@@ -1453,9 +1487,16 @@ internal sealed class MainWindow : Window
         if (config.RandomizeDyes)
         {
             ImGui.Indent();
-            DrawWeight("Metallic", Dyes.Tier.Metallic, () => config.MetallicWeight, v => config.MetallicWeight = v);
-            DrawWeight("Premium", Dyes.Tier.Premium, () => config.PremiumWeight, v => config.PremiumWeight = v);
-            DrawWeight("Standard", Dyes.Tier.Standard, () => config.StandardWeight, v => config.StandardWeight = v);
+            DrawOddsAudience();
+            DrawWeight("Metallic", Dyes.Tier.Metallic,
+                () => oddsForMe ? config.MyMetallicWeight : config.MetallicWeight,
+                v => { if (oddsForMe) config.MyMetallicWeight = v; else config.MetallicWeight = v; });
+            DrawWeight("Premium", Dyes.Tier.Premium,
+                () => oddsForMe ? config.MyPremiumWeight : config.PremiumWeight,
+                v => { if (oddsForMe) config.MyPremiumWeight = v; else config.PremiumWeight = v; });
+            DrawWeight("Standard", Dyes.Tier.Standard,
+                () => oddsForMe ? config.MyStandardWeight : config.StandardWeight,
+                v => { if (oddsForMe) config.MyStandardWeight = v; else config.StandardWeight = v; });
             ImGui.TextDisabled("Premium is the 668-gil tier: the pastels, the darks, Pure White and Jet Black.");
             DrawDyeOdds();
             ImGui.Unindent();

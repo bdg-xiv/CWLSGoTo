@@ -484,7 +484,7 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         if (pool.Count == 0)
             return null;
 
-        if (Draw(pool) is not { } chosen)
+        if (Draw(pool, MineKey(key)) is not { } chosen)
             return null;
 
         config.Assignments[key] = chosen;
@@ -561,36 +561,45 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// How often one outfit comes up against the others in its pool. One unless you have said
     /// otherwise, so a pool nobody has weighted draws evenly and this costs nothing.
     /// </summary>
-    public int WeightOf(Guid design)
-        => config.DesignWeights.TryGetValue(design, out var weight) ? Math.Max(0, weight) : 1;
+    public int WeightOf(Guid design, bool mine = false)
+    {
+        var table = mine && config.SeparateMyOdds ? config.MyDesignWeights : config.DesignWeights;
+        return table.TryGetValue(design, out var weight) ? Math.Max(0, weight) : 1;
+    }
 
     /// <summary>Whether this outfit has been given odds of its own.</summary>
-    public bool IsWeighted(Guid design) => config.DesignWeights.ContainsKey(design);
+    public bool IsWeighted(Guid design, bool mine = false)
+        => (mine && config.SeparateMyOdds ? config.MyDesignWeights : config.DesignWeights).ContainsKey(design);
 
     /// <summary>The share of a pool one outfit will take, for the window to show. Worked out
     /// against the whole pool rather than a discipline's, which is the one everyone is drawn
     /// from when the pools are not split and the closest thing to an answer when they are.</summary>
-    public float ShareOf(Guid design)
+    public float ShareOf(Guid design, bool mine = false)
     {
-        var total = Pool().Sum(d => (long)WeightOf(d.Id));
-        return total == 0 ? 0f : (float)WeightOf(design) / total;
+        var total = Pool().Sum(d => (long)WeightOf(d.Id, mine));
+        return total == 0 ? 0f : (float)WeightOf(design, mine) / total;
     }
+
+    /// <summary>Whether a key is yours - the one whose rolls read your own odds when those
+    /// have been separated.</summary>
+    private bool MineKey(string key)
+        => Svc.Objects.LocalPlayer is { } me && PlayerOf(key) == KeyOf(me);
 
     /// <summary>
     /// Draws one outfit with the odds honoured. Everything weighted to nothing is not "deal
     /// nobody an outfit" - it is somebody having turned every dial down without meaning that -
     /// so it falls back to an even draw rather than leaving the pool undressed.
     /// </summary>
-    private Guid? Draw(List<(Guid Id, string Name, string Path)> pool)
+    private Guid? Draw(List<(Guid Id, string Name, string Path)> pool, bool mine)
     {
-        var total = pool.Sum(d => (long)WeightOf(d.Id));
+        var total = pool.Sum(d => (long)WeightOf(d.Id, mine));
         if (total <= 0)
             return pool[random.Next(pool.Count)].Id;
 
         var target = (long)(random.NextDouble() * total);
         foreach (var design in pool)
         {
-            target -= WeightOf(design.Id);
+            target -= WeightOf(design.Id, mine);
             if (target < 0)
                 return design.Id;
         }
@@ -1006,7 +1015,8 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
 
                 // Has to follow every apply, not just the first: applying the design puts the
                 // design's own dyes back on, so the re-dye would be undone by the next pass.
-                dyes.Apply(character.ObjectIndex, key, design, config.Rolls.GetValueOrDefault(key), shoe);
+                dyes.Apply(character.ObjectIndex, key, design, config.Rolls.GetValueOrDefault(key), shoe,
+                    MineKey(key));
             }
             else if (result == GlamourerIpc.Result.DesignNotFound)
             {

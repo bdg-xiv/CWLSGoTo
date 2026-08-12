@@ -221,6 +221,16 @@ public class Configuration : IPluginConfiguration
     public int PremiumWeight { get; set; } = 4;
     public int StandardWeight { get; set; } = 1;
 
+    /// <summary>Your own rolls read odds of their own when this is on - the outfit weights,
+    /// dye weights and dye tiers below - so what the crowd wears often and what you wear
+    /// often are two different dials.</summary>
+    public bool SeparateMyOdds { get; set; }
+    public Dictionary<Guid, int> MyDesignWeights { get; set; } = new();
+    public Dictionary<uint, int> MyDyeWeights { get; set; } = new();
+    public int MyMetallicWeight { get; set; } = 12;
+    public int MyPremiumWeight { get; set; } = 4;
+    public int MyStandardWeight { get; set; } = 1;
+
     /// <summary>
     /// How often one particular dye comes up, by stain id. A dye in here answers for itself and
     /// its tier no longer speaks for it. Absent is the usual case and means "whatever the tier

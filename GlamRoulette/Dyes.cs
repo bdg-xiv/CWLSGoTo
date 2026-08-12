@@ -86,11 +86,18 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
 
     public int Count(Tier tier) => Palette().Count(p => p.Tier == tier);
 
-    private int TierWeight(Tier tier) => Math.Max(0, tier switch
+    /// <summary>Which set of dials answers - the shared ones, or your own when your rolls
+    /// have been given odds of their own.</summary>
+    private bool Mine(bool mine) => mine && config.SeparateMyOdds;
+
+    private Dictionary<uint, int> Named(bool mine)
+        => Mine(mine) ? config.MyDyeWeights : config.DyeWeights;
+
+    private int TierWeight(Tier tier, bool mine = false) => Math.Max(0, tier switch
     {
-        Tier.Metallic => config.MetallicWeight,
-        Tier.Premium => config.PremiumWeight,
-        _ => config.StandardWeight,
+        Tier.Metallic => Mine(mine) ? config.MyMetallicWeight : config.MetallicWeight,
+        Tier.Premium => Mine(mine) ? config.MyPremiumWeight : config.PremiumWeight,
+        _ => Mine(mine) ? config.MyStandardWeight : config.StandardWeight,
     });
 
     /// <summary>
@@ -98,42 +105,42 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
     /// longer speaks for it - which is what "this one twice as often" and "never this one" both
     /// need, and either would be impossible while a tier was the smallest thing there was.
     /// </summary>
-    public int WeightOf(byte id)
-        => config.DyeWeights.TryGetValue(id, out var named)
+    public int WeightOf(byte id, bool mine = false)
+        => Named(mine).TryGetValue(id, out var named)
             ? Math.Max(0, named)
-            : TierWeight(Palette().FirstOrDefault(p => p.Id == id).Tier);
+            : TierWeight(Palette().FirstOrDefault(p => p.Id == id).Tier, mine);
 
-    private int WeightOf((byte Id, string Name, Tier Tier) dye)
-        => config.DyeWeights.TryGetValue(dye.Id, out var named) ? Math.Max(0, named) : TierWeight(dye.Tier);
+    private int WeightOf((byte Id, string Name, Tier Tier) dye, bool mine)
+        => Named(mine).TryGetValue(dye.Id, out var named) ? Math.Max(0, named) : TierWeight(dye.Tier, mine);
 
     /// <summary>Whether this dye has been given a weight of its own.</summary>
-    public bool IsNamed(byte id) => config.DyeWeights.ContainsKey(id);
+    public bool IsNamed(byte id, bool mine = false) => Named(mine).ContainsKey(id);
 
     /// <summary>The share of rolls each tier will take, for showing in the settings.</summary>
-    public float Share(Tier tier)
+    public float Share(Tier tier, bool mine = false)
     {
-        var total = Palette().Sum(p => (long)WeightOf(p));
+        var total = Palette().Sum(p => (long)WeightOf(p, mine));
         if (total == 0)
             return 0f;
 
-        return (float)Palette().Where(p => p.Tier == tier).Sum(p => (long)WeightOf(p)) / total;
+        return (float)Palette().Where(p => p.Tier == tier).Sum(p => (long)WeightOf(p, mine)) / total;
     }
 
     /// <summary>The share of rolls one particular dye will take.</summary>
-    public float ShareOf(byte id)
+    public float ShareOf(byte id, bool mine = false)
     {
-        var total = Palette().Sum(p => (long)WeightOf(p));
-        return total == 0 ? 0f : (float)WeightOf(id) / total;
+        var total = Palette().Sum(p => (long)WeightOf(p, mine));
+        return total == 0 ? 0f : (float)WeightOf(id, mine) / total;
     }
 
     /// <summary>
     /// Picks a dye with the tiers weighted, from a number that is derived rather than random,
     /// so the same wearer keeps the same colour.
     /// </summary>
-    private byte Pick(uint seed)
+    private byte Pick(uint seed, bool mine)
     {
         var dyes = Palette();
-        var total = dyes.Sum(p => (long)WeightOf(p));
+        var total = dyes.Sum(p => (long)WeightOf(p, mine));
 
         // Everything weighted to nothing would be a division by zero, and "no dyes at all" is
         // not what someone means by turning every weight down.
@@ -143,7 +150,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
         var target = (long)(seed % (uint)total);
         foreach (var dye in dyes)
         {
-            target -= WeightOf(dye);
+            target -= WeightOf(dye, mine);
             if (target < 0)
                 return dye.Id;
         }
@@ -209,7 +216,7 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
 
     /// <summary>Dyes an outfit that has just been applied, and puts the rolled shoes on with
     /// the same call - a slot is set by naming its item, which is what dyeing does anyway.</summary>
-    public void Apply(int objectIndex, string playerKey, Guid design, int roll, uint? shoe)
+    public void Apply(int objectIndex, string playerKey, Guid design, int roll, uint? shoe, bool mine = false)
     {
         // The shoes still have to go on even when nothing is being re-dyed, so this is not a
         // dye-only pass any more.
@@ -229,8 +236,8 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
         // separately produced a harlequin; a single pair reads as an outfit someone dyed.
         // The two channels are rolled independently, so they can land on the same colour
         // by chance, which is fine - that is a plain single-dyed outfit.
-        var first = Pick(Seed(playerKey, design, roll, 0));
-        var second = config.DyeSecondChannel ? Pick(Seed(playerKey, design, roll, 1)) : first;
+        var first = Pick(Seed(playerKey, design, roll, 0), mine);
+        var second = config.DyeSecondChannel ? Pick(Seed(playerKey, design, roll, 1), mine) : first;
 
         foreach (var (slot, itemId) in ItemsWorn(design, shoe))
             glamourer.Dye(objectIndex, slot, itemId, [first, second]);
