@@ -90,6 +90,12 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
 
         var turning = Feminising(character);
 
+        // Somebody chosen to stay what they are: no gender turn and no race move for them,
+        // while the bust and everything else follow the ordinary rules.
+        var kept = config.KeepRace.Contains(Wardrobe.KeyOf(character));
+        if (kept)
+            turning = false;
+
         // The race swaps are about women, and one we are about to make is one of them - so a
         // male Hrothgar becomes an Elezen woman in a single change rather than becoming a
         // Hrothgar woman first and being moved again on the pass after.
@@ -98,6 +104,7 @@ internal sealed class RaceSwap(Configuration config, GlamourerIpc glamourer)
         var woman = turning || IsFemale(character);
         var (race, clan) = (byte?)null switch
         {
+            _ when kept => ((byte?)null, (byte?)null),
             _ when config.SwapHrothgarFemales && woman && Is(character, Hrothgar)
                 => ((byte?)Elezen, (byte?)config.HrothgarFemaleClan),
             _ when config.SwapLalafell && woman && Is(character, Lalafell)

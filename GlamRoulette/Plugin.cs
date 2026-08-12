@@ -55,7 +55,7 @@ public sealed class Plugin : IDalamudPlugin
 
         Svc.Commands.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Open Glam Roulette. 'reroll' for everyone, 'me' for yourself, 'why' to log who is being skipped and why, 'redraw' to build everyone again, 'fix' to revert and re-deal everyone (clears black characters), 'off'/'on' to toggle.",
+            HelpMessage = "Open Glam Roulette. 'reroll' for everyone, 'me' for yourself, 'outfit' to say what you were dealt, 'why' to log who is being skipped and why, 'redraw' to build everyone again, 'fix' to revert and re-deal everyone (clears black characters), 'off'/'on' to toggle.",
         });
     }
 
@@ -120,10 +120,17 @@ public sealed class Plugin : IDalamudPlugin
 
             case "me":
             case "rerollme":
-                Svc.Chat.Print(wardrobe.RerollMe() is { } outfit
-                    ? "[Glam Roulette] Dealing yourself another one - outfit, colours, shoes, "
-                      + $"mod options and body. The draw: {outfit}."
-                    : "[Glam Roulette] Nothing of yours to re-roll - it may be one you chose to keep.");
+                if (wardrobe.RerollMe() is { } outfit)
+                {
+                    Svc.Chat.Print("[Glam Roulette] Dealing yourself another one - outfit, colours, "
+                                   + $"shoes, mod options and body. The draw: {outfit}.");
+                    foreach (var line in wardrobe.DescribeMine())
+                        Svc.Chat.Print($"[Glam Roulette] {line}");
+                }
+                else
+                {
+                    Svc.Chat.Print("[Glam Roulette] Nothing of yours to re-roll - it may be one you chose to keep.");
+                }
                 return;
 
             case "on":
@@ -142,6 +149,12 @@ public sealed class Plugin : IDalamudPlugin
 
             case "redraw":
                 Svc.Chat.Print($"[Glam Roulette] Building {wardrobe.RedrawEveryone()} character(s) again.");
+                return;
+
+            case "outfit":
+            case "mine":
+                foreach (var line in wardrobe.DescribeMine())
+                    Svc.Chat.Print($"[Glam Roulette] {line}");
                 return;
 
             case "fix":

@@ -66,6 +66,15 @@ internal sealed class PlayerContextMenu : IDisposable
                 PrefixChar = 'G',
                 OnClicked = _ => TogglePinned(key),
             });
+
+            var keptRace = config.KeepRace.Contains(Wardrobe.KeyOf(character));
+            args.AddMenuItem(new MenuItem
+            {
+                Name = new SeStringBuilder()
+                    .AddText(keptRace ? "Convert them again" : "Leave their race alone").Build(),
+                PrefixChar = 'G',
+                OnClicked = _ => ToggleKeepRace(character),
+            });
         }
         catch (Exception ex)
         {
@@ -81,6 +90,13 @@ internal sealed class PlayerContextMenu : IDisposable
             ObjectKind.EventNpc or ObjectKind.BattleNpc => config.IncludeNpcs,
             _ => false,
         };
+
+    private void ToggleKeepRace(ICharacter character)
+    {
+        Svc.Chat.Print(wardrobe.ToggleKeepRace(character)
+            ? $"[Glam Roulette] {Wardrobe.KeyOf(character)} stays exactly the race and gender they are."
+            : $"[Glam Roulette] {Wardrobe.KeyOf(character)} converts like anybody else again.");
+    }
 
     private void TogglePinned(string key)
     {

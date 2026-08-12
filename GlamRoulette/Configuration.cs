@@ -163,6 +163,10 @@ public class Configuration : IPluginConfiguration
     /// the outfits everybody is wearing on this screen are copied onto them.</summary>
     public bool MirrorCards { get; set; } = true;
 
+    /// <summary>People whose race and gender are theirs to keep - "Leave their race alone"
+    /// on a right-clicked name - while the outfits and everything else still apply.</summary>
+    public HashSet<string> KeepRace { get; set; } = new();
+
     /// <summary>Outfits whose chest is the mesh's own business: whoever wears one gets no
     /// max bust and no rolled shape. The second set flags whole mods, which catches every
     /// design wearing them.</summary>

@@ -704,6 +704,90 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
         return string.IsNullOrEmpty(name) ? "an outfit" : name;
     }
 
+    /// <summary>Flips whether somebody's race and gender are left alone. Returns true when
+    /// they are now theirs to keep - and puts them straight back, so the choice shows now
+    /// rather than on their next rebuild.</summary>
+    public bool ToggleKeepRace(ICharacter character)
+    {
+        var person = KeyOf(character);
+        if (!config.KeepRace.Add(person))
+        {
+            config.KeepRace.Remove(person);
+            config.Save();
+            return false;
+        }
+
+        config.Save();
+
+        // Already turned or moved: take it off now. The outfit comes off with it, and the
+        // next pass deals them again as what they really are.
+        Restore(character.ObjectIndex);
+        races.Forget(character.ObjectIndex);
+        applied.Remove(character.ObjectIndex);
+        lastApplied.Remove(character.ObjectIndex);
+        return true;
+    }
+
+    /// <summary>Your outfit and everything rolled into it, one chat-sized line per part:
+    /// the design, the shoes, the pair of dye colours, and each mod's rolled options.</summary>
+    public List<string> DescribeMine()
+    {
+        var lines = new List<string>();
+        var me = Svc.Objects.LocalPlayer;
+        if (me == null)
+            return lines;
+
+        var key = KeyFor(me);
+        if (DesignFor(key, JobPools.GroupOf(me)) is not { } design)
+        {
+            lines.Add("No outfit dealt to you right now.");
+            return lines;
+        }
+
+        var name = Pool().FirstOrDefault(d => d.Id == design).Name;
+        var roll = config.Rolls.GetValueOrDefault(key);
+        var shoe = shoes.For(key, design, roll);
+        var items = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Item>();
+        var wearing = $"Wearing: {(string.IsNullOrEmpty(name) ? "an outfit" : name)}";
+        if (shoe is { } worn && items.GetRowOrDefault(worn) is { } shoeItem)
+            wearing += $", shoes {shoeItem.Name.ExtractText()}";
+        lines.Add(wearing);
+
+        if (dyes.Chosen(key, design, roll, MineKey(key)) is { } pair)
+        {
+            var stains = Svc.Data.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
+            var first = stains.GetRowOrDefault(pair.First)?.Name.ExtractText() ?? $"#{pair.First}";
+            var second = stains.GetRowOrDefault(pair.Second)?.Name.ExtractText() ?? $"#{pair.Second}";
+            lines.Add(pair.First == pair.Second ? $"Dyed {first}" : $"Dyed {first} and {second}");
+        }
+
+        // Only the groups actually rolled - the carried-over ones are your Penumbra settings
+        // and would drown the answer in things that never change.
+        var collection = penumbra.CollectionOf(me.ObjectIndex);
+        foreach (var wish in Wishes(collection, key, design, shoe, roll))
+        {
+            if (!wish.Enabled)
+                continue;
+
+            var pick = config.RandomizedMods.FirstOrDefault(m => m.Directory == wish.Mod);
+            if (pick == null)
+                continue;
+
+            var groups = GroupsOf(wish.Mod);
+            var rolled = wish.Options
+                .Where(kv => !pick.SkipGroups.Contains(kv.Key)
+                             && groups.TryGetValue(kv.Key, out var g)
+                             && ModRoulette.Rollable(g.Type))
+                .Select(kv => $"{kv.Key}: {(kv.Value.Count == 0 ? "nothing" : string.Join(" + ", kv.Value))}")
+                .ToList();
+
+            if (rolled.Count > 0)
+                lines.Add($"{(pick.Name.Length > 0 ? pick.Name : wish.Mod)} - {string.Join("; ", rolled)}");
+        }
+
+        return lines;
+    }
+
     /// <summary>The outfit you have on right now, if the roulette gave you one.</summary>
     public Guid? MyDesign
     {

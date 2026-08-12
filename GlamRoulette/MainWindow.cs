@@ -1400,6 +1400,23 @@ internal sealed class MainWindow : Window
             ImGui.Unindent();
         }
 
+        if (config.KeepRace.Count > 0)
+        {
+            ImGui.Spacing();
+            ImGui.TextColored(Dim, "Left as they are - right-click a name in the world to add or remove:");
+            foreach (var person in config.KeepRace.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList())
+            {
+                ImGui.PushID(person);
+                if (ImGui.SmallButton("X"))
+                {
+                    config.KeepRace.Remove(person);
+                    config.Save();
+                }
+                ImGui.SameLine();
+                ImGui.TextUnformatted(person);
+                ImGui.PopID();
+            }
+        }
     }
 
     private void DrawDyesSection()

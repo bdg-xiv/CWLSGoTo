@@ -137,6 +137,18 @@ internal sealed class Dyes(Configuration config, GlamourerIpc glamourer)
     /// Picks a dye with the tiers weighted, from a number that is derived rather than random,
     /// so the same wearer keeps the same colour.
     /// </summary>
+    /// <summary>The pair of colours somebody's outfit rolls, for saying out loud - the same
+    /// sums the apply uses, so the answer is what is really on.</summary>
+    public (byte First, byte Second)? Chosen(string playerKey, Guid design, int roll, bool mine)
+    {
+        if (!config.RandomizeDyes || Palette().Length == 0)
+            return null;
+
+        var first = Pick(Seed(playerKey, design, roll, 0), mine);
+        var second = config.DyeSecondChannel ? Pick(Seed(playerKey, design, roll, 1), mine) : first;
+        return (first, second);
+    }
+
     private byte Pick(uint seed, bool mine)
     {
         var dyes = Palette();
