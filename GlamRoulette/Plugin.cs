@@ -124,8 +124,9 @@ public sealed class Plugin : IDalamudPlugin
                 {
                     Svc.Chat.Print("[Glam Roulette] Dealing yourself another one - outfit, colours, "
                                    + $"shoes, mod options and body. The draw: {outfit}.");
-                    foreach (var line in wardrobe.DescribeMine())
-                        Svc.Chat.Print($"[Glam Roulette] {line}");
+                    if (config.DescribeMyRolls)
+                        foreach (var line in wardrobe.DescribeMine())
+                            Svc.Chat.Print($"[Glam Roulette] {line}");
                 }
                 else
                 {

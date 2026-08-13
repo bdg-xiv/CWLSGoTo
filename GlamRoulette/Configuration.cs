@@ -210,6 +210,11 @@ public class Configuration : IPluginConfiguration
     /// <summary>Roll the option dropdowns on the mods named below, per player.</summary>
     public bool RandomizeModOptions { get; set; }
 
+    /// <summary>Print the full read-out - outfit, dyes, every rolled mod option - to chat
+    /// after a self re-roll. Off leaves just the one-line draw announcement; the
+    /// /glamroulette outfit command always answers in full either way.</summary>
+    public bool DescribeMyRolls { get; set; } = true;
+
     /// <summary>Which mods are fair game. Named one by one rather than "everything enabled":
     /// a size or body group has to match the wearer, and rolling one of those gives you gaps
     /// and clipping rather than variety.</summary>

@@ -857,6 +857,17 @@ internal sealed class MainWindow : Window
                              "nothing of yours is changed and it all comes off again.\n" +
                              "Each change costs that person a redraw, unlike a glamour.");
 
+        var tell = config.DescribeMyRolls;
+        if (ImGui.Checkbox("Describe my rolls in chat", ref tell))
+        {
+            config.DescribeMyRolls = tell;
+            config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("After a self re-roll, prints what you are wearing and every option\n" +
+                             "rolled for it. Off keeps only the one-line draw announcement.\n" +
+                             "/glamroulette outfit still answers in full either way.");
+
         var drift = config.AllowDrift;
         if (ImGui.Checkbox("Let other people's options drift", ref drift))
         {
