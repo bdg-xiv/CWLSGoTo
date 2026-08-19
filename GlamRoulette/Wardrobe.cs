@@ -1473,9 +1473,10 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
     /// redrawn. The wearer's options are written into the collection here, on the same frame:
     /// Penumbra applies a settings change to its cache synchronously on this thread, and the
     /// build that follows reads that cache, so the model bakes the right options on the first
-    /// try. Every rebuild the game was doing anyway becomes a settle that costs no redraw, and
-    /// the forced redraws that remain are for options changing on somebody already standing
-    /// there.
+    /// try. Every rebuild that starts at a quiet bell becomes a settle that costs no redraw;
+    /// builds starting mid-burst go to the pass instead, because a write over a half-built
+    /// crowd is what paints bystanders black. The forced redraws that remain are for options
+    /// changing on somebody already standing there.
     ///
     /// Deliberately not behind the login wait: this adds no redraw, and login is where it pays
     /// most - everybody arrives correct instead of queueing for a redraw each.
@@ -1538,13 +1539,11 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             // into the seen set at once, or the pass would deal her a second new outfit a
             // moment after this one. The save is deferred to the pass; a disk write has no
             // place in the middle of a model build.
-            var freshRetainer = false;
             if (character.ObjectKind == ObjectKind.Retainer && config.FreshRetainers
                 && !retainersHere.Contains(person))
             {
                 retainersHere.Add(person);
                 Reroll(person, body: false, save: false);
-                freshRetainer = true;
             }
 
             var group = JobPools.GroupOf(character);
@@ -1570,11 +1569,14 @@ internal sealed class Wardrobe(Configuration config, GlamourerIpc glamourer, Dye
             // A write here re-shapes the shared collection for everybody whose model is still
             // streaming in this same burst - a teleport builds a whole plaza at once, and one
             // person's settings landing mid-build on the rest turns their unfinished loads into
-            // textures the game gives up on and paints black until it is restarted. Only a
-            // retainer being called up at a quiet bell is worth writing for during a build;
-            // everyone else is flagged for the prompt pass, which waits for the quiet itself
-            // and then rebuilds them whole.
-            if (!freshRetainer || DateTime.UtcNow - priorBuild < BuildQuiet)
+            // textures the game gives up on and paints black until it is restarted. So the
+            // write only happens at a quiet bell, when no other build has started for a while:
+            // the first arrival of a burst, a straggler walking in, a retainer summon, your own
+            // login build. That is the same quiet the pass itself waits for before writing -
+            // the risk is identical, it just lands before this build instead of costing a
+            // redraw after it. Mid-burst arrivals are flagged for the prompt pass, which waits
+            // for the quiet and then rebuilds them whole.
+            if (DateTime.UtcNow - priorBuild < BuildQuiet)
             {
                 WantsPrompt = true;
                 return;

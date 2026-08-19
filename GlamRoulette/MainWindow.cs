@@ -1514,10 +1514,12 @@ internal sealed class MainWindow : Window
         }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Lets a rebuild keep what the collection already holds, so a spawn or a\n" +
-                             "zone-in of somebody already dealt costs no redraw at all, and a retainer\n" +
-                             "called up at a quiet bell arrives in her new outfit on the first try.\n" +
-                             "Fresh deals wait for model building to go quiet before they are written -\n" +
-                             "a write landing on a half-built crowd is what paints people black.");
+                             "zone-in of somebody already dealt costs no redraw at all - and anybody\n" +
+                             "whose build starts at a quiet bell has their fresh deal baked into that\n" +
+                             "very build: the first of a burst, a straggler walking in, a retainer\n" +
+                             "summon, you at login. Deals mid-burst still wait for building to go\n" +
+                             "quiet and take one redraw - a write landing on a half-built crowd is\n" +
+                             "what paints people black.");
 
         var cards = config.MirrorCards;
         if (ImGui.Checkbox("Dress the duty cards", ref cards))
