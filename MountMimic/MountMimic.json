@@ -1,0 +1,12 @@
+{
+  "Author": "bdg",
+  "Name": "Mount Mimic",
+  "Punchline": "Right-click a rider, get on the same mount.",
+  "Description": "Adds a Switch to mount entry to the context menu of any player currently on a mount - right-click them in the world, in the party list, or through the target bar, pick it, and you mount up on the same one. If you are already riding something else it dismounts you first and mounts the new one as soon as the game allows. Mounts you have not unlocked are called out by name in chat instead of failing silently, and places where mounting is impossible get an honest message too. /mountmimic does the same for your current target, macro-friendly.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "mount",
+    "context menu",
+    "copy"
+  ]
+}

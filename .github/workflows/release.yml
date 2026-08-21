@@ -68,6 +68,7 @@ jobs:
           @{ Project = "PositionalBridge"; InternalName = "PositionalBridge" },
           @{ Project = "DesignFromMod"; InternalName = "DesignFromMod" },
           @{ Project = "Hindsight"; InternalName = "Hindsight" },
+          @{ Project = "MountMimic"; InternalName = "MountMimic" },
           @{ Project = "Automaton/ffxiv_bundledtweaks"; InternalName = "Automaton" }
         )
 

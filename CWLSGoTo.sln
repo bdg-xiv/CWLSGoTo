@@ -49,6 +49,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DesignFromMod", "DesignFrom
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Hindsight", "Hindsight\Hindsight.csproj", "{38D0A3B6-6F3C-42AE-AFEF-782AB6C9329E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MountMimic", "MountMimic\MountMimic.csproj", "{A7C4E9D2-5B31-4F68-8D0E-94B2C6A1F753}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -147,6 +149,10 @@ Global
 		{38D0A3B6-6F3C-42AE-AFEF-782AB6C9329E}.Debug|x64.Build.0 = Debug|x64
 		{38D0A3B6-6F3C-42AE-AFEF-782AB6C9329E}.Release|x64.ActiveCfg = Release|x64
 		{38D0A3B6-6F3C-42AE-AFEF-782AB6C9329E}.Release|x64.Build.0 = Release|x64
+		{A7C4E9D2-5B31-4F68-8D0E-94B2C6A1F753}.Debug|x64.ActiveCfg = Debug|x64
+		{A7C4E9D2-5B31-4F68-8D0E-94B2C6A1F753}.Debug|x64.Build.0 = Debug|x64
+		{A7C4E9D2-5B31-4F68-8D0E-94B2C6A1F753}.Release|x64.ActiveCfg = Release|x64
+		{A7C4E9D2-5B31-4F68-8D0E-94B2C6A1F753}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
